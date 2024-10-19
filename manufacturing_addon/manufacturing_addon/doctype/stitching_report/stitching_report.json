@@ -1,0 +1,171 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:SR-{DD}-{MM}-{YY}-{##}",
+ "creation": "2024-10-19 17:54:21.008567",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "posting_date_and_time",
+  "column_break_ceiy",
+  "date",
+  "dovet_line_section",
+  "dovet_line",
+  "pillow_line",
+  "section_break_ybqk",
+  "dovet_operators",
+  "column_break_qruz",
+  "pillow_operators",
+  "column_break_hgqj",
+  "total_operators",
+  "remarks_section",
+  "remarks",
+  "section_break_ssal",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_ssal",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Stitching Report",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "default": "Now",
+   "fieldname": "posting_date_and_time",
+   "fieldtype": "Datetime",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Posting Date and Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ceiy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Now",
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Date"
+  },
+  {
+   "fieldname": "dovet_line_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "dovet_line",
+   "fieldtype": "Table",
+   "label": "Dovet Line",
+   "options": "Dovet Line"
+  },
+  {
+   "fieldname": "pillow_line",
+   "fieldtype": "Table",
+   "label": "Pillow Line",
+   "options": "Dovet Line"
+  },
+  {
+   "fieldname": "pillow_operators",
+   "fieldtype": "Int",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Pillow Operators",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dovet_operators",
+   "fieldtype": "Int",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Dovet Operators",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_ybqk",
+   "fieldtype": "Section Break",
+   "label": "Total"
+  },
+  {
+   "fieldname": "total_operators",
+   "fieldtype": "Int",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Operators",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "column_break_qruz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_hgqj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "remarks_section",
+   "fieldtype": "Section Break",
+   "label": "Remarks"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-10-19 18:22:41.844883",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Stitching Report",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

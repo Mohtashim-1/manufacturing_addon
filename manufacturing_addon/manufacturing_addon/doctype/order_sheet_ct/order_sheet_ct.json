@@ -1,0 +1,77 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-11-11 17:26:37.222414",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "design",
+  "colour",
+  "reverse_colour",
+  "size",
+  "ean",
+  "quantity",
+  "qty_ctn",
+  "total_cartoons"
+ ],
+ "fields": [
+  {
+   "fieldname": "design",
+   "fieldtype": "Link",
+   "label": "Design",
+   "options": "Stitching Design"
+  },
+  {
+   "fieldname": "colour",
+   "fieldtype": "Link",
+   "label": "Colour",
+   "options": "Stitching Colour"
+  },
+  {
+   "fieldname": "reverse_colour",
+   "fieldtype": "Link",
+   "label": "Reverse Colour",
+   "options": "Stitching Colour"
+  },
+  {
+   "fieldname": "size",
+   "fieldtype": "Link",
+   "label": "Size",
+   "options": "Stitching Size"
+  },
+  {
+   "fieldname": "ean",
+   "fieldtype": "Link",
+   "label": "EAN",
+   "options": "Ean Code"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "label": "Quantity"
+  },
+  {
+   "fieldname": "qty_ctn",
+   "fieldtype": "Float",
+   "label": "Qty/ Ctn"
+  },
+  {
+   "fieldname": "total_cartoons",
+   "fieldtype": "Float",
+   "label": "Total Cartoons"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-11-11 18:45:13.629782",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Order Sheet CT",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

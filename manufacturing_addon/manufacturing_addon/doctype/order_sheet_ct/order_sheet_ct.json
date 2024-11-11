@@ -7,65 +7,131 @@
  "engine": "InnoDB",
  "field_order": [
   "design",
+  "ean",
+  "column_break_gbtz",
   "colour",
   "reverse_colour",
+  "column_break_ckmo",
+  "stitching_article_no",
   "size",
-  "ean",
-  "quantity",
   "qty_ctn",
+  "column_break_wcnu",
+  "quantity",
   "total_cartoons"
  ],
  "fields": [
   {
+   "columns": 1,
    "fieldname": "design",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Design",
    "options": "Stitching Design"
   },
   {
+   "columns": 1,
    "fieldname": "colour",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Colour",
    "options": "Stitching Colour"
   },
   {
+   "columns": 1,
    "fieldname": "reverse_colour",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Reverse Colour",
    "options": "Stitching Colour"
   },
   {
+   "columns": 1,
    "fieldname": "size",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Size",
    "options": "Stitching Size"
   },
   {
+   "columns": 1,
    "fieldname": "ean",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "EAN",
    "options": "Ean Code"
   },
   {
+   "columns": 1,
    "fieldname": "quantity",
    "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Quantity"
   },
   {
+   "columns": 1,
    "fieldname": "qty_ctn",
    "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Qty/ Ctn"
   },
   {
+   "columns": 1,
    "fieldname": "total_cartoons",
    "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Total Cartoons"
+  },
+  {
+   "fieldname": "column_break_gbtz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_ckmo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_wcnu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "stitching_article_no",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Stitching Article No",
+   "options": "Stitching Article No"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-11 18:45:13.629782",
+ "modified": "2024-11-11 19:03:11.242402",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet CT",

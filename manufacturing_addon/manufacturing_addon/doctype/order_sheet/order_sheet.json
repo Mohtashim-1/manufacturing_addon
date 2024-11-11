@@ -11,6 +11,8 @@
   "column_break_wvzo",
   "customer",
   "port_of_destination",
+  "order_sheet_ct_section",
+  "order_sheet_ct",
   "section_break_di6r",
   "amended_from"
  ],
@@ -54,12 +56,23 @@
    "fieldname": "port_of_destination",
    "fieldtype": "Data",
    "label": "Port of Destination"
+  },
+  {
+   "fieldname": "order_sheet_ct_section",
+   "fieldtype": "Section Break",
+   "label": "Order Sheet CT"
+  },
+  {
+   "fieldname": "order_sheet_ct",
+   "fieldtype": "Table",
+   "label": "Order Sheet CT",
+   "options": "Order Sheet CT"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-11 17:25:53.625848",
+ "modified": "2024-11-11 18:53:46.722779",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

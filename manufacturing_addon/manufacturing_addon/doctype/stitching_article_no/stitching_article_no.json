@@ -1,26 +1,28 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{colour}",
- "creation": "2024-11-11 17:34:23.624805",
+ "autoname": "format:{article_no}",
+ "creation": "2024-11-11 19:00:18.603114",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "colour"
+  "article_no"
  ],
  "fields": [
   {
-   "fieldname": "colour",
+   "fieldname": "article_no",
    "fieldtype": "Data",
-   "label": "Colour"
+   "in_list_view": 1,
+   "label": "Article No",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-11-11 18:58:01.164987",
+ "modified": "2024-11-11 19:00:55.790162",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
- "name": "Stitching Colour",
+ "name": "Stitching Article No",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
@@ -37,6 +39,7 @@
    "write": 1
   }
  ],
+ "quick_entry": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

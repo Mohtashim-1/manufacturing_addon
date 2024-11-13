@@ -1,0 +1,182 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-11-11 19:17:59.400806",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "customer",
+  "design",
+  "colour",
+  "finished_size",
+  "column_break_rthv",
+  "article",
+  "ean",
+  "qty_ctn",
+  "quantity",
+  "column_break_kihr",
+  "cutting",
+  "stitching",
+  "ship",
+  "packaging",
+  "column_break_mbly",
+  "total",
+  "percentage",
+  "ready_cartoons",
+  "plan"
+ ],
+ "fields": [
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "design",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Design"
+  },
+  {
+   "fieldname": "colour",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Colour"
+  },
+  {
+   "fieldname": "finished_size",
+   "fieldtype": "Data",
+   "label": "Finished Size"
+  },
+  {
+   "fieldname": "article",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Article"
+  },
+  {
+   "fieldname": "ean",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "EAN"
+  },
+  {
+   "fieldname": "qty_ctn",
+   "fieldtype": "Data",
+   "label": "Qty/ Ctn"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Quantity"
+  },
+  {
+   "fieldname": "cutting",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Cutting"
+  },
+  {
+   "fieldname": "stitching",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Stitching"
+  },
+  {
+   "fieldname": "ship",
+   "fieldtype": "Data",
+   "label": "Ship"
+  },
+  {
+   "fieldname": "packaging",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Packaging"
+  },
+  {
+   "fieldname": "total",
+   "fieldtype": "Data",
+   "label": "Total"
+  },
+  {
+   "fieldname": "percentage",
+   "fieldtype": "Data",
+   "label": "Percentage"
+  },
+  {
+   "fieldname": "ready_cartoons",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Ready Cartoons"
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Plan"
+  },
+  {
+   "fieldname": "column_break_rthv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_kihr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_mbly",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-11-11 19:23:33.892814",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Operation Report CT",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

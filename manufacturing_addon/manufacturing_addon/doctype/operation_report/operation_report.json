@@ -1,0 +1,106 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-11-11 19:14:33.885707",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "date",
+  "get_data",
+  "column_break_mwvt",
+  "time",
+  "column_break_qnok",
+  "order_sheet",
+  "operation_report_data_section",
+  "operation_report_ct",
+  "section_break_c7ga",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "default": "Today",
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date"
+  },
+  {
+   "fieldname": "get_data",
+   "fieldtype": "Button",
+   "label": "Get Data"
+  },
+  {
+   "fieldname": "column_break_mwvt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Now",
+   "fieldname": "time",
+   "fieldtype": "Time",
+   "label": "Time"
+  },
+  {
+   "fieldname": "column_break_qnok",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "order_sheet",
+   "fieldtype": "Link",
+   "label": "Order Sheet",
+   "options": "Order Sheet"
+  },
+  {
+   "fieldname": "operation_report_data_section",
+   "fieldtype": "Section Break",
+   "label": "Operation Report Data"
+  },
+  {
+   "fieldname": "operation_report_ct",
+   "fieldtype": "Table",
+   "label": "Operation Report CT",
+   "options": "Operation Report CT"
+  },
+  {
+   "fieldname": "section_break_c7ga",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Operation Report",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-11-13 00:57:27.634850",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Operation Report",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

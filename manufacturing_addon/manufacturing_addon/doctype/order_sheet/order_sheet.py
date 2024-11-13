@@ -7,12 +7,26 @@ from frappe.model.document import Document
 
 class OrderSheet(Document):
 	def validate(self):
-		self.total_cartoon()
+		self.qty_per_cartoon()
+		self.total()
 	
-	def total_cartoon(self):
-		total_cartoon = 0
+	def qty_per_cartoon(self):
+		qty_per_cartoon = 0
 		for row in self.order_sheet_ct:
-			qty_ctn = row.qty_ctn
+			total_cartoons = row.total_cartoons
 			quantity = row.quantity
-			total_cartoons = qty_ctn / quantity
-			row.total_cartoons = total_cartoons
+			qty_per_cartoon = quantity / total_cartoons
+			row.qty_ctn = qty_per_cartoon
+
+	def total(self):
+		quantity = 0
+		total_cartoons = 0
+		total_quantity_per_cartoon = 0
+		for i in self.order_sheet_ct:
+			quantity += i.quantity
+			total_cartoons += i.total_cartoons
+			total_quantity_per_cartoon += i.qty_ctn
+		self.total_quantity = quantity
+		self.total_cartoon = total_cartoons
+		self.total_quantity_per_cartoon = total_quantity_per_cartoon
+

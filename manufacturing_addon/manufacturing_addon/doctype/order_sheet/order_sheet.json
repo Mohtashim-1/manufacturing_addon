@@ -11,8 +11,15 @@
   "column_break_wvzo",
   "customer",
   "port_of_destination",
+  "is_or",
   "order_sheet_ct_section",
   "order_sheet_ct",
+  "section_break_tzao",
+  "total_quantity",
+  "column_break_djbx",
+  "total_cartoon",
+  "column_break_hemx",
+  "total_quantity_per_cartoon",
   "section_break_di6r",
   "amended_from"
  ],
@@ -40,6 +47,10 @@
   {
    "fieldname": "shipment_date",
    "fieldtype": "Date",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Shipment Date"
   },
   {
@@ -49,30 +60,86 @@
   {
    "fieldname": "customer",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_preview": 1,
    "label": "Customer",
    "options": "Customer"
   },
   {
    "fieldname": "port_of_destination",
    "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Port of Destination"
   },
   {
    "fieldname": "order_sheet_ct_section",
    "fieldtype": "Section Break",
-   "label": "Order Sheet CT"
+   "label": "Order Details"
   },
   {
    "fieldname": "order_sheet_ct",
    "fieldtype": "Table",
    "label": "Order Sheet CT",
    "options": "Order Sheet CT"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_or",
+   "fieldtype": "Check",
+   "label": "is OR",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_tzao",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_quantity",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_djbx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_cartoon",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Cartoon",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_hemx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_quantity_per_cartoon",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Quantity Per Cartoon",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-11 18:53:46.722779",
+ "modified": "2024-11-13 12:33:00.714919",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

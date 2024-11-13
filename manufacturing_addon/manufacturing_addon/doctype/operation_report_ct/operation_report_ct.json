@@ -14,20 +14,21 @@
   "article",
   "ean",
   "qty_ctn",
-  "quantity",
+  "qty",
   "column_break_kihr",
-  "cutting",
-  "stitching",
-  "ship",
-  "packaging",
+  "cutting1",
+  "stitching1",
+  "ship1",
+  "packaging1",
   "column_break_mbly",
-  "total",
-  "percentage",
-  "ready_cartoons",
-  "plan"
+  "total_copy1",
+  "percentage_copy",
+  "ready_cartoons_copy",
+  "plan_copy"
  ],
  "fields": [
   {
+   "columns": 1,
    "fieldname": "customer",
    "fieldtype": "Link",
    "in_filter": 1,
@@ -38,6 +39,7 @@
    "options": "Customer"
   },
   {
+   "columns": 1,
    "fieldname": "design",
    "fieldtype": "Data",
    "in_filter": 1,
@@ -47,6 +49,7 @@
    "label": "Design"
   },
   {
+   "columns": 1,
    "fieldname": "colour",
    "fieldtype": "Data",
    "in_filter": 1,
@@ -61,6 +64,7 @@
    "label": "Finished Size"
   },
   {
+   "columns": 1,
    "fieldname": "article",
    "fieldtype": "Data",
    "in_filter": 1,
@@ -73,86 +77,12 @@
    "fieldname": "ean",
    "fieldtype": "Data",
    "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "EAN"
   },
   {
    "fieldname": "qty_ctn",
    "fieldtype": "Data",
    "label": "Qty/ Ctn"
-  },
-  {
-   "fieldname": "quantity",
-   "fieldtype": "Data",
-   "in_filter": 1,
-   "in_global_search": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Quantity"
-  },
-  {
-   "fieldname": "cutting",
-   "fieldtype": "Data",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Cutting"
-  },
-  {
-   "fieldname": "stitching",
-   "fieldtype": "Data",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Stitching"
-  },
-  {
-   "fieldname": "ship",
-   "fieldtype": "Data",
-   "label": "Ship"
-  },
-  {
-   "fieldname": "packaging",
-   "fieldtype": "Data",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Packaging"
-  },
-  {
-   "fieldname": "total",
-   "fieldtype": "Data",
-   "label": "Total"
-  },
-  {
-   "fieldname": "percentage",
-   "fieldtype": "Data",
-   "label": "Percentage"
-  },
-  {
-   "fieldname": "ready_cartoons",
-   "fieldtype": "Data",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Ready Cartoons"
-  },
-  {
-   "fieldname": "plan",
-   "fieldtype": "Data",
-   "in_filter": 1,
-   "in_global_search": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Plan"
   },
   {
    "fieldname": "column_break_rthv",
@@ -165,12 +95,94 @@
   {
    "fieldname": "column_break_mbly",
    "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "total_copy1",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total"
+  },
+  {
+   "columns": 1,
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Qty"
+  },
+  {
+   "columns": 1,
+   "fieldname": "cutting1",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Cutting"
+  },
+  {
+   "columns": 1,
+   "fieldname": "stitching1",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Stitching"
+  },
+  {
+   "fieldname": "ship1",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "label": "Ship"
+  },
+  {
+   "columns": 1,
+   "fieldname": "packaging1",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Packaging"
+  },
+  {
+   "columns": 1,
+   "fieldname": "percentage_copy",
+   "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Percentage"
+  },
+  {
+   "fieldname": "ready_cartoons_copy",
+   "fieldtype": "Data",
+   "label": "Ready Cartoons"
+  },
+  {
+   "fieldname": "plan_copy",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Plan Qty"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-11 19:23:33.892814",
+ "modified": "2024-11-13 14:56:38.521016",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Operation Report CT",

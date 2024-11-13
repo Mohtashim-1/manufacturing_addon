@@ -9,6 +9,7 @@ class OrderSheet(Document):
 	def validate(self):
 		self.qty_per_cartoon()
 		self.total()
+		# self.total_qty()
 	
 	def qty_per_cartoon(self):
 		qty_per_cartoon = 0
@@ -29,4 +30,6 @@ class OrderSheet(Document):
 		self.total_quantity = quantity
 		self.total_cartoon = total_cartoons
 		self.total_quantity_per_cartoon = total_quantity_per_cartoon
+	
+	
 

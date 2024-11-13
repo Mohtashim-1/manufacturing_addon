@@ -90,8 +90,7 @@
    "default": "0",
    "fieldname": "is_or",
    "fieldtype": "Check",
-   "label": "is OR",
-   "read_only": 1
+   "label": "is OR"
   },
   {
    "fieldname": "section_break_tzao",
@@ -139,7 +138,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-13 12:33:00.714919",
+ "modified": "2024-11-13 13:19:11.345971",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

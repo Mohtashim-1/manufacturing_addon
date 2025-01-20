@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:fabric_set",
+ "creation": "2025-01-20 19:25:51.082348",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "fabric_set",
+  "column_break_oowh",
+  "section_break_elzh",
+  "planning_ct",
+  "section_break_qsov",
+  "total_qty",
+  "column_break_okrs",
+  "total_consumption"
+ ],
+ "fields": [
+  {
+   "fieldname": "fabric_set",
+   "fieldtype": "Data",
+   "label": "Fabric Set",
+   "unique": 1
+  },
+  {
+   "fieldname": "planning_ct",
+   "fieldtype": "Table",
+   "label": "Planning CT",
+   "options": "Planning CT"
+  },
+  {
+   "fieldname": "column_break_oowh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_elzh",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_qsov",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Total Qty"
+  },
+  {
+   "fieldname": "column_break_okrs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_consumption",
+   "fieldtype": "Float",
+   "label": "Total Consumption"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-01-20 19:46:07.831553",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Fabric Set",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

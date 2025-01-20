@@ -1,0 +1,107 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{lenght}X{width},{standard_size}+{flap}",
+ "creation": "2024-11-11 18:33:18.523882",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "lenght",
+  "column_break_dtdj",
+  "width",
+  "column_break_vqei",
+  "standard_size",
+  "column_break_zasf",
+  "flap",
+  "column_break_uopy",
+  "consumption"
+ ],
+ "fields": [
+  {
+   "fieldname": "lenght",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Lenght"
+  },
+  {
+   "fieldname": "column_break_dtdj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Width"
+  },
+  {
+   "fieldname": "column_break_vqei",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "standard_size",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Standard Size",
+   "options": "Standard Size"
+  },
+  {
+   "fieldname": "column_break_zasf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "flap",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Flap"
+  },
+  {
+   "fieldname": "column_break_uopy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "consumption",
+   "fieldtype": "Float",
+   "label": "Consumption"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-11-20 15:19:28.045360",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Stitching Size",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

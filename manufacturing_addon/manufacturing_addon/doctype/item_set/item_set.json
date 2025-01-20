@@ -1,0 +1,51 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:item_set",
+ "creation": "2024-12-26 17:35:23.951797",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "item_set",
+  "item_set_detail"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_set",
+   "fieldtype": "Data",
+   "label": "Set",
+   "unique": 1
+  },
+  {
+   "fieldname": "item_set_detail",
+   "fieldtype": "Table",
+   "label": "Item Set Detail",
+   "options": "Item Set Detail"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-12-26 17:54:39.070885",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Item Set",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

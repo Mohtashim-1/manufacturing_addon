@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-01-20 19:55:32.468945",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "fabric_set",
+  "consumption_per_set",
+  "total_qty",
+  "expected_consumption",
+  "percentage",
+  "final_consumption_copy"
+ ],
+ "fields": [
+  {
+   "fieldname": "fabric_set",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Fabric Set",
+   "options": "Fabric Set"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Qty"
+  },
+  {
+   "fieldname": "expected_consumption",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Expected Consumption"
+  },
+  {
+   "fieldname": "percentage",
+   "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Percentage"
+  },
+  {
+   "fieldname": "final_consumption_copy",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Final Consumption Copy"
+  },
+  {
+   "fieldname": "consumption_per_set",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Consumption Per Set"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-01-20 20:04:30.768938",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Planning1",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

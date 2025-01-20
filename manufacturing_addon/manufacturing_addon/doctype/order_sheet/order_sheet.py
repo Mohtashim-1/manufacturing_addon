@@ -9,6 +9,7 @@ class OrderSheet(Document):
 	def validate(self):
 		self.qty_per_cartoon()
 		self.total()
+		self.consumption()
 		# self.total_qty()
 	
 	def qty_per_cartoon(self):
@@ -30,6 +31,14 @@ class OrderSheet(Document):
 		self.total_quantity = quantity
 		self.total_cartoon = total_cartoons
 		self.total_quantity_per_cartoon = total_quantity_per_cartoon
+
+	def consumption(self):
+		total_consumption = 0
+		for i in self.order_sheet_ct:
+			total_consumption += i.total_consumption
+			if i.consumption and i.quantity:
+				i.total_consumption = i.consumption * i.quantity
+		self.total_consumption = total_consumption
 	
 	
 

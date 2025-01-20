@@ -20,6 +20,8 @@
   "total_cartoon",
   "column_break_hemx",
   "total_quantity_per_cartoon",
+  "column_break_cngj",
+  "total_consumption",
   "section_break_di6r",
   "amended_from"
  ],
@@ -133,12 +135,26 @@
    "in_standard_filter": 1,
    "label": "Total Quantity Per Cartoon",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_cngj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_consumption",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Consumption",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-13 13:19:11.345971",
+ "modified": "2024-11-13 17:30:01.221747",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

@@ -1,0 +1,218 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-12-26 18:53:25.279345",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "type",
+  "qty",
+  "column_break_rqls",
+  "size",
+  "gsm",
+  "quilt_cover",
+  "pillow",
+  "column_break_qzsv",
+  "faced_type",
+  "width",
+  "quilt_width",
+  "pillow_width",
+  "column_break_trsn",
+  "cutting_style",
+  "consumption",
+  "quilt_margin",
+  "pillow_margin",
+  "column_break_jpmi",
+  "quilt_consumption",
+  "total_quilt_consumption",
+  "pillow_consumption",
+  "total_pillow_consumption"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "type",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Item",
+   "link_filters": "[[\"Item\",\"item_group\",\"=\",\"Greige Planning\"]]",
+   "options": "Item",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "faced_type",
+   "fieldtype": "Select",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Faced Type",
+   "options": "Single Faced\nDouble Faced",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "cutting_style",
+   "fieldtype": "Select",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Cutting Style",
+   "options": "\nW/L\nL/L\nPANEL",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Width",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "consumption",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Consumption",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "size",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Size",
+   "options": "Item Set",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "gsm",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "GSM",
+   "options": "GSM",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Qty",
+   "width": "1"
+  },
+  {
+   "fieldname": "column_break_rqls",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_qzsv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_trsn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "quilt_cover",
+   "fieldtype": "Data",
+   "label": "Quilt Cover"
+  },
+  {
+   "fieldname": "pillow",
+   "fieldtype": "Data",
+   "label": "Pillow"
+  },
+  {
+   "columns": 1,
+   "fieldname": "quilt_width",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Quilt Width",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "pillow_width",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Pillow Width",
+   "width": "1"
+  },
+  {
+   "fieldname": "quilt_margin",
+   "fieldtype": "Float",
+   "label": "Quilt Margin"
+  },
+  {
+   "fieldname": "pillow_margin",
+   "fieldtype": "Float",
+   "label": "Pillow Margin"
+  },
+  {
+   "fieldname": "column_break_jpmi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "quilt_consumption",
+   "fieldtype": "Float",
+   "label": "Quilt Consumption"
+  },
+  {
+   "fieldname": "pillow_consumption",
+   "fieldtype": "Float",
+   "label": "Pillow Consumption"
+  },
+  {
+   "fieldname": "total_quilt_consumption",
+   "fieldtype": "Float",
+   "label": "Total Quilt Consumption "
+  },
+  {
+   "fieldname": "total_pillow_consumption",
+   "fieldtype": "Float",
+   "label": "Total Pillow Consumption"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-12-27 18:35:29.196508",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Planning Detail",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

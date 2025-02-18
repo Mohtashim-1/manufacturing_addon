@@ -28,7 +28,7 @@ def execute(filters=None):
     # Fetching Child Table Data (Operation Report CT)
     operation_report_names = [or_data["name"] for or_data in operation_reports]
     if not operation_report_names:
-        return [], []
+        return [], [], {}, {}
 
     child_conditions = ""
     if filters.get("finished_size"):
@@ -44,6 +44,9 @@ def execute(filters=None):
 
     # Formatting the data
     data = []
+    total_ordered_qty = 0
+    total_ready_qty = 0
+    total_percentage = 0
     for or_data in operation_reports:
         child_records = [cd for cd in child_data if cd["parent"] == or_data["name"]]
         if not child_records:
@@ -53,6 +56,33 @@ def execute(filters=None):
             # Loop through child records and correctly map finished_size and customer
             for child in child_records:
                 data.append([or_data["name"], or_data["date"], or_data["time"], or_data["order_sheet"], or_data["ordered_qty"], or_data["ready_qty"], or_data["percentage"], child["finished_size"], child["customer"]])
+        
+        # Summing up totals
+        total_ordered_qty += or_data["ordered_qty"]
+        total_ready_qty += or_data["ready_qty"]
+        total_percentage += or_data["percentage"]
+
+    # Summary
+    summary = {
+        "total_ordered_qty": total_ordered_qty,
+        "total_ready_qty": total_ready_qty,
+        "total_percentage": total_percentage
+    }
+
+    # Chart Data (Example: Bar Chart for Ordered Qty vs Ready Qty)
+    chart_data = {
+        "labels": [or_data["name"] for or_data in operation_reports],
+        "datasets": [
+            {
+                "name": _("Ordered Qty"),
+                "values": [or_data["ordered_qty"] for or_data in operation_reports]
+            },
+            {
+                "name": _("Ready Qty"),
+                "values": [or_data["ready_qty"] for or_data in operation_reports]
+            }
+        ]
+    }
 
     # Column headers (including customer column)
     columns = [
@@ -60,12 +90,12 @@ def execute(filters=None):
         {"label": _("Date"), "fieldname": "date", "fieldtype": "Date", "width": 110},
         {"label": _("Time"), "fieldname": "time", "fieldtype": "Time", "width": 80},
         {"label": _("Order Sheet"), "fieldname": "order_sheet", "fieldtype": "Link", "options": "Order Sheet", "width": 190},
-       
         {"label": _("Ordered Qty"), "fieldname": "ordered_qty", "fieldtype": "Float", "width": 100},
         {"label": _("Ready Qty"), "fieldname": "ready_qty", "fieldtype": "Float", "width": 100},
         {"label": _("Percentage"), "fieldname": "percentage", "fieldtype": "Percent", "width": 80},
         {"label": _("Finished Size"), "fieldname": "finished_size", "fieldtype": "Data", "width": 120},
-		 {"label": _("Customer"), "fieldname": "customer", "fieldtype": "Link", "options": "Customer", "width": 190},
+        {"label": _("Customer"), "fieldname": "customer", "fieldtype": "Link", "options": "Customer", "width": 190},
     ]
 
-    return columns, data
+    # Return summary, data, and chart_data
+    return columns, data, summary, chart_data

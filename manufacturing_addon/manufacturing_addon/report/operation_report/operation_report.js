@@ -34,5 +34,17 @@ frappe.query_reports["Operation Report"] = {
             "label": __("Finished Size"),
             "fieldtype": "Data",
         }			
-	]
+	],
+	onload: function(report) {
+        let chartData = report.chart_data;
+        if (chartData) {
+            new frappe.Chart("#chart-container", {
+                title: "Ordered Qty vs Ready Qty",
+                type: 'bar',
+                data: chartData,
+                height: 300,
+                colors: ['#00B4A2', '#F4B400'],
+            });
+        }
+    }
 };

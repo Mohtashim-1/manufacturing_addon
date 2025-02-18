@@ -30,64 +30,64 @@ class OperationReport(Document):
                         "qty": r.get("quantity")
                     })
                     self.save()
-            elif doc.is_or == 1:
-                # Fetch previous totals from the child table if they exist
-                previous_totals = frappe.db.sql("""
-                    SELECT SUM(cutting1) AS total_cutting,
-                           SUM(stitching1) AS total_stitching,
-                           SUM(packaging1) AS total_packaging
-                    FROM `tabOperation Report CT`
-                    WHERE parent = %s
-                """, (self.name,), as_dict=True)
+            # elif doc.is_or == 1:
+            #     # Fetch previous totals from the child table if they exist
+            #     previous_totals = frappe.db.sql("""
+            #         SELECT SUM(cutting1) AS total_cutting,
+            #                SUM(stitching1) AS total_stitching,
+            #                SUM(packaging1) AS total_packaging
+            #         FROM `tabOperation Report CT`
+            #         WHERE parent = %s
+            #     """, (self.name,), as_dict=True)
 
-                # Ensure values are not None and default to 0 if None
-                previous_cutting = previous_totals[0].get('total_cutting') or 0
-                previous_stitching = previous_totals[0].get('total_stitching') or 0
-                previous_packaging = previous_totals[0].get('total_packaging') or 0
+            #     # Ensure values are not None and default to 0 if None
+            #     previous_cutting = previous_totals[0].get('total_cutting') or 0
+            #     previous_stitching = previous_totals[0].get('total_stitching') or 0
+            #     previous_packaging = previous_totals[0].get('total_packaging') or 0
 
-                rec1 = frappe.db.sql("""
-                    SELECT oprct.customer, 
-                           oprct.design, 
-                           oprct.colour, 
-                           oprct.article, 
-                           oprct.ean, 
-                           oprct.qty,
-                           SUM(oprct.cutting1) AS cutting,
-                           SUM(oprct.stitching1) AS stitching,
-                           SUM(oprct.packaging1) AS packaging,
-                            oprct.finished_size,
-                           oprct.qty_ctn
-                    FROM `tabOperation Report` AS oprr
-                    LEFT JOIN `tabOperation Report CT` AS oprct ON oprct.parent = oprr.name
-                    WHERE oprr.order_sheet = %s
-                    GROUP BY oprct.customer, oprct.design, oprct.colour, oprct.article, oprct.ean, oprct.qty, oprct.qty_ctn, oprct.finished_size
-                """, (self.order_sheet,), as_dict=True)
+            #     rec1 = frappe.db.sql("""
+            #         SELECT oprct.customer, 
+            #                oprct.design, 
+            #                oprct.colour, 
+            #                oprct.article, 
+            #                oprct.ean, 
+            #                oprct.qty,
+            #                SUM(oprct.cutting1) AS cutting,
+            #                SUM(oprct.stitching1) AS stitching,
+            #                SUM(oprct.packaging1) AS packaging,
+            #                 oprct.finished_size,
+            #                oprct.qty_ctn
+            #         FROM `tabOperation Report` AS oprr
+            #         LEFT JOIN `tabOperation Report CT` AS oprct ON oprct.parent = oprr.name
+            #         WHERE oprr.order_sheet = %s
+            #         GROUP BY oprct.customer, oprct.design, oprct.colour, oprct.article, oprct.ean, oprct.qty, oprct.qty_ctn, oprct.finished_size
+            #     """, (self.order_sheet,), as_dict=True)
 
-                if rec1:
-                    # Clear any existing data in the child table before appending
-                    self.set("operation_report_ct", [])
-                    for r in rec1:
-                        # Add the previous totals to the new totals, ensuring None values are handled
-                        total_cutting = (r.get('cutting') or 0) + previous_cutting
-                        total_stitching = (r.get('stitching') or 0) + previous_stitching
-                        total_packaging = (r.get('packaging') or 0) + previous_packaging
+            #     if rec1:
+            #         # Clear any existing data in the child table before appending
+            #         self.set("operation_report_ct", [])
+            #         for r in rec1:
+            #             # Add the previous totals to the new totals, ensuring None values are handled
+            #             total_cutting = (r.get('cutting') or 0) + previous_cutting
+            #             total_stitching = (r.get('stitching') or 0) + previous_stitching
+            #             total_packaging = (r.get('packaging') or 0) + previous_packaging
 
-                        # Only append data if it's not empty
-                        if r.get("customer") and r.get("design"):
-                            self.append("operation_report_ct", {
-                                "customer": r.get("customer"),
-                                "design": r.get("design"),
-                                "colour": r.get("colour"),
-                                "article": r.get("article"),
-                                "ean": r.get("ean"),
-                                "qty_ctn": r.get("qty_ctn"),
-                                "finished_size": r.get("finished_size"),
-                                "qty": r.get("qty"),
-                                "cutting1": total_cutting,
-                                "stitching1": total_stitching,
-                                "packaging1": total_packaging
-                            })
-                    self.save()
+            #             # Only append data if it's not empty
+            #             if r.get("customer") and r.get("design"):
+            #                 self.append("operation_report_ct", {
+            #                     "customer": r.get("customer"),
+            #                     "design": r.get("design"),
+            #                     "colour": r.get("colour"),
+            #                     "article": r.get("article"),
+            #                     "ean": r.get("ean"),
+            #                     "qty_ctn": r.get("qty_ctn"),
+            #                     "finished_size": r.get("finished_size"),
+            #                     "qty": r.get("qty"),
+            #                     "cutting1": total_cutting,
+            #                     "stitching1": total_stitching,
+            #                     "packaging1": total_packaging
+            #                 })
+            #         self.save()
 
     
 
@@ -113,17 +113,18 @@ class OperationReport(Document):
                 i.percentage_copy = percentage
 
     def on_submit(self):
+        pass
         # Update the is_or field in `Order Sheet` on submit
-        frappe.db.sql("""
-            UPDATE `tabOrder Sheet` 
-            SET is_or = 1
-            WHERE name = %s
-        """, (self.order_sheet,))
-        frappe.db.commit()
+        # frappe.db.sql("""
+        #     UPDATE `tabOrder Sheet` 
+        #     SET is_or = 1
+        #     WHERE name = %s
+        # """, (self.order_sheet,))
+        # frappe.db.commit()
         
-        # Reload and save the `Order Sheet` document to apply changes
-        doc = frappe.get_doc("Order Sheet", self.order_sheet)
-        doc.save()
+        # # Reload and save the `Order Sheet` document to apply changes
+        # doc = frappe.get_doc("Order Sheet", self.order_sheet)
+        # doc.save()
 
     def total(self):
         total_qty = 0

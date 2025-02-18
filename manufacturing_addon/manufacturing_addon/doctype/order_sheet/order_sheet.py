@@ -13,12 +13,15 @@ class OrderSheet(Document):
 		# self.total_qty()
 	
 	def qty_per_cartoon(self):
-		qty_per_cartoon = 0
 		for row in self.order_sheet_ct:
-			total_cartoons = row.total_cartoons
-			quantity = row.quantity
-			qty_per_cartoon = quantity / total_cartoons
-			row.qty_ctn = qty_per_cartoon
+			total_cartoons = row.total_cartoons or 0  # Ensure it's not None
+			quantity = row.quantity or 0  # Ensure it's not None
+
+			if total_cartoons > 0:  # Prevent division by zero
+				row.qty_ctn = quantity / total_cartoons
+			else:
+				row.qty_ctn = 0  # Set to 0 if total_cartoons is invalid
+
 
 	def total(self):
 		quantity = 0
@@ -35,7 +38,8 @@ class OrderSheet(Document):
 	def consumption(self):
 		total_consumption = 0
 		for i in self.order_sheet_ct:
-			total_consumption += i.total_consumption
+			# total_consumption += i.total_consumption
+			total_consumption += i.total_consumption if i.total_consumption else 0
 			if i.consumption and i.quantity:
 				i.total_consumption = i.consumption * i.quantity
 		self.total_consumption = total_consumption

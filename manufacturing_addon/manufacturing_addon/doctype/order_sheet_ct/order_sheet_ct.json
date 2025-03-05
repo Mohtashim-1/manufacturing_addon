@@ -7,10 +7,12 @@
  "engine": "InnoDB",
  "field_order": [
   "design",
+  "gsm",
   "ean",
   "consumption",
   "column_break_gbtz",
   "colour",
+  "so_item",
   "reverse_colour",
   "total_consumption",
   "column_break_ckmo",
@@ -139,12 +141,24 @@
    "fieldname": "total_consumption",
    "fieldtype": "Float",
    "label": "Total Consumption"
+  },
+  {
+   "fieldname": "gsm",
+   "fieldtype": "Link",
+   "label": "GSM",
+   "options": "GSM"
+  },
+  {
+   "fieldname": "so_item",
+   "fieldtype": "Link",
+   "label": "SO Item",
+   "options": "Item"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-13 17:22:12.364520",
+ "modified": "2025-03-05 23:52:43.962853",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet CT",

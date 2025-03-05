@@ -14,13 +14,19 @@ class OrderSheet(Document):
 	
 	def qty_per_cartoon(self):
 		for row in self.order_sheet_ct:
-			total_cartoons = row.total_cartoons or 0  # Ensure it's not None
+			# total_cartoons = row.total_cartoons or 0  
 			quantity = row.quantity or 0  # Ensure it's not None
+			qty_ctn = row.qty_ctn or 0 
 
-			if total_cartoons > 0:  # Prevent division by zero
-				row.qty_ctn = quantity / total_cartoons
+			if qty_ctn > 0:  # Prevent division by zero
+				row.total_cartoons = quantity / qty_ctn  # 230 / 22 = 10 
+				# frappe.msgprint(f"Total Cartoons: {row.total_cartoons}")
+				# frappe.errprint(f"Total Cartoons: {row.total_cartoons}")
 			else:
-				row.qty_ctn = 0  # Set to 0 if total_cartoons is invalid
+				row.total_cartoons = 0  # Set to 0 if total_cartoons is invalid
+			# 	frappe.msgprint('Total Cartoons set to 0')
+
+
 
 
 	def total(self):
@@ -28,9 +34,9 @@ class OrderSheet(Document):
 		total_cartoons = 0
 		total_quantity_per_cartoon = 0
 		for i in self.order_sheet_ct:
-			quantity += i.quantity
-			total_cartoons += i.total_cartoons
-			total_quantity_per_cartoon += i.qty_ctn
+			quantity += i.quantity or 0
+			total_cartoons += i.total_cartoons or 0
+			total_quantity_per_cartoon += i.qty_ctn or 0
 		self.total_quantity = quantity
 		self.total_cartoon = total_cartoons
 		self.total_quantity_per_cartoon = total_quantity_per_cartoon

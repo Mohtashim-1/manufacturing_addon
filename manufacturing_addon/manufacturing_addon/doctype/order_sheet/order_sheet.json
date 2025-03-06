@@ -13,6 +13,7 @@
   "customer",
   "port_of_destination",
   "is_or",
+  "sales_order",
   "order_sheet_ct_section",
   "order_sheet_ct",
   "section_break_tzao",
@@ -155,12 +156,18 @@
    "fieldname": "order_no",
    "fieldtype": "Data",
    "label": "Order No"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-20 16:17:30.736356",
+ "modified": "2025-03-06 10:17:12.706432",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

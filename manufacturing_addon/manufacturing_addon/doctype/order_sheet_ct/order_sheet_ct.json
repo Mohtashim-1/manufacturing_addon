@@ -13,12 +13,14 @@
   "column_break_gbtz",
   "colour",
   "so_item",
+  "combo_item",
   "reverse_colour",
   "total_consumption",
   "column_break_ckmo",
   "stitching_article_no",
   "size",
   "qty_ctn",
+  "product_combo",
   "column_break_wcnu",
   "quantity",
   "total_cartoons"
@@ -91,6 +93,7 @@
   },
   {
    "columns": 1,
+   "default": "1",
    "fieldname": "qty_ctn",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -153,12 +156,24 @@
    "fieldtype": "Link",
    "label": "SO Item",
    "options": "Item"
+  },
+  {
+   "default": "0",
+   "fieldname": "product_combo",
+   "fieldtype": "Check",
+   "label": "Product Combo"
+  },
+  {
+   "fieldname": "combo_item",
+   "fieldtype": "Link",
+   "label": "Combo Item",
+   "options": "Item"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-03-05 23:52:43.962853",
+ "modified": "2025-03-06 11:04:05.357576",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet CT",

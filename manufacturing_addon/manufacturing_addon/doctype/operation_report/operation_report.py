@@ -1,5 +1,6 @@
 import frappe
 from frappe.model.document import Document
+from frappe import _
 
 class OperationReport(Document):
     @frappe.whitelist()
@@ -34,17 +35,54 @@ class OperationReport(Document):
                     self.save()
 
     def validate(self):
+        self.cutting_condition()
+        self.stitching_condition()
         self.total_qty()
         self.total_percentage()
         self.total()
+        # self.cutting_condition()
         # self.calculate_cutting_qty()
         # self.calculate_stitching_qty()
         # self.calculate_packaging_qty()
     
     def before_save(self):
+        # self.cutting_condition()
         self.calculate_cutting_qty()
         self.calculate_stitching_qty()
         self.calculate_packaging_qty()
+
+    def cutting_condition(self):
+
+        if not self.operation_report_ct:
+            frappe.logger().info("No child table records found. Skipping validation.")
+            return
+
+        for i in self.operation_report_ct:
+            frappe.logger().info(f"Row {i.idx}: {i.finished_stitched_qty}, {i.finished_cutting_qty}")
+
+            stitched_qty = i.finished_stitched_qty or 0
+            cutting_qty = i.finished_cutting_qty or 0
+
+            if stitched_qty > cutting_qty:
+                frappe.msgprint(f"⚠️ Excess Qty Error: Finished Stitched Qty ({stitched_qty}) cannot be greater than Finished Cutting Qty ({cutting_qty}) for row {i.idx}.", 
+                            indicator='orange', title="Warning")
+
+    
+    def stitching_condition(self):
+
+        if not self.operation_report_ct:
+            frappe.logger().info("No child table records found. Skipping validation.")
+            return
+
+        for i in self.operation_report_ct:
+            frappe.logger().info(f"Row {i.idx}: {i.finished_stitched_qty}, {i.finished_packaging_qty}")
+
+            stitched_qty = i.finished_stitched_qty or 0
+            packing_qty = i.finished_packaging_qty or 0
+
+            if stitched_qty > packing_qty:
+                frappe.msgprint(f"⚠️ Excess Qty Error: Finished Stitched Qty ({stitched_qty}) cannot be greater than Finished Packing Qty ({packing_qty}) for row {i.idx}.", 
+                            indicator='orange', title="Warning")
 
     def calculate_cutting_qty(self):
         """Calculate and update finished_cutting_qty in the child table based on user-entered cutting1 values."""
@@ -92,7 +130,6 @@ class OperationReport(Document):
             frappe.log_error(frappe.get_traceback(), "Finished Cutting Quantity Calculation Failed")
             frappe.throw(f"Error in calculating finished cutting quantity: {str(e)}")
 
-    import frappe
 
     def calculate_stitching_qty(self):
         """Calculate and update finished_stitching_qty in the child table based on user-entered stitching1 values."""

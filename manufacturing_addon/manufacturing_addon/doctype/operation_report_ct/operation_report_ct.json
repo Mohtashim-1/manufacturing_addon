@@ -7,24 +7,31 @@
  "engine": "InnoDB",
  "field_order": [
   "customer",
-  "design",
+  "so_item",
+  "combo_item",
   "colour",
-  "finished_size",
   "column_break_rthv",
   "article",
   "ean",
-  "qty_ctn",
+  "design",
+  "finished_size",
+  "column_break_gplg",
   "qty",
+  "plan_copy",
+  "qty_ctn",
   "column_break_kihr",
+  "finished_cutting_qty",
+  "finished_stitched_qty",
+  "finished_packaging_qty",
+  "column_break_gxpx",
   "cutting1",
   "stitching1",
-  "ship1",
   "packaging1",
+  "ship1",
   "column_break_mbly",
   "total_copy1",
   "percentage_copy",
-  "ready_cartoons_copy",
-  "plan_copy"
+  "ready_cartoons_copy"
  ],
  "fields": [
   {
@@ -177,12 +184,62 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Plan Qty"
+  },
+  {
+   "fieldname": "so_item",
+   "fieldtype": "Link",
+   "label": "SO Item",
+   "options": "Item"
+  },
+  {
+   "fieldname": "combo_item",
+   "fieldtype": "Link",
+   "label": "Combo Item",
+   "options": "Item"
+  },
+  {
+   "columns": 1,
+   "fieldname": "finished_cutting_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Finished Cutting Qty"
+  },
+  {
+   "columns": 1,
+   "fieldname": "finished_stitched_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Finished Stitched Qty"
+  },
+  {
+   "columns": 1,
+   "fieldname": "finished_packaging_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Finished Packaging Qty"
+  },
+  {
+   "fieldname": "column_break_gxpx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_gplg",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-13 14:56:38.521016",
+ "modified": "2025-03-06 13:16:14.215279",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Operation Report CT",

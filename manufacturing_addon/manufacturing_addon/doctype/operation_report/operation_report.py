@@ -27,79 +27,180 @@ class OperationReport(Document):
                         "qty_ctn": r.get("qty_ctn"),
                         "article": r.get("stitching_article_no"),
                         "ean": r.get("ean"),
-                        "qty": r.get("quantity")
+                        "qty": r.get("quantity"),
+                        "so_item": r.get("so_item"),
+                        "combo_item": r.get("combo_item"),
                     })
                     self.save()
-            # elif doc.is_or == 1:
-            #     # Fetch previous totals from the child table if they exist
-            #     previous_totals = frappe.db.sql("""
-            #         SELECT SUM(cutting1) AS total_cutting,
-            #                SUM(stitching1) AS total_stitching,
-            #                SUM(packaging1) AS total_packaging
-            #         FROM `tabOperation Report CT`
-            #         WHERE parent = %s
-            #     """, (self.name,), as_dict=True)
-
-            #     # Ensure values are not None and default to 0 if None
-            #     previous_cutting = previous_totals[0].get('total_cutting') or 0
-            #     previous_stitching = previous_totals[0].get('total_stitching') or 0
-            #     previous_packaging = previous_totals[0].get('total_packaging') or 0
-
-            #     rec1 = frappe.db.sql("""
-            #         SELECT oprct.customer, 
-            #                oprct.design, 
-            #                oprct.colour, 
-            #                oprct.article, 
-            #                oprct.ean, 
-            #                oprct.qty,
-            #                SUM(oprct.cutting1) AS cutting,
-            #                SUM(oprct.stitching1) AS stitching,
-            #                SUM(oprct.packaging1) AS packaging,
-            #                 oprct.finished_size,
-            #                oprct.qty_ctn
-            #         FROM `tabOperation Report` AS oprr
-            #         LEFT JOIN `tabOperation Report CT` AS oprct ON oprct.parent = oprr.name
-            #         WHERE oprr.order_sheet = %s
-            #         GROUP BY oprct.customer, oprct.design, oprct.colour, oprct.article, oprct.ean, oprct.qty, oprct.qty_ctn, oprct.finished_size
-            #     """, (self.order_sheet,), as_dict=True)
-
-            #     if rec1:
-            #         # Clear any existing data in the child table before appending
-            #         self.set("operation_report_ct", [])
-            #         for r in rec1:
-            #             # Add the previous totals to the new totals, ensuring None values are handled
-            #             total_cutting = (r.get('cutting') or 0) + previous_cutting
-            #             total_stitching = (r.get('stitching') or 0) + previous_stitching
-            #             total_packaging = (r.get('packaging') or 0) + previous_packaging
-
-            #             # Only append data if it's not empty
-            #             if r.get("customer") and r.get("design"):
-            #                 self.append("operation_report_ct", {
-            #                     "customer": r.get("customer"),
-            #                     "design": r.get("design"),
-            #                     "colour": r.get("colour"),
-            #                     "article": r.get("article"),
-            #                     "ean": r.get("ean"),
-            #                     "qty_ctn": r.get("qty_ctn"),
-            #                     "finished_size": r.get("finished_size"),
-            #                     "qty": r.get("qty"),
-            #                     "cutting1": total_cutting,
-            #                     "stitching1": total_stitching,
-            #                     "packaging1": total_packaging
-            #                 })
-            #         self.save()
-
-    
-
-
-
-
 
     def validate(self):
         self.total_qty()
         self.total_percentage()
         self.total()
+        # self.calculate_cutting_qty()
+        # self.calculate_stitching_qty()
+        # self.calculate_packaging_qty()
     
+    def before_save(self):
+        self.calculate_cutting_qty()
+        self.calculate_stitching_qty()
+        self.calculate_packaging_qty()
+
+    def calculate_cutting_qty(self):
+        """Calculate and update finished_cutting_qty in the child table based on user-entered cutting1 values."""
+        try:
+            # Dictionary to store total cutting1 for each (so_item, combo_item) combination
+            cutting_totals = {}
+
+            # Iterate through child table and fetch totals dynamically
+            for row in self.operation_report_ct:
+                if not row.so_item:
+                    continue  # Skip rows without valid so_item
+                
+                # Handle cases where combo_item is blank
+                if row.combo_item:
+                    query = """
+                        SELECT SUM(orct.cutting1) AS total_cutting1
+                        FROM `tabOperation Report CT` AS orct 
+                        LEFT JOIN `tabOperation Report` AS opr 
+                        ON orct.parent = opr.name
+                        WHERE opr.order_sheet = %s AND orct.so_item = %s AND orct.combo_item = %s and opr.docstatus = 1
+                        GROUP BY orct.so_item, orct.combo_item
+                    """
+                    params = (self.order_sheet, row.so_item, row.combo_item)
+                else:
+                    query = """
+                        SELECT SUM(orct.cutting1) AS total_cutting1
+                        FROM `tabOperation Report CT` AS orct 
+                        LEFT JOIN `tabOperation Report` AS opr 
+                        ON orct.parent = opr.name
+                        WHERE opr.order_sheet = %s AND orct.so_item = %s AND (orct.combo_item IS NULL OR orct.combo_item = '') and opr.docstatus = 1
+                        GROUP BY orct.so_item
+                    """
+                    params = (self.order_sheet, row.so_item)
+
+                order_sheets = frappe.db.sql(query, params, as_dict=True)
+
+                # Store the total in the dictionary
+                cutting_totals[(row.so_item, row.combo_item or '')] = order_sheets[0].total_cutting1 if order_sheets else 0
+
+            # Update finished_cutting_qty in child table without modifying cutting1
+            for row in self.operation_report_ct:
+                row.finished_cutting_qty = cutting_totals.get((row.so_item, row.combo_item or ''), 0)
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Finished Cutting Quantity Calculation Failed")
+            frappe.throw(f"Error in calculating finished cutting quantity: {str(e)}")
+
+    import frappe
+
+    def calculate_stitching_qty(self):
+        """Calculate and update finished_stitching_qty in the child table based on user-entered stitching1 values."""
+        try:
+            # Dictionary to store total stitching1 for each (so_item, combo_item) combination
+            stitching_totals = {}
+
+            # Iterate through child table and fetch totals dynamically
+            for row in self.operation_report_ct:
+                if not row.so_item:
+                    continue  # Skip rows without valid so_item
+                
+                # Handle cases where combo_item is blank
+                if row.combo_item:
+                    query = """
+                        SELECT SUM(orct.stitching1) AS total_stitching
+                        FROM `tabOperation Report CT` AS orct 
+                        LEFT JOIN `tabOperation Report` AS opr 
+                        ON orct.parent = opr.name
+                        WHERE opr.order_sheet = %s AND orct.so_item = %s AND orct.combo_item = %s and opr.docstatus = 1
+                        GROUP BY orct.so_item, orct.combo_item
+                    """
+                    params = (self.order_sheet, row.so_item, row.combo_item)
+                else:
+                    query = """
+                        SELECT SUM(orct.stitching1) AS total_stitching
+                        FROM `tabOperation Report CT` AS orct 
+                        LEFT JOIN `tabOperation Report` AS opr 
+                        ON orct.parent = opr.name
+                        WHERE opr.order_sheet = %s AND orct.so_item = %s AND (orct.combo_item IS NULL OR orct.combo_item = '') and opr.docstatus = 1
+                        GROUP BY orct.so_item
+                    """
+                    params = (self.order_sheet, row.so_item)
+
+                order_sheets = frappe.db.sql(query, params, as_dict=True)
+
+                # Store the total in the dictionary
+                stitching_totals[(row.so_item, row.combo_item or '')] = order_sheets[0].total_stitching if order_sheets else 0
+                # frappe.errprint(f"{order_sheets[0].total_stitching}")
+
+            # Update finished_stitching_qty in child table without modifying stitching1
+            for row in self.operation_report_ct:
+                row.finished_stitched_qty = stitching_totals.get((row.so_item, row.combo_item or ''), 0)  # Correct field name
+                # row.db_set("finished_stitching_qty", stitching_totals.get((row.so_item, row.combo_item or ''), 0))
+                # frappe.errprint(f"finished stitching {row.finished_stitching_qty}")
+                # self.save(ignore_permissions=True)
+                # frappe.db.commit()
+
+                # frappe.errprint(f"finished stitching {row.finished_stitching_qty}")
+                
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Finished Stitching Quantity Calculation Failed")  # Fixed error message
+            frappe.throw(f"Error in calculating finished stitching quantity: {str(e)}")
+
+    def calculate_packaging_qty(self):
+        """Calculate and update finished_packaging_qty in the child table based on user-entered packaging1 values."""
+        try:
+            # Dictionary to store total packaging1 for each (so_item, combo_item) combination
+            packaging_totals = {}
+
+            # Iterate through child table and fetch totals dynamically
+            for row in self.operation_report_ct:
+                if not row.so_item:
+                    continue  # Skip rows without valid so_item
+                
+                # Handle cases where combo_item is blank
+                if row.combo_item:
+                    query = """
+                        SELECT SUM(orct.packaging1) AS total_packaging
+                        FROM `tabOperation Report CT` AS orct 
+                        LEFT JOIN `tabOperation Report` AS opr 
+                        ON orct.parent = opr.name
+                        WHERE opr.order_sheet = %s AND orct.so_item = %s AND orct.combo_item = %s  and opr.docstatus = 1
+                        GROUP BY orct.so_item, orct.combo_item
+                    """
+                    params = (self.order_sheet, row.so_item, row.combo_item)
+                else:
+                    query = """
+                        SELECT SUM(orct.packaging1) AS total_packaging
+                        FROM `tabOperation Report CT` AS orct 
+                        LEFT JOIN `tabOperation Report` AS opr 
+                        ON orct.parent = opr.name
+                        WHERE opr.order_sheet = %s AND orct.so_item = %s AND (orct.combo_item IS NULL OR orct.combo_item = '') and opr.docstatus = 1
+                        GROUP BY orct.so_item
+                    """
+                    params = (self.order_sheet, row.so_item)
+
+                order_sheets = frappe.db.sql(query, params, as_dict=True)
+
+                # Store the total in the dictionary
+                packaging_totals[(row.so_item, row.combo_item or '')] = order_sheets[0].total_packaging if order_sheets else 0
+
+            # Update finished_packaging_qty in child table
+            for row in self.operation_report_ct:
+                # row.finished_packaging_qty = packaging_totals.get((row.so_item, row.combo_item or ''), 0)
+                row.db_set("finished_packaging_qty", packaging_totals.get((row.so_item, row.combo_item or ''), 0))
+                # frappe.errprint(f"finished packaging {row.finished_packaging_qty}")
+                # self.save(ignore_permissions=True)
+                # frappe.db.commit()
+
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Finished Packaging Quantity Calculation Failed")
+            frappe.throw(f"Error in calculating finished packaging quantity: {str(e)}")
+
+
+
     def total_qty(self):
         for i in self.operation_report_ct:
             i.total_copy1 = i.packaging1

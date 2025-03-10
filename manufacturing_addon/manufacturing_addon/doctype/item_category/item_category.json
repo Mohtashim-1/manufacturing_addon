@@ -16,9 +16,9 @@
   "micron",
   "gsm",
   "column_break_swuo",
-  "length",
   "width",
   "ply",
+  "length1",
   "column_break_fjec",
   "size",
   "item_quality"
@@ -80,12 +80,6 @@
   },
   {
    "default": "0",
-   "fieldname": "length",
-   "fieldtype": "Check",
-   "label": "Length"
-  },
-  {
-   "default": "0",
    "fieldname": "width",
    "fieldtype": "Check",
    "label": "Width"
@@ -111,11 +105,17 @@
    "fieldname": "item_quality",
    "fieldtype": "Check",
    "label": "Item Quality"
+  },
+  {
+   "default": "0",
+   "fieldname": "length1",
+   "fieldtype": "Check",
+   "label": "Length"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-10 15:01:20.313664",
+ "modified": "2025-03-10 15:31:12.698257",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Item Category",

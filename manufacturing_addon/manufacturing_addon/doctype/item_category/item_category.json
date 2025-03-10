@@ -8,7 +8,20 @@
  "field_order": [
   "name1",
   "section_break_xmxo",
-  "dimension"
+  "fabric_treatment",
+  "article",
+  "finished_item",
+  "column_break_rxbe",
+  "design",
+  "micron",
+  "gsm",
+  "column_break_swuo",
+  "length",
+  "width",
+  "ply",
+  "column_break_fjec",
+  "size",
+  "item_quality"
  ],
  "fields": [
   {
@@ -23,14 +36,86 @@
   },
   {
    "default": "0",
-   "fieldname": "dimension",
+   "fieldname": "fabric_treatment",
    "fieldtype": "Check",
-   "label": "Dimension"
+   "label": "Fabric Treatment"
+  },
+  {
+   "default": "0",
+   "fieldname": "article",
+   "fieldtype": "Check",
+   "label": "Article"
+  },
+  {
+   "default": "0",
+   "fieldname": "finished_item",
+   "fieldtype": "Check",
+   "label": "Finished Item"
+  },
+  {
+   "fieldname": "column_break_rxbe",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "design",
+   "fieldtype": "Check",
+   "label": "Design"
+  },
+  {
+   "default": "0",
+   "fieldname": "micron",
+   "fieldtype": "Check",
+   "label": "Micron"
+  },
+  {
+   "default": "0",
+   "fieldname": "gsm",
+   "fieldtype": "Check",
+   "label": "GSM"
+  },
+  {
+   "fieldname": "column_break_swuo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "length",
+   "fieldtype": "Check",
+   "label": "Length"
+  },
+  {
+   "default": "0",
+   "fieldname": "width",
+   "fieldtype": "Check",
+   "label": "Width"
+  },
+  {
+   "default": "0",
+   "fieldname": "ply",
+   "fieldtype": "Check",
+   "label": "Ply"
+  },
+  {
+   "fieldname": "column_break_fjec",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "size",
+   "fieldtype": "Check",
+   "label": "Size"
+  },
+  {
+   "default": "0",
+   "fieldname": "item_quality",
+   "fieldtype": "Check",
+   "label": "Item Quality"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-10 14:11:28.582943",
+ "modified": "2025-03-10 15:01:20.313664",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Item Category",

@@ -6,7 +6,9 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "name1"
+  "name1",
+  "section_break_xmxo",
+  "dimension"
  ],
  "fields": [
   {
@@ -14,11 +16,21 @@
    "fieldtype": "Data",
    "label": "Name",
    "unique": 1
+  },
+  {
+   "fieldname": "section_break_xmxo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "dimension",
+   "fieldtype": "Check",
+   "label": "Dimension"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-09 22:26:42.214707",
+ "modified": "2025-03-10 14:11:28.582943",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Item Category",

@@ -11,9 +11,9 @@ frappe.ui.form.on('Item', {
                 },
                 callback: function(r) {
                     if (r.message && r.message.fabric_treatment) {
-                        frm.set_df_property('custom_fabric_treatment', 'hidden', 0); // Show field
+                        frm.set_df_property('custom_printdyed_', 'hidden', 0); // Show field
                     } else {
-                        frm.set_df_property('custom_fabric_treatment', 'hidden', 1); // Hide field
+                        frm.set_df_property('custom_printdyed_', 'hidden', 1); // Hide field
                     }
                 }
             });
@@ -32,6 +32,25 @@ frappe.ui.form.on('Item', {
                         frm.set_df_property('custom_article', 'hidden', 0); // Show field
                     } else {
                         frm.set_df_property('custom_article', 'hidden', 1); // Hide field
+                    }
+                }
+            });
+        }
+        // item quality
+        
+        if (frm.doc.custom_item_category) {
+            frappe.call({
+                method: 'frappe.client.get_value',
+                args: {
+                    doctype: 'Item Category',
+                    filters: { name: frm.doc.custom_item_category },
+                    fieldname: 'item_quality'
+                },
+                callback: function(r) {
+                    if (r.message && r.message.item_quality) {
+                        frm.set_df_property('custom_item_quantity', 'hidden', 0); // Show field
+                    } else {
+                        frm.set_df_property('custom_item_quantity', 'hidden', 1); // Hide field
                     }
                 }
             });

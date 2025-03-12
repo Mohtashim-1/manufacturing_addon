@@ -1,30 +1,4 @@
-frappe.ui.form.on("Item", {
-    refresh: function(frm) {
-        if (frm.doc.custom_item_category) {
-            frappe.call({
-                method: "frappe.client.get",
-                args: {
-                    doctype: "Item Category",
-                    name: frm.doc.custom_item_category
-                },
-                callback: function(response) {
-                    let category = response.message;
-                    if (category && category.custom_item_parameter && category.custom_item_parameter.length > 0) {
-                        frm.clear_table("custom_item_parameter");
-                        category.custom_item_parameter.forEach(param => {
-                            let row = frm.add_child("custom_item_parameter");
-                            row.parameter = param.parameter;
-                            row.value = param.value;
-                        });
-                        frm.refresh_field("custom_item_parameter");
-                    } else {
-                        frappe.msgprint(__("No parameters found in the selected Item Category."));
-                    }
-                }
-            });
-        }
-    }
-});
+
 
 frappe.ui.form.on('Item', {
     refresh: function(frm) {

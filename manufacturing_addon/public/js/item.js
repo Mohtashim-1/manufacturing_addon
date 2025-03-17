@@ -1,5 +1,4 @@
 
-
 frappe.ui.form.on('Item', {
     refresh: function(frm) {
         // fabric treatment

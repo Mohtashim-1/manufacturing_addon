@@ -80,9 +80,13 @@ class OperationReport(Document):
             stitched_qty = i.finished_stitched_qty or 0
             packing_qty = i.finished_packaging_qty or 0
 
-            if stitched_qty > packing_qty:
-                frappe.msgprint(f"⚠️ Excess Qty Error: Finished Stitched Qty ({stitched_qty}) cannot be greater than Finished Packing Qty ({packing_qty}) for row {i.idx}.", 
-                            indicator='orange', title="Warning")
+            if packing_qty >  stitched_qty  :
+                frappe.msgprint(f"❌ Excess Qty Error: Finished Packing Qty ({packing_qty}) cannot be greater than Finished Stitched Qty ({stitched_qty}) for row {i.idx}.",
+                            title="Validation Error")
+
+                # if packing_qty > stitched_qty :
+                #     frappe.msgprint(f"⚠️ Excess Qty Error: Finished Stitched Qty ({stitched_qty}) cannot be greater than Finished Packing Qty ({packing_qty}) for row {i.idx}.", 
+                #                 indicator='orange', title="Warning")
 
     def calculate_cutting_qty(self):
         """Calculate and update finished_cutting_qty in the child table based on user-entered cutting1 values."""

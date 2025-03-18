@@ -1,5 +1,5 @@
-import frappe  
 
+import frappe
 @frappe.whitelist() 
 def create_order_sheet(sales_order): 
     """Creates an Order Sheet for a given Sales Order and adds items to child table""" 

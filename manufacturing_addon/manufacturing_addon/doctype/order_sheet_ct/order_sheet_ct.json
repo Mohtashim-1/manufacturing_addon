@@ -35,7 +35,8 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Design",
-   "options": "Stitching Design"
+   "options": "Stitching Design",
+   "width": "1"
   },
   {
    "columns": 1,
@@ -46,18 +47,16 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Colour",
-   "options": "Stitching Colour"
+   "options": "Stitching Colour",
+   "width": "1"
   },
   {
    "columns": 1,
    "fieldname": "reverse_colour",
    "fieldtype": "Link",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "Reverse Colour",
-   "options": "Stitching Colour"
+   "options": "Stitching Colour",
+   "width": "1"
   },
   {
    "columns": 1,
@@ -68,18 +67,15 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Size",
-   "options": "Stitching Size"
+   "options": "Stitching Size",
+   "width": "1"
   },
   {
-   "columns": 1,
    "fieldname": "ean",
    "fieldtype": "Link",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "EAN",
-   "options": "Ean Code"
+   "options": "Ean Code",
+   "width": "0"
   },
   {
    "columns": 1,
@@ -89,7 +85,8 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Quantity"
+   "label": "Quantity",
+   "width": "1"
   },
   {
    "columns": 1,
@@ -100,7 +97,8 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Qty/ Ctn"
+   "label": "Qty/ Ctn",
+   "width": "1"
   },
   {
    "columns": 1,
@@ -110,7 +108,8 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total Cartoons"
+   "label": "Total Cartoons",
+   "width": "1"
   },
   {
    "fieldname": "column_break_gbtz",
@@ -125,13 +124,14 @@
    "fieldtype": "Column Break"
   },
   {
+   "columns": 1,
    "fieldname": "stitching_article_no",
    "fieldtype": "Link",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Stitching Article No",
+   "label": "Article",
    "options": "Stitching Article No"
   },
   {
@@ -146,14 +146,24 @@
    "label": "Total Consumption"
   },
   {
+   "columns": 1,
    "fieldname": "gsm",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "GSM",
-   "options": "GSM"
+   "options": "GSM",
+   "width": "1"
   },
   {
+   "columns": 1,
    "fieldname": "so_item",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "SO Item",
    "options": "Item"
   },
@@ -164,16 +174,22 @@
    "label": "Product Combo"
   },
   {
+   "columns": 1,
    "fieldname": "combo_item",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Combo Item",
-   "options": "Item"
+   "options": "Item",
+   "width": "1"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-03-06 11:04:05.357576",
+ "modified": "2025-03-18 13:32:38.843204",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet CT",

@@ -125,11 +125,11 @@ doctype_js = {
 # Document Events
 # ---------------
 # Hook on document methods and events
-doc_events = {
-	"Item": {
-		"validate": "manufacturing_addon.api.add_parameter",
-	}
-}
+# doc_events = {
+# 	"Item": {
+# 		"validate": "manufacturing_addon.api.add_parameter",
+# 	}
+# }
 
 # doc_events = {
 # 	"*": {

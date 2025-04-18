@@ -70,8 +70,8 @@ def add_parameter(doc, method):
                 row.parameter = param.parameter
 
                 # Check if 'value' exists before assigning
-                if hasattr(param, "value"):  
-                    row.value = param.value
+                # if hasattr(param, "value"):  
+                #     row.value = param.value
 
             # frappe.msgprint(("Custom Item Parameters updated from Item Category."))
         else:

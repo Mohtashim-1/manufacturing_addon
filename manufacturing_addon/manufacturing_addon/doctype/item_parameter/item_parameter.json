@@ -22,11 +22,12 @@
   },
   {
    "fieldname": "value",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Value"
+   "label": "Value",
+   "options": "Item Parameters"
   },
   {
    "fieldname": "column_break_hrox",
@@ -36,7 +37,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-03-12 16:44:12.060906",
+ "modified": "2025-04-19 01:53:45.538557",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Item Parameter",

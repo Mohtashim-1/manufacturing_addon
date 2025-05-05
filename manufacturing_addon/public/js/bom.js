@@ -28,3 +28,34 @@ function set_item_query(frm) {
         };
     });
 }
+
+
+//  filter added for raw material 
+
+frappe.ui.form.on('BOM', {
+    onload(frm) {
+        set_item_filter(frm);
+    },
+    refresh(frm) {
+        set_item_filter(frm);
+    },
+    custom_customer(frm) {
+        set_item_filter(frm);
+    }
+});
+
+function set_item_filter(frm) {
+    frm.fields_dict["items"].grid.get_field("item_code").get_query = function(doc, cdt, cdn) {
+        if (!frm.doc.custom_customer) {
+            frappe.msgprint("Please select a customer first.");
+            return {};
+        }
+
+        return {
+            query: "manufacturing_addon.api.filter_items_by_customer",
+            filters: {
+                custom_customer: frm.doc.custom_customer
+            }
+        };
+    };
+}

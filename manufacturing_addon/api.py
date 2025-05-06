@@ -1,6 +1,7 @@
 
 import frappe
 from frappe import _
+import json
 
 
 
@@ -89,3 +90,60 @@ def filter_items_by_customer(doctype, txt, searchfield, start, page_len, filters
         "offset": start,
         "customer": customer
     })
+
+
+@frappe.whitelist()
+def filter_items_by_party_rules(doctype, txt, searchfield, start, page_len, filters):
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+
+    customer = filters.get("custom_customer")
+    if not customer:
+        return []
+
+    item_groups = frappe.db.sql("""
+        SELECT DISTINCT based_on_value
+        FROM `tabParty Specific Item`
+        WHERE party_type = 'Customer'
+          AND restrict_based_on = 'Item Group'
+          AND party = %s
+    """, (customer,), as_list=1)
+
+    if not item_groups:
+        return []
+
+    item_group_list = [row[0] for row in item_groups]
+
+    # ✅ Convert start and page_len to integers
+    start = int(start)
+    page_len = int(page_len)
+
+    return frappe.db.sql("""
+        SELECT i.name, i.item_name
+        FROM `tabItem` i
+        WHERE i.item_group IN %(item_groups)s
+          AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
+        LIMIT %(page_len)s OFFSET %(start)s
+    """, {
+        "item_groups": tuple(item_group_list),
+        "txt": f"%{txt}%",
+        "start": start,
+        "page_len": page_len
+    })
+
+
+@frappe.whitelist()
+def get_party_specific_item_group(customer):
+    if not customer:
+        return None
+
+    result = frappe.db.get_value(
+        "Party Specific Item",
+        {
+            "party": customer,
+            "restrict_based_on": "Item Group"
+        },
+        "based_on_value"
+    )
+
+    return result

@@ -3,8 +3,6 @@ import frappe
 from frappe import _
 import json
 
-
-
 @frappe.whitelist() 
 def create_order_sheet(sales_order): 
     """Creates an Order Sheet for a given Sales Order and adds items to child table""" 
@@ -65,7 +63,6 @@ def add_parameter(doc, method):
 
 
 #  item query 
-
 
 
 @frappe.whitelist()

@@ -129,6 +129,9 @@ doctype_js = {
 doc_events = {
 	"Item": {
 		"validate": "manufacturing_addon.api.add_parameter",
+	},
+    "Sales Order": {
+		"validate": "manufacturing_addon.api.validate_sales_order",
 	}
 }
 

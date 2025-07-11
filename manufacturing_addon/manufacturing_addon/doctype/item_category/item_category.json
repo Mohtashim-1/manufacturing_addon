@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "name1",
+  "exempt_from_over_delivery",
   "section_break_xmxo",
   "fabric_treatment",
   "article",
@@ -111,12 +112,19 @@
    "fieldname": "length1",
    "fieldtype": "Check",
    "label": "Length"
+  },
+  {
+   "default": "0",
+   "fieldname": "exempt_from_over_delivery",
+   "fieldtype": "Check",
+   "label": "Exempt from Over Delivery"
   }
  ],
+ "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-10 15:31:12.698257",
- "modified_by": "Administrator",
+ "modified": "2025-05-30 22:49:22.759945",
+ "modified_by": "shoaibmohtashim973@gmail.com",
  "module": "Manufacturing Addon",
  "name": "Item Category",
  "naming_rule": "By fieldname",
@@ -136,6 +144,7 @@
   }
  ],
  "quick_entry": 1,
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

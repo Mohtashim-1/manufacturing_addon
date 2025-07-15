@@ -12,7 +12,7 @@
   "column_break_sawk",
   "uom",
   "column_break_epwm",
-  "un_freeze"
+  "freeze"
  ],
  "fields": [
   {
@@ -57,20 +57,20 @@
   },
   {
    "default": "1",
-   "fieldname": "un_freeze",
+   "fieldname": "freeze",
    "fieldtype": "Check",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Un Freeze"
+   "label": "Freeze"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-07-10 18:18:04.003331",
+ "modified": "2025-07-11 18:11:15.096373",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Raw Material Template Table",

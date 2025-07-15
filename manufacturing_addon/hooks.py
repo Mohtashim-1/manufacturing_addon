@@ -134,7 +134,9 @@ doc_events = {
 		"validate": "manufacturing_addon.api.validate_sales_order",
 	},
     "BOM": {
-        "validate": "manufacturing_addon.manufacturing_addon.doctype.bom.bom.duplicate_item",
+        "validate": ["manufacturing_addon.manufacturing_addon.doctype.bom.bom.duplicate_item", 
+                    # "manufacturing_addon.manufacturing_addon.doctype.bom.bom.get_bom_items_from_bom_template"
+                    ],
     }
 }
 

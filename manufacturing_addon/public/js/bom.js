@@ -78,3 +78,68 @@ function set_item_filter(frm) {
         };
     };
 }
+
+
+frappe.ui.form.on('BOM', {
+    custom_get_items: function(frm) {
+        if (!frm.doc.custom_bom_template) {
+            frappe.msgprint("Please select a BOM Template first.");
+            return;
+        }
+        // If the BOM is new (unsaved), save it first
+        if (frm.is_new()) {
+            frm.save().then(() => {
+                fetch_items_from_template(frm);
+            });
+        } else {
+            fetch_items_from_template(frm);
+        }
+    }
+});
+
+function fetch_items_from_template(frm) {
+    frappe.call({
+        method: "manufacturing_addon.manufacturing_addon.doctype.bom.bom.get_bom_items_from_template_api",
+        args: {
+            bom_name: frm.doc.name
+        },
+        callback: function(r) {
+            if (!r.exc) {
+                frappe.msgprint(__("Items fetched from BOM Template"));
+                frm.reload_doc(); // reload to reflect new items
+            }
+        }
+    });
+}
+
+// BOM Item form events
+frappe.ui.form.on("BOM Item", {
+    refresh: function(frm) {
+        // Make fields readonly if item is frozen from template
+        if (frm.doc.custom_frozen_from_template) {
+            frm.set_read_only(['item_code', 'qty', 'uom', 'rate', 'description', 'source_warehouse']);
+        }
+    },
+    
+    custom_frozen_from_template: function(frm) {
+        // Update readonly status when freeze field changes
+        if (frm.doc.custom_frozen_from_template) {
+            frm.set_read_only(['item_code', 'qty', 'uom', 'rate', 'description', 'source_warehouse']);
+        } else {
+            frm.set_read_only(['item_code', 'qty', 'uom', 'rate', 'description', 'source_warehouse'], false);
+        }
+    }
+});
+
+
+
+
+frappe.ui.form.on('BOM', {
+    refresh: function (frm) {
+        // Check if the user is an Administrator or has the System Manager role
+        // if (frappe.user.has_role('System Manager') || frappe.user.name === 'Administrator') {
+        if (frm.doc.custom_bom_template) {
+            frm.set_df_property('items', 'cannot_add_rows', 1);
+        } 
+    }
+});

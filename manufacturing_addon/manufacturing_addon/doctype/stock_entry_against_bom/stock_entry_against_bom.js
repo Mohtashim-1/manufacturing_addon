@@ -3,7 +3,7 @@
 
 frappe.ui.form.on('Stock Entry Against BOM', {
     refresh: function(frm) {
-        frm.add_custom_button(__('Get Item (Custom)'), function() {
+        frm.add_custom_button(__('Get Item'), function() {
             frm.trigger('get_item');
         });
     },

@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-07-18 18:20:28.581036",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sales_order",
+  "section_break_fdsg",
+  "source_warehouse",
+  "column_break_bpzw",
+  "target_warehouse",
+  "section_break_rjst",
+  "stock_entry_item_table",
+  "section_break_cfds",
+  "stock_entry_required_item_table",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "section_break_rjst",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "stock_entry_item_table",
+   "fieldtype": "Table",
+   "label": "Stock Entry Item Table",
+   "options": "Stock Entry Item Table"
+  },
+  {
+   "fieldname": "section_break_cfds",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "stock_entry_required_item_table",
+   "fieldtype": "Table",
+   "label": "Stock Entry Required Item Table",
+   "options": "Stock Entry Required Item Table"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Stock Entry Against BOM",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_fdsg",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "column_break_bpzw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Warehouse",
+   "options": "Warehouse"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-07-19 03:29:57.774408",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Stock Entry Against BOM",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -6,6 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "sales_order",
+  "column_break_hrwm",
+  "stock_entry_type",
   "section_break_fdsg",
   "source_warehouse",
   "column_break_bpzw",
@@ -72,13 +74,23 @@
    "fieldtype": "Link",
    "label": "Target Warehouse",
    "options": "Warehouse"
+  },
+  {
+   "fieldname": "stock_entry_type",
+   "fieldtype": "Select",
+   "label": "Stock Entry Type",
+   "options": "Material Transfer for Manufacture\nManufacture"
+  },
+  {
+   "fieldname": "column_break_hrwm",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-19 03:29:57.774408",
+ "modified": "2025-07-19 04:05:57.075675",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stock Entry Against BOM",

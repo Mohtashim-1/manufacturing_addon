@@ -11,7 +11,7 @@ class StockEntryAgainstBOM(Document):
 		for row in self.stock_entry_item_table:
 			if row.bom and row.qty:
 				stock_entry = frappe.new_doc("Stock Entry")
-				stock_entry.stock_entry_type = "Material Transfer for Manufacture"
+				stock_entry.stock_entry_type = self.stock_entry_type
 				stock_entry.from_bom = 1
 				stock_entry.use_multi_level_bom = 1
 				stock_entry.fg_completed_qty = row.qty
@@ -24,18 +24,34 @@ class StockEntryAgainstBOM(Document):
 				if hasattr(self, 'target_warehouse') and self.target_warehouse:
 					stock_entry.to_warehouse = self.target_warehouse
 
-				# Add finished item as an item row
-				stock_entry.append("items", {
-					"item_code": row.item,
-					"qty": row.qty,
-					"t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
-					"s_warehouse": self.source_warehouse if hasattr(self, "source_warehouse") and self.source_warehouse else None,
-				})
-
-				# Save the Stock Entry first
+				# Handle different Stock Entry types
+				if self.stock_entry_type == "Material Transfer for Manufacture":
+					# For Material Transfer, add finished item as target
+					stock_entry.append("items", {
+						"item_code": row.item,
+						"qty": row.qty,
+						"t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
+					})
+				elif self.stock_entry_type == "Manufacture":
+					# For Manufacture, add finished item as target (no source warehouse)
+					stock_entry.append("items", {
+						"item_code": row.item,
+						"qty": row.qty,
+						"t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
+					})
+				else:
+					# For other types, add with both source and target
+					stock_entry.append("items", {
+						"item_code": row.item,
+						"qty": row.qty,
+						"t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
+						"s_warehouse": self.source_warehouse if hasattr(self, "source_warehouse") and self.source_warehouse else None,
+					})
+				
+				# Save the Stock Entry
 				stock_entry.save(ignore_permissions=True)
 				
-				# Trigger the built-in "Get Items" functionality to fetch raw materials from BOM
+				# Trigger the get_items button to fetch raw materials from BOM
 				stock_entry.get_items()
 				
 				# Save again with the raw materials

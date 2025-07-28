@@ -5,6 +5,10 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "posting_date",
+  "column_break_jveh",
+  "posting_time",
+  "section_break_uzvu",
   "sales_order",
   "column_break_hrwm",
   "stock_entry_type",
@@ -14,8 +18,10 @@
   "target_warehouse",
   "section_break_rjst",
   "stock_entry_item_table",
+  "total_quantity",
   "section_break_cfds",
   "stock_entry_required_item_table",
+  "total_qty",
   "amended_from"
  ],
  "fields": [
@@ -84,13 +90,44 @@
   {
    "fieldname": "column_break_hrwm",
    "fieldtype": "Column Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Posting Date"
+  },
+  {
+   "fieldname": "column_break_jveh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Now",
+   "fieldname": "posting_time",
+   "fieldtype": "Time",
+   "label": "Posting Time"
+  },
+  {
+   "fieldname": "section_break_uzvu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_quantity",
+   "fieldtype": "Float",
+   "label": "Total Quantity",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Total Quantity"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-19 04:05:57.075675",
+ "modified": "2025-07-28 17:14:11.036140",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stock Entry Against BOM",

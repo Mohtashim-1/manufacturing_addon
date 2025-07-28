@@ -6,62 +6,84 @@ from frappe.model.document import Document
 
 
 class StockEntryAgainstBOM(Document):
-	def on_submit(self):
-		# Create Stock Entry for each finished item using BOM
-		for row in self.stock_entry_item_table:
-			if row.bom and row.qty:
-				stock_entry = frappe.new_doc("Stock Entry")
-				stock_entry.stock_entry_type = self.stock_entry_type
-				stock_entry.from_bom = 1
-				stock_entry.use_multi_level_bom = 1
-				stock_entry.fg_completed_qty = row.qty
-				stock_entry.bom_no = row.bom
-				stock_entry.custom_cost_center = f"{self.sales_order} - SAH"
-				
-				# Set source and target warehouses from the document
-				if hasattr(self, 'source_warehouse') and self.source_warehouse:
-					stock_entry.from_warehouse = self.source_warehouse
-				if hasattr(self, 'target_warehouse') and self.target_warehouse:
-					stock_entry.to_warehouse = self.target_warehouse
+    def validate(self):
+        self.calculate_total_qty()
+        self.calculate_total_qty_raw_materials()
 
-				# Handle different Stock Entry types
-				if self.stock_entry_type == "Material Transfer for Manufacture":
-					# For Material Transfer, add finished item as target
-					stock_entry.append("items", {
-						"item_code": row.item,
-						"qty": row.qty,
-						"t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
-					})
-				elif self.stock_entry_type == "Manufacture":
-					# For Manufacture, add finished item as target (no source warehouse)
-					stock_entry.append("items", {
-						"item_code": row.item,
-						"qty": row.qty,
-						"t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
-					})
-				else:
-					# For other types, add with both source and target
-					stock_entry.append("items", {
-						"item_code": row.item,
-						"qty": row.qty,
-						"t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
-						"s_warehouse": self.source_warehouse if hasattr(self, "source_warehouse") and self.source_warehouse else None,
-					})
-				
-				# Save the Stock Entry
-				stock_entry.save(ignore_permissions=True)
-				
-				# Trigger the get_items button to fetch raw materials from BOM
-				stock_entry.get_items()
-				
-				# Save again with the raw materials
-				stock_entry.save(ignore_permissions=True)
-				# stock_entry.submit()
-				
-				frappe.msgprint(f"Stock Entry created for {row.item} (Qty: {row.qty}): {stock_entry.name}")
-		
-		if not self.stock_entry_item_table:
-			frappe.throw("No items found in Stock Entry Item Table")
+    def calculate_total_qty(self):
+        total_qty = 0
+        for row in self.stock_entry_item_table:
+            total_qty += row.qty
+        self.total_quantity = total_qty
+
+    def calculate_total_qty_raw_materials(self):
+        total_qty_raw_materials = 0
+        for row in self.stock_entry_required_item_table:
+            total_qty_raw_materials += row.qty
+        self.total_qty = total_qty_raw_materials
+
+
+    def on_submit(self):
+        # Create Stock Entry for each finished item using BOM
+        for row in self.stock_entry_item_table:
+            if row.bom and row.qty:
+                stock_entry = frappe.new_doc("Stock Entry")
+                stock_entry.stock_entry_type = self.stock_entry_type
+                stock_entry.posting_date = self.posting_date
+                stock_entry.posting_time = self.posting_time
+                stock_entry.from_bom = 1
+                # stock_entry.use_multi_level_bom = 1
+                stock_entry.fg_completed_qty = row.qty
+                stock_entry.bom_no = row.bom
+                stock_entry.custom_cost_center = f"{self.sales_order} - SAH"
+                
+                # Set source and target warehouses from the document
+                if hasattr(self, 'source_warehouse') and self.source_warehouse:
+                    stock_entry.from_warehouse = self.source_warehouse
+                if hasattr(self, 'target_warehouse') and self.target_warehouse:
+                    stock_entry.to_warehouse = self.target_warehouse
+
+                # Handle different Stock Entry types
+                if self.stock_entry_type == "Material Transfer for Manufacture":
+                    # For Material Transfer, add finished item as target
+                    stock_entry.append("items", {
+                        "item_code": row.item,
+                        "qty": row.qty,
+                        "t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
+                    })
+                elif self.stock_entry_type == "Manufacture":
+                    # For Manufacture, add finished item as target (no source warehouse)
+                    stock_entry.append("items", {
+                        "item_code": row.item,
+                        "qty": row.qty,
+                        "t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
+                    })
+                else:
+                    # For other types, add with both source and target
+                    stock_entry.append("items", {
+                        "item_code": row.item,
+                        "qty": row.qty,
+                        "t_warehouse": self.target_warehouse if hasattr(self, "target_warehouse") and self.target_warehouse else None,
+                        "s_warehouse": self.source_warehouse if hasattr(self, "source_warehouse") and self.source_warehouse else None,
+                    })
+                
+                # Save the Stock Entry
+                stock_entry.save(ignore_permissions=True)
+                
+                # Trigger the get_items button to fetch raw materials from BOM
+                stock_entry.get_items()
+                
+                # The expense_account will be automatically set by the hook in stock_addon
+                # based on the Stock Entry Type's custom_account field
+                
+                # Save again with the raw materials
+                stock_entry.save(ignore_permissions=True)
+                # stock_entry.submit()
+                
+                frappe.msgprint(f"Stock Entry created for {row.item} (Qty: {row.qty}): {stock_entry.name}")
+        
+        if not self.stock_entry_item_table:
+            frappe.throw("No items found in Stock Entry Item Table")
 
 
 @frappe.whitelist()
@@ -145,3 +167,13 @@ def recalculate_raw_materials(items):
     }
     frappe.logger().debug(f"recalculate_raw_materials returning: {result}")
     return result
+
+
+@frappe.whitelist()
+def get_default_expense_account(stock_entry_type):
+    """Get expense account from Stock Entry Type's custom_account field"""
+    expense_account = None
+    if stock_entry_type:
+        doc = frappe.get_doc("Stock Entry Type", stock_entry_type)
+        expense_account = doc.custom_account
+    return {"expense_account": expense_account}

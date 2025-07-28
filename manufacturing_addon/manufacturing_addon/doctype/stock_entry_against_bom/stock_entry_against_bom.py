@@ -30,7 +30,7 @@ class StockEntryAgainstBOM(Document):
                 stock_entry = frappe.new_doc("Stock Entry")
                 stock_entry.stock_entry_type = self.stock_entry_type
                 stock_entry.from_bom = 1
-                # stock_entry.use_multi_level_bom = 1
+                stock_entry.use_multi_level_bom = 0
                 stock_entry.fg_completed_qty = row.qty
                 stock_entry.bom_no = row.bom
                 stock_entry.custom_cost_center = f"{self.sales_order} - SAH"

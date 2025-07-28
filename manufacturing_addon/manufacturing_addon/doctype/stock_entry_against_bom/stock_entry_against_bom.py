@@ -29,8 +29,6 @@ class StockEntryAgainstBOM(Document):
             if row.bom and row.qty:
                 stock_entry = frappe.new_doc("Stock Entry")
                 stock_entry.stock_entry_type = self.stock_entry_type
-                stock_entry.posting_date = self.posting_date
-                stock_entry.posting_time = self.posting_time
                 stock_entry.from_bom = 1
                 # stock_entry.use_multi_level_bom = 1
                 stock_entry.fg_completed_qty = row.qty
@@ -73,11 +71,48 @@ class StockEntryAgainstBOM(Document):
                 # Trigger the get_items button to fetch raw materials from BOM
                 stock_entry.get_items()
                 
+                # Debug prints to track posting date and time
+                print("=== DEBUG POSTING DATE/TIME ===")
+                print(f"Parent document posting_date: {self.posting_date}")
+                print(f"Parent document posting_time: {self.posting_time}")
+                print(f"Stock Entry posting_date before setting: {stock_entry.posting_date}")
+                print(f"Stock Entry posting_time before setting: {stock_entry.posting_time}")
+                
+                # Set posting date and time AFTER get_items() to ensure they are not overridden
+                stock_entry.posting_date = self.posting_date
+                stock_entry.posting_time = self.posting_time
+                
+                print(f"Stock Entry posting_date after setting: {stock_entry.posting_date}")
+                print(f"Stock Entry posting_time after setting: {stock_entry.posting_time}")
+                print("=== END DEBUG ===")
+                
                 # The expense_account will be automatically set by the hook in stock_addon
                 # based on the Stock Entry Type's custom_account field
                 
                 # Save again with the raw materials
                 stock_entry.save(ignore_permissions=True)
+                
+                # Debug prints after save
+                print("=== DEBUG AFTER SAVE ===")
+                print(f"Stock Entry posting_date after save: {stock_entry.posting_date}")
+                print(f"Stock Entry posting_time after save: {stock_entry.posting_time}")
+                print(f"Stock Entry name: {stock_entry.name}")
+                print("=== END DEBUG AFTER SAVE ===")
+                
+                # Use database update to directly set posting date and time
+                frappe.db.set_value("Stock Entry", stock_entry.name, "posting_date", self.posting_date)
+                frappe.db.set_value("Stock Entry", stock_entry.name, "posting_time", self.posting_time)
+                
+                # Reload the document to get updated values
+                stock_entry.reload()
+                
+                # Debug prints after database update
+                print("=== DEBUG AFTER DB UPDATE ===")
+                print(f"Stock Entry posting_date after db update: {stock_entry.posting_date}")
+                print(f"Stock Entry posting_time after db update: {stock_entry.posting_time}")
+                print(f"Stock Entry name: {stock_entry.name}")
+                print("=== END DEBUG AFTER DB UPDATE ===")
+                
                 # stock_entry.submit()
                 
                 frappe.msgprint(f"Stock Entry created for {row.item} (Qty: {row.qty}): {stock_entry.name}")

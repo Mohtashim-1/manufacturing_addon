@@ -1,10 +1,26 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:TF-{MM}-{YY}-{###}",
  "creation": "2025-07-28 19:08:44.773364",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "posting_date",
+  "column_break_ljln",
+  "posting_time",
+  "column_break_eyvk",
+  "sales_order",
+  "section_break_zazj",
+  "transfer_form_item",
+  "section_break_wxjz",
+  "total_items",
+  "column_break_dkjn",
+  "total_quantity",
+  "reference_section",
+  "reference",
+  "column_break_guab",
+  "document",
   "section_break_tpm6",
   "amended_from"
  ],
@@ -22,16 +38,90 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Posting Date"
+  },
+  {
+   "fieldname": "column_break_ljln",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "posting_time",
+   "fieldtype": "Time",
+   "label": "Posting Time"
+  },
+  {
+   "fieldname": "column_break_eyvk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "section_break_zazj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "transfer_form_item",
+   "fieldtype": "Table",
+   "label": "Transfer Form Item",
+   "options": "Transfer Form Item"
+  },
+  {
+   "fieldname": "section_break_wxjz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_items",
+   "fieldtype": "Float",
+   "label": "Total Items"
+  },
+  {
+   "fieldname": "column_break_dkjn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_quantity",
+   "fieldtype": "Float",
+   "label": "Total Quantity"
+  },
+  {
+   "fieldname": "reference_section",
+   "fieldtype": "Section Break",
+   "label": "Reference"
+  },
+  {
+   "fieldname": "reference",
+   "fieldtype": "Link",
+   "label": "Reference",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "document",
+   "fieldtype": "Dynamic Link",
+   "label": "Document",
+   "options": "reference"
+  },
+  {
+   "fieldname": "column_break_guab",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-28 19:08:44.773364",
+ "modified": "2025-07-29 00:37:46.796379",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Transfer Form",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -51,5 +141,6 @@
  "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

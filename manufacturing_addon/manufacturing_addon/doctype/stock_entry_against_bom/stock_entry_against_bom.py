@@ -119,6 +119,47 @@ class StockEntryAgainstBOM(Document):
         
         if not self.stock_entry_item_table:
             frappe.throw("No items found in Stock Entry Item Table")
+        
+        # Create Transfer Form after all Stock Entries are created
+        self.create_transfer_form()
+
+    def create_transfer_form(self):
+        """Create Transfer Form document with items from stock_entry_required_item_table"""
+        try:
+            # Create new Transfer Form document
+            transfer_form = frappe.new_doc("Transfer Form")
+            transfer_form.posting_date = self.posting_date
+            transfer_form.posting_time = self.posting_time
+            transfer_form.sales_order = self.sales_order
+            transfer_form.reference = "Stock Entry Against BOM"
+            transfer_form.document = self.name
+            
+            # Add items from stock_entry_required_item_table
+            total_items = 0
+            total_quantity = 0
+            
+            for row in self.stock_entry_required_item_table:
+                if row.item and row.qty:
+                    transfer_form.append("transfer_form_item", {
+                        "item": row.item,
+                        "quantity": row.qty,
+                        "uom": frappe.db.get_value("Item", row.item, "stock_uom")
+                    })
+                    total_items += 1
+                    total_quantity += row.qty
+            
+            # Set totals
+            transfer_form.total_items = total_items
+            transfer_form.total_quantity = total_quantity
+            
+            # Save the Transfer Form
+            transfer_form.save(ignore_permissions=True)
+            
+            frappe.msgprint(f"Transfer Form created: {transfer_form.name}")
+            
+        except Exception as e:
+            frappe.logger().error(f"Error creating Transfer Form: {str(e)}")
+            frappe.throw(f"Error creating Transfer Form: {str(e)}")
 
 
 @frappe.whitelist()

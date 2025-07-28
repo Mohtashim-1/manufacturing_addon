@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:SEB-{MM}-{YY}-{####}",
  "creation": "2025-07-18 18:20:28.581036",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -127,10 +128,11 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-28 17:14:11.036140",
+ "modified": "2025-07-29 00:38:17.126509",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stock Entry Against BOM",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

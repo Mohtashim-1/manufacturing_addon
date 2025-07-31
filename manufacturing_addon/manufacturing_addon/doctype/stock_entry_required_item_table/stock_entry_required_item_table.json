@@ -67,8 +67,7 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Remaining Qty",
-   "precision": "0",
-   "read_only": 1
+   "precision": "0"
   },
   {
    "fieldname": "transfer_status",
@@ -76,8 +75,7 @@
    "in_list_view": 1,
    "label": "Transfer Status",
    "options": "Pending\nPartially Transferred\nFully Transferred",
-   "default": "Pending",
-   "read_only": 1
+   "default": "Pending"
   }
  ],
  "grid_page_length": 50,

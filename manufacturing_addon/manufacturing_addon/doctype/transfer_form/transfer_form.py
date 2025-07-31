@@ -154,6 +154,10 @@ class TransferForm(Document):
                                 frappe.db.set_value("Stock Entry Item Table", bom_item.name, "issued_qty", new_issued_qty)
                                 frappe.db.set_value("Stock Entry Item Table", bom_item.name, "remaining_qty", new_remaining_qty)
                                 frappe.db.set_value("Stock Entry Item Table", bom_item.name, "transfer_status", new_transfer_status)
+                                # Also update the in-memory object
+                                bom_item.issued_qty = new_issued_qty
+                                bom_item.remaining_qty = new_remaining_qty
+                                bom_item.transfer_status = new_transfer_status
                                 print(f"DEBUG:   Updated database for finished item {bom_item.name}")
                             
                             found_in_finished = True
@@ -191,6 +195,10 @@ class TransferForm(Document):
                                 frappe.db.set_value("Stock Entry Required Item Table", bom_item.name, "issued_qty", new_issued_qty)
                                 frappe.db.set_value("Stock Entry Required Item Table", bom_item.name, "remaining_qty", new_remaining_qty)
                                 frappe.db.set_value("Stock Entry Required Item Table", bom_item.name, "transfer_status", new_transfer_status)
+                                # Also update the in-memory object
+                                bom_item.issued_qty = new_issued_qty
+                                bom_item.remaining_qty = new_remaining_qty
+                                bom_item.transfer_status = new_transfer_status
                                 print(f"DEBUG:   Updated database for raw material {bom_item.name}")
                             
                             found_in_raw = True
@@ -199,6 +207,8 @@ class TransferForm(Document):
                     if not found_in_raw:
                         print(f"DEBUG: Item {transfer_item.item} not found in raw materials table")
                 
+                # Save the document to persist the changes
+                bom_doc.save(ignore_permissions=True)
                 # Reload the document to reflect the database changes
                 bom_doc.reload()
                 print(f"DEBUG: ===== COMPLETED UPDATE BOM TRACKING FIELDS =====")

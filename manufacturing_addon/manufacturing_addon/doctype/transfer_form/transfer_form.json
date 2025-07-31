@@ -12,17 +12,24 @@
   "column_break_eyvk",
   "sales_order",
   "section_break_zazj",
-  "transfer_form_item",
-  "section_break_wxjz",
-  "total_items",
+  "source_warehouse",
   "column_break_dkjn",
+  "target_warehouse",
+  "section_break_wxjz",
+  "linked_bom_info",
+  "section_break_wxjz2",
+  "transfer_form_item",
+  "section_break_wxjz3",
+  "total_items",
+  "column_break_dkjn2",
   "total_quantity",
   "reference_section",
   "reference",
   "column_break_guab",
   "document",
   "section_break_tpm6",
-  "amended_from"
+  "amended_from",
+  "stock_entry_against_bom"
  ],
  "fields": [
   {
@@ -68,13 +75,43 @@
    "fieldtype": "Section Break"
   },
   {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "column_break_dkjn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "section_break_wxjz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "linked_bom_info",
+   "fieldtype": "HTML",
+   "label": "Linked BOM Information",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_wxjz2",
+   "fieldtype": "Section Break"
+  },
+  {
    "fieldname": "transfer_form_item",
    "fieldtype": "Table",
    "label": "Transfer Form Item",
    "options": "Transfer Form Item"
   },
   {
-   "fieldname": "section_break_wxjz",
+   "fieldname": "section_break_wxjz3",
    "fieldtype": "Section Break"
   },
   {
@@ -83,7 +120,7 @@
    "label": "Total Items"
   },
   {
-   "fieldname": "column_break_dkjn",
+   "fieldname": "column_break_dkjn2",
    "fieldtype": "Column Break"
   },
   {
@@ -111,6 +148,12 @@
   {
    "fieldname": "column_break_guab",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "stock_entry_against_bom",
+   "fieldtype": "Link",
+   "label": "Stock Entry Against BOM",
+   "options": "Stock Entry Against BOM"
   }
  ],
  "grid_page_length": 50,

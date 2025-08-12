@@ -186,7 +186,7 @@ class TransferForm(Document):
                             
                             print(f"DEBUG: Updated raw material {transfer_item.item}")
                             print(f"DEBUG:   Old issued_qty: {old_issued_qty}")
-                            print(f"DEBUG:   New issued_qty: {new_issued_qty}")
+                            print(f"DEBUG:   New issued_qty: {new_issued_qty}") 
                             print(f"DEBUG:   New remaining_qty: {new_remaining_qty}")
                             print(f"DEBUG:   Transfer status: {new_transfer_status}")
                             

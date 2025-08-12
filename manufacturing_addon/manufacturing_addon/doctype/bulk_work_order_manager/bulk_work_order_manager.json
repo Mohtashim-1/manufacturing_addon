@@ -1,0 +1,171 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:BWOM-{MM}-{YY}-{####}",
+ "creation": "2025-01-27 10:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "posting_date",
+  "posting_time",
+  "section_break_1",
+  "sales_order",
+  "column_break_yfxx",
+  "customer",
+  "column_break_nneh",
+  "company",
+  "section_break_2",
+  "work_order_summary",
+  "section_break_3",
+  "work_order_details",
+  "section_break_4",
+  "stock_entry_type",
+  "auto_detect_type",
+  "warehouse",
+  "bulk_delivery_items",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "default": "Today",
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Posting Date",
+   "reqd": 1
+  },
+  {
+   "default": "Now",
+   "fieldname": "posting_time",
+   "fieldtype": "Time",
+   "label": "Posting Time"
+  },
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "default": "frappe.defaults.get_global_default('company')",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "section_break_2",
+   "fieldtype": "Section Break",
+   "label": "Work Order Summary"
+  },
+  {
+   "fieldname": "work_order_summary",
+   "fieldtype": "Table",
+   "label": "Work Order Summary",
+   "options": "Work Order Summary Table"
+  },
+  {
+   "fieldname": "section_break_3",
+   "fieldtype": "Section Break",
+   "label": "Work Order Details"
+  },
+  {
+   "fieldname": "work_order_details",
+   "fieldtype": "Table",
+   "label": "Work Order Details",
+   "options": "Work Order Details Table"
+  },
+  {
+   "fieldname": "section_break_4",
+   "fieldtype": "Section Break",
+   "label": "Bulk Delivery"
+  },
+  {
+   "default": "Material Transfer for Manufacture",
+   "fieldname": "stock_entry_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Stock Entry Type",
+   "options": "Material Transfer for Manufacture\nManufacture",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Automatically detect stock entry type based on item BOM",
+   "fieldname": "auto_detect_type",
+   "fieldtype": "Check",
+   "label": "Auto Detect Type"
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "bulk_delivery_items",
+   "fieldtype": "Table",
+   "label": "Bulk Delivery Items",
+   "options": "Bulk Delivery Items Table"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Bulk Work Order Manager",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_yfxx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_nneh",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-08-12 11:56:51.781240",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Bulk Work Order Manager",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -13,6 +13,8 @@
   "sales_order",
   "column_break_hrwm",
   "stock_entry_type",
+  "column_break_ostk",
+  "cost_center",
   "section_break_fdsg",
   "source_warehouse",
   "column_break_bpzw",
@@ -122,13 +124,24 @@
    "fieldname": "total_qty",
    "fieldtype": "Float",
    "label": "Total Quantity"
+  },
+  {
+   "fieldname": "column_break_ostk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "sales_order.cost_center",
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "label": "Cost Center",
+   "options": "Cost Center"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-29 00:38:17.126509",
+ "modified": "2025-08-15 17:11:34.285910",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stock Entry Against BOM",

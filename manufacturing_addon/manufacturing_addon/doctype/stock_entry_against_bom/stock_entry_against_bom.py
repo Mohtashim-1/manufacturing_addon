@@ -236,7 +236,7 @@ class StockEntryAgainstBOM(Document):
             stock_entry.stock_entry_type = "Material Transfer"
             stock_entry.posting_date = self.posting_date
             stock_entry.posting_time = self.posting_time
-            stock_entry.custom_cost_center = f"{self.sales_order} - SAH"
+            stock_entry.custom_cost_center = self.cost_center
             
             # Set warehouses
             stock_entry.from_warehouse = self.source_warehouse
@@ -278,7 +278,7 @@ class StockEntryAgainstBOM(Document):
                 stock_entry.use_multi_level_bom = 0
                 stock_entry.fg_completed_qty = row.qty
                 stock_entry.bom_no = row.bom
-                stock_entry.custom_cost_center = f"{self.sales_order} - SAH"
+                stock_entry.custom_cost_center = self.cost_center
                 
                 # Set source and target warehouses from the document
                 if hasattr(self, 'source_warehouse') and self.source_warehouse:

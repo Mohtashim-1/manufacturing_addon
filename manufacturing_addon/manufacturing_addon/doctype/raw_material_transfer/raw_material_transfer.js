@@ -52,11 +52,11 @@ frappe.ui.form.on("Raw Material Transfer", {
         }
         
         frm.doc.raw_materials.forEach(function(item) {
-            item.transfer_qty = 0;
+            item.transfer_qty = item.pending_qty; // Set to pending quantity instead of 0
         });
         
         frm.refresh_field("raw_materials");
-        frappe.show_alert(__("All transfer quantities cleared"), 3);
+        frappe.show_alert(__("All transfer quantities set to pending quantities"), 3);
     }
 });
 
@@ -76,6 +76,12 @@ frappe.ui.form.on("Raw Material Transfer Items Table", {
         if (flt(row.transfer_qty) < 0) {
             frappe.msgprint(__("Transfer quantity cannot be negative"));
             row.transfer_qty = 0;
+            frm.refresh_field("raw_materials");
+        }
+        
+        if (flt(row.transfer_qty) === 0) {
+            frappe.msgprint(__("Transfer quantity must be greater than 0"));
+            row.transfer_qty = row.pending_qty;
             frm.refresh_field("raw_materials");
         }
     }

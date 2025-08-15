@@ -213,25 +213,11 @@ function show_transfer_dialog(frm, items) {
 	d.show();
 }
 
-// Set up expense_account field query
-frappe.ui.form.on('Stock Entry Against BOM', {
-	expense_account: function(frm) {
-		// This will be handled in the server-side method
-	}
-});
-
-// Set up the query for expense_account field
+// Set up the form onload event
 frappe.ui.form.on('Stock Entry Against BOM', {
 	onload: function(frm) {
-		frm.fields_dict.expense_account.get_query = function() {
-			return {
-				filters: {
-					"account_type": "Expenses",
-					"report_type": "Profit and Loss",
-					"is_group": 0
-				}
-			};
-		};
+		// Initialize form when loaded
+		console.log("Stock Entry Against BOM form loaded");
 	}
 });
 

@@ -361,6 +361,7 @@ def create_raw_material_transfer_doc(doc_name):
         raw_transfer_doc.posting_time = doc.posting_time
         raw_transfer_doc.company = doc.company
         raw_transfer_doc.warehouse = doc.warehouse
+        raw_transfer_doc.stock_entry_type = doc.stock_entry_type
         
         # Add selected raw materials
         for item in selected_items:
@@ -368,7 +369,7 @@ def create_raw_material_transfer_doc(doc_name):
                 "item_code": item.item_code,
                 "item_name": item.item_name,
                 "pending_qty": item.pending_qty,
-                "transfer_qty": item.transfer_qty,
+                "transfer_qty": item.transfer_qty or item.pending_qty,  # Use transfer_qty if set, otherwise use pending_qty
                 "uom": item.uom,
                 "warehouse": doc.warehouse
             })
@@ -424,14 +425,15 @@ def create_all_pending_transfer(doc_name):
         raw_transfer_doc.posting_time = doc.posting_time
         raw_transfer_doc.company = doc.company
         raw_transfer_doc.warehouse = doc.warehouse
+        raw_transfer_doc.stock_entry_type = doc.stock_entry_type
         
-        # Add pending raw materials (user will set transfer quantities)
+        # Add pending raw materials (set transfer quantities to pending quantities by default)
         for item in pending_items:
             raw_transfer_doc.append("raw_materials", {
                 "item_code": item.item_code,
                 "item_name": item.item_name,
                 "pending_qty": item.pending_qty,
-                "transfer_qty": 0,  # User will set this - don't auto-set to pending qty
+                "transfer_qty": item.pending_qty,  # Set to pending quantity by default
                 "uom": item.uom,
                 "warehouse": doc.warehouse
             })
@@ -458,6 +460,116 @@ def create_all_pending_transfer(doc_name):
         
         frappe.log_error(full_message)
         return {"success": False, "message": str(e)}
+
+@frappe.whitelist()
+def create_all_pending_transfer_background(doc_name):
+    """Create a new Raw Material Transfer document with ALL pending raw materials using background job"""
+    print(f"🔍 DEBUG: Starting create_all_pending_transfer_background for doc_name: {doc_name}")
+    
+    try:
+        # Enqueue the job
+        frappe.enqueue(
+            "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.create_all_pending_transfer_job",
+            doc_name=doc_name,
+            queue="long",
+            timeout=600,  # 10 minutes timeout
+            job_name=f"create_raw_material_transfer_{doc_name}"
+        )
+        
+        return {
+            "success": True,
+            "message": "Background job started. You will be notified when the Raw Material Transfer document is created.",
+            "job_started": True
+        }
+        
+    except Exception as e:
+        error_msg = str(e)
+        if len(error_msg) > 60:
+            error_msg = error_msg[:57] + "..."
+        
+        full_message = f"Error starting background job: {error_msg}"
+        if len(full_message) > 140:
+            full_message = f"Error starting background job: {error_msg[:50]}..."
+        
+        frappe.log_error(full_message)
+        return {"success": False, "message": str(e)}
+
+def create_all_pending_transfer_job(doc_name):
+    """Background job to create Raw Material Transfer document"""
+    print(f"🔍 DEBUG: Background job started for doc_name: {doc_name}")
+    
+    try:
+        doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+        
+        # Check if document is submitted
+        if doc.docstatus != 1:
+            frappe.throw("Please submit the Work Order Transfer Manager document first")
+        
+        # Get items that still have pending quantities (not fully issued)
+        pending_items = []
+        for item in doc.transfer_items:
+            if flt(item.pending_qty) > 0:
+                pending_items.append(item)
+        
+        if not pending_items:
+            frappe.throw("No raw materials with pending quantities found")
+        
+        # Create new Raw Material Transfer document
+        raw_transfer_doc = frappe.new_doc("Raw Material Transfer")
+        raw_transfer_doc.sales_order = doc.sales_order
+        raw_transfer_doc.work_order_transfer_manager = doc.name
+        raw_transfer_doc.posting_date = doc.posting_date
+        raw_transfer_doc.posting_time = doc.posting_time
+        raw_transfer_doc.company = doc.company
+        raw_transfer_doc.warehouse = doc.warehouse
+        raw_transfer_doc.stock_entry_type = doc.stock_entry_type
+        
+        # Add pending raw materials (set transfer quantities to pending quantities by default)
+        for item in pending_items:
+            raw_transfer_doc.append("raw_materials", {
+                "item_code": item.item_code,
+                "item_name": item.item_name,
+                "pending_qty": item.pending_qty,
+                "transfer_qty": item.pending_qty,  # Set to pending quantity by default
+                "uom": item.uom,
+                "warehouse": doc.warehouse
+            })
+        
+        raw_transfer_doc.insert()
+        
+        # Send notification to user
+        frappe.publish_realtime(
+            'raw_material_transfer_created',
+            user=doc.owner,
+            message={
+                'doc_name': raw_transfer_doc.name,
+                'message': f'Raw Material Transfer document created successfully: {raw_transfer_doc.name}',
+                'success': True
+            }
+        )
+        
+        print(f"🔍 DEBUG: Background job completed successfully. Created: {raw_transfer_doc.name}")
+        
+    except Exception as e:
+        error_msg = str(e)
+        if len(error_msg) > 60:
+            error_msg = error_msg[:57] + "..."
+        
+        full_message = f"Error in background job: {error_msg}"
+        if len(full_message) > 140:
+            full_message = f"Error in background job: {error_msg[:50]}..."
+        
+        frappe.log_error(full_message)
+        
+        # Send error notification to user
+        frappe.publish_realtime(
+            'raw_material_transfer_error',
+            user=doc.owner if 'doc' in locals() else None,
+            message={
+                'message': f'Error creating Raw Material Transfer: {str(e)}',
+                'success': False
+            }
+        )
 
 @frappe.whitelist()
 def get_remaining_pending_items(doc_name):

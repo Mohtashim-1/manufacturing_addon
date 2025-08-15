@@ -45,6 +45,27 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                 frm.trigger("create_raw_material_transfer");
             }, __("Actions"));
         }
+        
+        // Add quick view buttons for related documents
+        frm.add_custom_button(__("View Sales Order"), function() {
+            if (frm.doc.sales_order) {
+                frappe.set_route("Form", "Sales Order", frm.doc.sales_order);
+            } else {
+                frappe.msgprint(__("No Sales Order linked"));
+            }
+        }, __("Quick View"));
+        
+        frm.add_custom_button(__("View Work Orders"), function() {
+            frm.trigger("show_work_orders");
+        }, __("Quick View"));
+        
+        frm.add_custom_button(__("View Raw Material Transfers"), function() {
+            frm.trigger("show_raw_material_transfers");
+        }, __("Quick View"));
+        
+        frm.add_custom_button(__("View Stock Entries"), function() {
+            frm.trigger("show_stock_entries");
+        }, __("Quick View"));
     },
     
     sales_order: function(frm) {
@@ -251,33 +272,113 @@ frappe.ui.form.on("Work Order Transfer Manager", {
         ).join('\n');
         
         frappe.confirm(
-            `This will create a Raw Material Transfer document with ALL pending raw materials.\n\nYou can then remove any items you don't want to transfer.\n\n${pending_summary}`,
+            `This will create a Raw Material Transfer document with ALL pending raw materials using a background job.\n\nThis may take a few minutes for large datasets.\n\n${pending_summary}`,
             function() {
-                // User confirmed
-                frappe.call({
-                    method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.create_all_pending_transfer",
-                    args: {
-                        doc_name: frm.doc.name
-                    },
-                    callback: function(r) {
-                        console.log("🔍 DEBUG: Create all pending transfer callback:", r);
-                        if (r.message && r.message.success) {
-                            frappe.show_alert(__("Raw Material Transfer document created successfully!"), 3);
-                            // Redirect to the new Raw Material Transfer document
-                            if (r.message.doc_name) {
-                                frappe.set_route("Form", "Raw Material Transfer", r.message.doc_name);
-                            }
-                        } else {
-                            frappe.show_alert(__("Error creating transfer: ") + (r.message ? r.message.message : "Unknown error"), 5);
-                        }
-                    }
-                });
+                // User confirmed - start background job
+                frm.trigger("start_background_transfer_job");
             },
             function() {
                 // User cancelled
                 console.log("🔍 DEBUG: User cancelled all pending transfer creation");
             }
         );
+    },
+    
+    start_background_transfer_job: function(frm) {
+        console.log("🔍 DEBUG: Starting background transfer job");
+        
+        // Show progress dialog
+        let progress_dialog = new frappe.ui.Dialog({
+            title: __("Creating Raw Material Transfer"),
+            fields: [
+                {
+                    fieldtype: 'HTML',
+                    fieldname: 'progress_html',
+                    options: `
+                        <div style="text-align: center; padding: 20px;">
+                            <div class="progress-bar" style="width: 100%; height: 20px; background-color: #f0f0f0; border-radius: 10px; overflow: hidden;">
+                                <div class="progress-fill" style="width: 0%; height: 100%; background-color: #5cb85c; transition: width 0.3s ease;"></div>
+                            </div>
+                            <div style="margin-top: 10px; font-size: 14px;">
+                                <span class="progress-text">Starting background job...</span>
+                            </div>
+                            <div style="margin-top: 5px; font-size: 12px; color: #666;">
+                                <span class="progress-details">Processing ${frm.doc.transfer_items.filter(item => flt(item.pending_qty) > 0).length} items</span>
+                            </div>
+                        </div>
+                    `
+                }
+            ],
+            primary_action_label: __("Close"),
+            primary_action: function() {
+                progress_dialog.hide();
+            }
+        });
+        
+        progress_dialog.show();
+        
+        // Start the background job
+        frappe.call({
+            method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.create_all_pending_transfer_background",
+            args: {
+                doc_name: frm.doc.name
+            },
+            callback: function(r) {
+                console.log("🔍 DEBUG: Background job started callback:", r);
+                if (r.message && r.message.success) {
+                    // Update progress
+                    let progress_fill = progress_dialog.get_field('progress_html').$wrapper.find('.progress-fill');
+                    let progress_text = progress_dialog.get_field('progress_html').$wrapper.find('.progress-text');
+                    let progress_details = progress_dialog.get_field('progress_html').$wrapper.find('.progress-details');
+                    
+                    progress_fill.css('width', '50%');
+                    progress_text.text("Background job started successfully");
+                    progress_details.text("Waiting for completion...");
+                    
+                    // Set up real-time listeners
+                    frappe.realtime.on('raw_material_transfer_created', function(data) {
+                        console.log("🔍 DEBUG: Raw material transfer created:", data);
+                        progress_fill.css('width', '100%');
+                        progress_text.text("Raw Material Transfer created successfully!");
+                        progress_details.text(`Document: ${data.doc_name}`);
+                        
+                        // Show success message and offer to open the document
+                        setTimeout(function() {
+                            progress_dialog.hide();
+                            frappe.show_alert(__("Raw Material Transfer document created successfully!"), 5);
+                            
+                            frappe.confirm(
+                                __("Would you like to open the newly created Raw Material Transfer document?"),
+                                function() {
+                                    // User wants to open the document
+                                    frappe.set_route("Form", "Raw Material Transfer", data.doc_name);
+                                },
+                                function() {
+                                    // User doesn't want to open it
+                                    console.log("User chose not to open the document");
+                                }
+                            );
+                        }, 2000);
+                    });
+                    
+                    frappe.realtime.on('raw_material_transfer_error', function(data) {
+                        console.log("🔍 DEBUG: Raw material transfer error:", data);
+                        progress_fill.css('width', '100%').css('background-color', '#d9534f');
+                        progress_text.text("Error occurred during creation");
+                        progress_details.text(data.message);
+                        
+                        setTimeout(function() {
+                            progress_dialog.hide();
+                            frappe.show_alert(__("Error creating Raw Material Transfer: ") + data.message, 8);
+                        }, 3000);
+                    });
+                    
+                } else {
+                    progress_dialog.hide();
+                    frappe.show_alert(__("Error starting background job: ") + (r.message ? r.message.message : "Unknown error"), 5);
+                }
+            }
+        });
     },
     
     select_all_items: function(frm) {
@@ -356,6 +457,189 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                     );
                 } else {
                     frappe.msgprint(__("No remaining pending items found"));
+                }
+            }
+        });
+    },
+    
+    show_work_orders: function(frm) {
+        console.log("🔍 DEBUG: show_work_orders() called");
+        if (!frm.doc.sales_order) {
+            frappe.msgprint(__("No Sales Order linked"));
+            return;
+        }
+        
+        // Show work orders in a dialog
+        let d = new frappe.ui.Dialog({
+            title: __("Work Orders for Sales Order: ") + frm.doc.sales_order,
+            fields: [
+                {
+                    fieldtype: 'HTML',
+                    fieldname: 'work_orders_html',
+                    options: '<div style="text-align: center; padding: 20px;">Loading work orders...</div>'
+                }
+            ],
+            size: 'large'
+        });
+        
+        d.show();
+        
+        // Fetch work orders
+        frappe.call({
+            method: "frappe.client.get_list",
+            args: {
+                doctype: "Work Order",
+                filters: { sales_order: frm.doc.sales_order },
+                fields: ["name", "production_item", "qty", "material_transferred_for_manufacturing", "produced_qty", "status", "docstatus"],
+                order_by: "creation desc"
+            },
+            callback: function(r) {
+                if (r.message) {
+                    let html = '<div style="max-height: 400px; overflow-y: auto;">';
+                    html += '<table class="table table-bordered">';
+                    html += '<thead><tr><th>Work Order</th><th>Item</th><th>Qty</th><th>Transferred</th><th>Produced</th><th>Status</th><th>Action</th></tr></thead>';
+                    html += '<tbody>';
+                    
+                    r.message.forEach(function(wo) {
+                        html += '<tr>';
+                        html += `<td>${wo.name}</td>`;
+                        html += `<td>${wo.production_item}</td>`;
+                        html += `<td>${wo.qty}</td>`;
+                        html += `<td>${wo.material_transferred_for_manufacturing || 0}</td>`;
+                        html += `<td>${wo.produced_qty || 0}</td>`;
+                        html += `<td><span class="label label-${wo.docstatus === 1 ? 'success' : 'default'}">${wo.status}</span></td>`;
+                        html += `<td><button class="btn btn-xs btn-default" onclick="frappe.set_route('Form', 'Work Order', '${wo.name}')">View</button></td>`;
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table></div>';
+                    
+                    d.get_field('work_orders_html').$wrapper.html(html);
+                } else {
+                    d.get_field('work_orders_html').$wrapper.html('<div style="text-align: center; padding: 20px; color: #666;">No work orders found</div>');
+                }
+            }
+        });
+    },
+    
+    show_raw_material_transfers: function(frm) {
+        console.log("🔍 DEBUG: show_raw_material_transfers() called");
+        if (!frm.doc.name) {
+            frappe.msgprint(__("Please save the document first"));
+            return;
+        }
+        
+        // Show raw material transfers in a dialog
+        let d = new frappe.ui.Dialog({
+            title: __("Raw Material Transfers"),
+            fields: [
+                {
+                    fieldtype: 'HTML',
+                    fieldname: 'transfers_html',
+                    options: '<div style="text-align: center; padding: 20px;">Loading transfers...</div>'
+                }
+            ],
+            size: 'large'
+        });
+        
+        d.show();
+        
+        // Fetch raw material transfers
+        frappe.call({
+            method: "frappe.client.get_list",
+            args: {
+                doctype: "Raw Material Transfer",
+                filters: { work_order_transfer_manager: frm.doc.name },
+                fields: ["name", "posting_date", "total_transfer_qty", "total_items", "docstatus", "stock_entry"],
+                order_by: "creation desc"
+            },
+            callback: function(r) {
+                if (r.message && r.message.length > 0) {
+                    let html = '<div style="max-height: 400px; overflow-y: auto;">';
+                    html += '<table class="table table-bordered">';
+                    html += '<thead><tr><th>Transfer</th><th>Date</th><th>Items</th><th>Total Qty</th><th>Status</th><th>Stock Entry</th><th>Action</th></tr></thead>';
+                    html += '<tbody>';
+                    
+                    r.message.forEach(function(transfer) {
+                        html += '<tr>';
+                        html += `<td>${transfer.name}</td>`;
+                        html += `<td>${transfer.posting_date}</td>`;
+                        html += `<td>${transfer.total_items || 0}</td>`;
+                        html += `<td>${transfer.total_transfer_qty || 0}</td>`;
+                        html += `<td><span class="label label-${transfer.docstatus === 1 ? 'success' : 'default'}">${transfer.docstatus === 1 ? 'Submitted' : 'Draft'}</span></td>`;
+                        html += `<td>${transfer.stock_entry || '-'}</td>`;
+                        html += `<td><button class="btn btn-xs btn-default" onclick="frappe.set_route('Form', 'Raw Material Transfer', '${transfer.name}')">View</button></td>`;
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table></div>';
+                    
+                    d.get_field('transfers_html').$wrapper.html(html);
+                } else {
+                    d.get_field('transfers_html').$wrapper.html('<div style="text-align: center; padding: 20px; color: #666;">No raw material transfers found</div>');
+                }
+            }
+        });
+    },
+    
+    show_stock_entries: function(frm) {
+        console.log("🔍 DEBUG: show_stock_entries() called");
+        if (!frm.doc.sales_order) {
+            frappe.msgprint(__("No Sales Order linked"));
+            return;
+        }
+        
+        // Show stock entries in a dialog
+        let d = new frappe.ui.Dialog({
+            title: __("Stock Entries for Sales Order: ") + frm.doc.sales_order,
+            fields: [
+                {
+                    fieldtype: 'HTML',
+                    fieldname: 'stock_entries_html',
+                    options: '<div style="text-align: center; padding: 20px;">Loading stock entries...</div>'
+                }
+            ],
+            size: 'large'
+        });
+        
+        d.show();
+        
+        // Fetch stock entries
+        frappe.call({
+            method: "frappe.client.get_list",
+            args: {
+                doctype: "Stock Entry",
+                filters: { 
+                    custom_cost_center: ["like", "%" + frm.doc.sales_order + "%"],
+                    docstatus: ["!=", 2]  // Not cancelled
+                },
+                fields: ["name", "stock_entry_type", "posting_date", "posting_time", "docstatus", "custom_cost_center"],
+                order_by: "creation desc"
+            },
+            callback: function(r) {
+                if (r.message && r.message.length > 0) {
+                    let html = '<div style="max-height: 400px; overflow-y: auto;">';
+                    html += '<table class="table table-bordered">';
+                    html += '<thead><tr><th>Stock Entry</th><th>Type</th><th>Date</th><th>Time</th><th>Status</th><th>Cost Center</th><th>Action</th></tr></thead>';
+                    html += '<tbody>';
+                    
+                    r.message.forEach(function(se) {
+                        html += '<tr>';
+                        html += `<td>${se.name}</td>`;
+                        html += `<td>${se.stock_entry_type}</td>`;
+                        html += `<td>${se.posting_date}</td>`;
+                        html += `<td>${se.posting_time || '-'}</td>`;
+                        html += `<td><span class="label label-${se.docstatus === 1 ? 'success' : 'default'}">${se.docstatus === 1 ? 'Submitted' : 'Draft'}</span></td>`;
+                        html += `<td>${se.custom_cost_center || '-'}</td>`;
+                        html += `<td><button class="btn btn-xs btn-default" onclick="frappe.set_route('Form', 'Stock Entry', '${se.name}')">View</button></td>`;
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table></div>';
+                    
+                    d.get_field('stock_entries_html').$wrapper.html(html);
+                } else {
+                    d.get_field('stock_entries_html').$wrapper.html('<div style="text-align: center; padding: 20px; color: #666;">No stock entries found</div>');
                 }
             }
         });

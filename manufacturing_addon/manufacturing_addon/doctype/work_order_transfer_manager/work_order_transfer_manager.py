@@ -812,91 +812,73 @@ def update_transfer_quantities(doc_name, transfer_doc_name):
     try:
         doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
         
-        # If transfer_doc_name is empty, recompute from existing transfers
+        # Build item -> delta map
+        item_to_delta = {}
         if not transfer_doc_name:
             print(f"🔍 DEBUG: transfer_doc_name is empty, recomputing from existing transfers")
-            existing_transfers = frappe.get_all("Raw Material Transfer", 
+            existing_transfers = frappe.get_all(
+                "Raw Material Transfer",
                 filters={"work_order_transfer_manager": doc_name, "docstatus": 1},
-                fields=["name"])
-            
-            item_to_delta = {}
+                fields=["name"],
+            )
             for transfer in existing_transfers:
                 transfer_doc = frappe.get_doc("Raw Material Transfer", transfer.name)
                 for ti in transfer_doc.raw_materials:
                     item_to_delta[ti.item_code] = item_to_delta.get(ti.item_code, 0) + flt(ti.transfer_qty)
-            
-            # Update rows
-            for row in doc.transfer_items:
-                if row.item_code in item_to_delta:
-                    row.transferred_qty_so_far = flt(row.transferred_qty_so_far) + item_to_delta[row.item_code]
-                    # also bump transfer_qty if this row was selected for transfer (visual feedback)
-                    if row.select_for_transfer:
-                        row.transfer_qty = 0
-                # refresh current stock snapshots
-                if getattr(doc, 'source_warehouse', None):
-                    bin_qty = frappe.db.sql(
-                        """
-                        SELECT actual_qty FROM `tabBin` WHERE item_code=%s AND warehouse=%s
-                        """,
-                        (row.item_code, doc.source_warehouse), as_dict=True
-                    )
-                    row.actual_qty_at_warehouse = flt(bin_qty[0].actual_qty) if bin_qty else 0
-                if getattr(doc, 'company', None):
-                    company_bins = frappe.db.sql(
-                        """
-                        SELECT SUM(b.actual_qty) AS qty
-                        FROM `tabBin` b
-                        JOIN `tabWarehouse` w ON w.name = b.warehouse
-                        WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
-                        """,
-                        (row.item_code, doc.company), as_dict=True
-                    )
-                    row.actual_qty_at_company = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
         else:
             # If transfer_doc_name is provided, get the specific transfer document
             transfer_doc = frappe.get_doc("Raw Material Transfer", transfer_doc_name)
-            
-            # Build item -> delta map from the specific transfer document
-            item_to_delta = {}
             for ti in transfer_doc.raw_materials:
                 item_to_delta[ti.item_code] = item_to_delta.get(ti.item_code, 0) + flt(ti.transfer_qty)
-            
-            # Update rows
-            for row in doc.transfer_items:
-                if row.item_code in item_to_delta:
-                    row.transferred_qty_so_far = flt(row.transferred_qty_so_far) + item_to_delta[row.item_code]
-                    # also bump transfer_qty if this row was selected for transfer (visual feedback)
-                    if row.select_for_transfer:
-                        row.transfer_qty = 0
-                # refresh current stock snapshots
-                if getattr(doc, 'source_warehouse', None):
-                    bin_qty = frappe.db.sql(
-                        """
-                        SELECT actual_qty FROM `tabBin` WHERE item_code=%s AND warehouse=%s
-                        """,
-                        (row.item_code, doc.source_warehouse), as_dict=True
-                    )
-                    row.actual_qty_at_warehouse = flt(bin_qty[0].actual_qty) if bin_qty else 0
-                if getattr(doc, 'company', None):
-                    company_bins = frappe.db.sql(
-                        """
-                        SELECT SUM(b.actual_qty) AS qty
-                        FROM `tabBin` b
-                        JOIN `tabWarehouse` w ON w.name = b.warehouse
-                        WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
-                        """,
-                        (row.item_code, doc.company), as_dict=True
-                    )
-                    row.actual_qty_at_company = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
         
-        # Only save if there are actual changes (when transfer_doc_name is provided)
-        # For stock snapshot refresh (empty transfer_doc_name), don't save to avoid timestamp conflicts
-        if transfer_doc_name:
-            doc.save()
-            print("🔍 DEBUG: Quantities updated on parent doc and saved")
-        else:
-            print("🔍 DEBUG: Stock snapshots refreshed (no save to avoid timestamp conflicts)")
+        # Persist updates directly on child rows to allow updating a submitted parent
+        for row in doc.transfer_items:
+            updated_any = False
+            # Update transferred qty
+            if row.item_code in item_to_delta:
+                new_transferred = flt(row.transferred_qty_so_far) + item_to_delta[row.item_code]
+                frappe.db.set_value("Work Order Transfer Items Table", row.name, "transferred_qty_so_far", new_transferred)
+                updated_any = True
+                # also reset transfer_qty if this row was selected for transfer (visual feedback)
+                if row.select_for_transfer:
+                    frappe.db.set_value("Work Order Transfer Items Table", row.name, "transfer_qty", 0)
+                    updated_any = True
+            # Refresh current stock snapshots
+            if getattr(doc, 'source_warehouse', None):
+                bin_qty = frappe.db.sql(
+                    """
+                    SELECT actual_qty FROM `tabBin` WHERE item_code=%s AND warehouse=%s
+                    """,
+                    (row.item_code, doc.source_warehouse),
+                    as_dict=True,
+                )
+                frappe.db.set_value(
+                    "Work Order Transfer Items Table",
+                    row.name,
+                    "actual_qty_at_warehouse",
+                    flt(bin_qty[0].actual_qty) if bin_qty else 0,
+                )
+                updated_any = True
+            if getattr(doc, 'company', None):
+                company_bins = frappe.db.sql(
+                    """
+                    SELECT SUM(b.actual_qty) AS qty
+                    FROM `tabBin` b
+                    JOIN `tabWarehouse` w ON w.name = b.warehouse
+                    WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                    """,
+                    (row.item_code, doc.company),
+                    as_dict=True,
+                )
+                frappe.db.set_value(
+                    "Work Order Transfer Items Table",
+                    row.name,
+                    "actual_qty_at_company",
+                    flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0,
+                )
+                updated_any = True
         
+        print("🔍 DEBUG: Quantities updated on child rows (no parent save needed)")
         return {"success": True}
     except Exception as e:
         print(f"❌ DEBUG: Error updating transfer quantities: {e}")

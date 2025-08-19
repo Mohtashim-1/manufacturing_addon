@@ -434,8 +434,7 @@ def create_raw_material_transfer_doc(doc_name):
         raw_transfer_doc.posting_date = doc.posting_date
         raw_transfer_doc.posting_time = doc.posting_time
         raw_transfer_doc.company = doc.company
-        raw_transfer_doc.source_warehouse = doc.source_warehouse
-        raw_transfer_doc.target_warehouse = doc.target_warehouse
+        raw_transfer_doc.warehouse = doc.source_warehouse
         raw_transfer_doc.stock_entry_type = doc.stock_entry_type
         
         # Add selected raw materials
@@ -467,6 +466,8 @@ def create_raw_material_transfer_doc(doc_name):
                 "transfer_qty": item.transfer_qty or item.pending_qty,  # Use transfer_qty if set, otherwise use pending_qty
                 "uom": item.uom,
                 "warehouse": doc.source_warehouse,
+                "source_warehouse": doc.source_warehouse,
+                "target_warehouse": doc.target_warehouse,
                 "actual_qty_at_warehouse": actual_qty_at_warehouse,
                 "actual_qty_at_company": actual_qty_at_company
             })
@@ -524,8 +525,7 @@ def create_all_pending_transfer(doc_name):
         raw_transfer_doc.posting_date = doc.posting_date
         raw_transfer_doc.posting_time = doc.posting_time
         raw_transfer_doc.company = doc.company
-        raw_transfer_doc.source_warehouse = doc.source_warehouse
-        raw_transfer_doc.target_warehouse = doc.target_warehouse
+        raw_transfer_doc.warehouse = doc.source_warehouse
         raw_transfer_doc.stock_entry_type = doc.stock_entry_type
         
         # Add pending raw materials (set transfer quantities to pending quantities by default)
@@ -557,6 +557,8 @@ def create_all_pending_transfer(doc_name):
                 "transfer_qty": item.pending_qty,  # Set to pending quantity by default
                 "uom": item.uom,
                 "warehouse": doc.source_warehouse,
+                "source_warehouse": doc.source_warehouse,
+                "target_warehouse": doc.target_warehouse,
                 "actual_qty_at_warehouse": actual_qty_at_warehouse,
                 "actual_qty_at_company": actual_qty_at_company
             })
@@ -647,8 +649,7 @@ def create_all_pending_transfer_job(doc_name):
         raw_transfer_doc.posting_date = doc.posting_date
         raw_transfer_doc.posting_time = doc.posting_time
         raw_transfer_doc.company = doc.company
-        raw_transfer_doc.source_warehouse = doc.source_warehouse
-        raw_transfer_doc.target_warehouse = doc.target_warehouse
+        raw_transfer_doc.warehouse = doc.source_warehouse
         raw_transfer_doc.stock_entry_type = doc.stock_entry_type
         
         # Add pending raw materials (set transfer quantities to pending quantities by default)
@@ -659,7 +660,9 @@ def create_all_pending_transfer_job(doc_name):
                 "pending_qty": item.pending_qty,
                 "transfer_qty": item.pending_qty,  # Set to pending quantity by default
                 "uom": item.uom,
-                "warehouse": doc.source_warehouse
+                "warehouse": doc.source_warehouse,
+                "source_warehouse": doc.source_warehouse,
+                "target_warehouse": doc.target_warehouse
             })
         
         raw_transfer_doc.insert()

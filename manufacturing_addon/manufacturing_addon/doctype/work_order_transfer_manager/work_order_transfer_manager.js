@@ -5,6 +5,15 @@ frappe.ui.form.on("Work Order Transfer Manager", {
     refresh: function(frm) {
         console.log("🔍 DEBUG: refresh() called for Work Order Transfer Manager");
         
+        // Set up initial filters for sales_order field
+        frm.trigger("setup_sales_order_filter");
+        
+        // Refresh stock snapshots for grid when form opens, but not during submission
+        // Check if we're in the middle of a submit action
+        if (frm.doc.name && !frm.doc.__islocal && frm.doc.docstatus === 0 && !frm._submitting) {
+            frm.trigger("refresh_stock_snapshots");
+        }
+        
         // Add custom buttons based on document status
         if (frm.doc.docstatus === 0) {
             // Draft state - show fetch and submit buttons
@@ -68,25 +77,129 @@ frappe.ui.form.on("Work Order Transfer Manager", {
         }, __("Quick View"));
     },
     
+    before_save: function(frm) {
+        console.log("🔍 DEBUG: before_save() called");
+        frm._submitting = true;
+    },
+    
+    after_save: function(frm) {
+        console.log("🔍 DEBUG: after_save() called");
+        frm._submitting = false;
+    },
+    
+    refresh_stock_snapshots: function(frm) {
+        if (!frm.doc.name) return;
+        frappe.call({
+            method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.update_transfer_quantities",
+            args: {
+                doc_name: frm.doc.name,
+                transfer_doc_name: "" // just refresh snapshots without a transfer
+            },
+            callback: function() {
+                frm.refresh_field("transfer_items");
+            }
+        });
+    },
+    
+    setup_sales_order_filter: function(frm) {
+        console.log("🔍 DEBUG: setup_sales_order_filter() called");
+        // Set up initial filter for sales_order field
+        frm.set_query("sales_order", function() {
+            let filters = {
+                docstatus: 1  // Only submitted sales orders
+            };
+            
+            // If customer is selected, add customer filter
+            if (frm.doc.customer) {
+                filters.customer = frm.doc.customer;
+            }
+            
+            return { filters: filters };
+        });
+        
+        // Set up warehouse filters
+        frm.set_query("source_warehouse", function() {
+            return {
+                filters: {
+                    is_group: 0  // Only show actual warehouses, not groups
+                }
+            };
+        });
+        
+        frm.set_query("target_warehouse", function() {
+            return {
+                filters: {
+                    is_group: 0  // Only show actual warehouses, not groups
+                }
+            };
+        });
+    },
+    
+    customer: function(frm) {
+        console.log("🔍 DEBUG: customer event triggered");
+        if (frm.doc.customer) {
+            console.log("🔍 DEBUG: Customer selected:", frm.doc.customer);
+            
+            // Set filter for sales_order field to show only sales orders for this customer
+            frm.set_query("sales_order", function() {
+                return {
+                    filters: {
+                        customer: frm.doc.customer,
+                        docstatus: 1  // Only submitted sales orders
+                    }
+                };
+            });
+            
+            // Clear sales order if it doesn't match the selected customer
+            if (frm.doc.sales_order) {
+                frappe.call({
+                    method: "frappe.client.get_value",
+                    args: {
+                        doctype: "Sales Order",
+                        filters: { name: frm.doc.sales_order },
+                        fieldname: "customer"
+                    },
+                    callback: function(r) {
+                        if (r.message && r.message.customer && r.message.customer !== frm.doc.customer) {
+                            // Sales order belongs to different customer, clear it
+                            frm.set_value("sales_order", "");
+                        }
+                    }
+                });
+            }
+        } else {
+            // If no customer selected, clear the filter
+            frm.set_query("sales_order", function() {
+                return {
+                    filters: {
+                        docstatus: 1  // Only submitted sales orders
+                    }
+                };
+            });
+        }
+    },
+    
     sales_order: function(frm) {
         console.log("🔍 DEBUG: sales_order event triggered");
         if (frm.doc.sales_order) {
             console.log("🔍 DEBUG: Sales order selected:", frm.doc.sales_order);
-            // Fetch customer from sales order
-            frappe.call({
-                method: "frappe.client.get_value",
-                args: {
-                    doctype: "Sales Order",
-                    filters: { name: frm.doc.sales_order },
-                    fieldname: "customer"
-                },
-                callback: function(r) {
-                    console.log("🔍 DEBUG: Customer fetch callback:", r);
-                    if (r.message && r.message.customer) {
-                        frm.set_value("customer", r.message.customer);
+            // Fetch customer from sales order (if not already set)
+            if (!frm.doc.customer) {
+                frappe.call({
+                    method: "frappe.client.get_value",
+                    args: {
+                        doctype: "Sales Order",
+                        filters: { name: frm.doc.sales_order },
+                        fieldname: "customer"
+                    },
+                    callback: function(r) {
+                        console.log("🔍 DEBUG: Customer fetch callback:", r);
+                        if (r.message && r.message.customer) {
+                            frm.set_value("customer", r.message.customer);
+                        }
                     }
-                }
-            });
+                });
+            }
             
             // Fetch work order data
             frm.trigger("fetch_work_orders");
@@ -176,6 +289,8 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                         console.log("🔍 DEBUG: Create raw material transfer callback:", r);
                         if (r.message && r.message.success) {
                             frappe.show_alert(__("Raw Material Transfer document created successfully!"), 3);
+                            // Reload the form to show updated transfer quantities
+                            frm.reload_doc();
                             // Redirect to the new Raw Material Transfer document
                             frappe.set_route("Form", "Raw Material Transfer", r.message.doc_name);
                         } else {
@@ -346,6 +461,8 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                         setTimeout(function() {
                             progress_dialog.hide();
                             frappe.show_alert(__("Raw Material Transfer document created successfully!"), 5);
+                            // Reload the form to show updated transfer quantities
+                            frm.reload_doc();
                             
                             frappe.confirm(
                                 __("Would you like to open the newly created Raw Material Transfer document?"),
@@ -442,6 +559,8 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                                     console.log("🔍 DEBUG: Create remaining transfer callback:", r);
                                     if (r.message && r.message.success) {
                                         frappe.show_alert(__("Raw Material Transfer document created successfully!"), 3);
+                                        // Reload the form to show updated transfer quantities
+                                        frm.reload_doc();
                                         if (r.message.doc_name) {
                                             frappe.set_route("Form", "Raw Material Transfer", r.message.doc_name);
                                         }
@@ -643,6 +762,27 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                 }
             }
         });
+    },
+    
+    source_warehouse: function(frm) {
+        console.log("🔍 DEBUG: source_warehouse event triggered");
+        if (frm.doc.source_warehouse && frm.doc.transfer_items) {
+            // Update warehouse field and refresh actual quantities in transfer items
+            frm.doc.transfer_items.forEach(function(item) {
+                item.warehouse = frm.doc.source_warehouse;
+                // Reset actual quantity - will be updated when form is saved/reloaded
+                item.actual_qty_at_warehouse = 0;
+            });
+            frm.refresh_field("transfer_items");
+            
+            // Show message to user
+            frappe.show_alert(__("Warehouse updated. Please save and reload to see updated actual quantities."), 3);
+        }
+    },
+    
+    target_warehouse: function(frm) {
+        console.log("🔍 DEBUG: target_warehouse event triggered");
+        // Add any target warehouse specific logic here if needed
     }
 });
 

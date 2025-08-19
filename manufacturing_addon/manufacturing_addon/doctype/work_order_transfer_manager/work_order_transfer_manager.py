@@ -3,14 +3,36 @@ from frappe import _
 from frappe.utils import flt
 
 class WorkOrderTransferManager(frappe.model.document.Document):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._totals_calculated = False
+    
     def validate(self):
         print(f"🔍 DEBUG: validate() called for document: {self.name}")
-        self.calculate_totals()
+        # Only calculate totals if not already calculated during this save/submit cycle
+        if not self._totals_calculated:
+            self.calculate_totals()
+            self._totals_calculated = True
     
     def before_save(self):
         print(f"🔍 DEBUG: before_save() called for document: {self.name}")
-        # Only calculate totals, don't auto-fetch work orders
-        self.calculate_totals()
+        # Reset the flag for next save cycle
+        self._totals_calculated = False
+    
+    def before_submit(self):
+        """Called before document is submitted"""
+        print(f"🔍 DEBUG: before_submit() called for document: {self.name}")
+        # Calculate totals only if not already calculated
+        if not self._totals_calculated:
+            self.calculate_totals()
+            self._totals_calculated = True
+        
+        # Validate that we have data
+        if not self.work_order_details:
+            frappe.throw("Please fetch work orders before submitting")
+        
+        if not self.transfer_items:
+            frappe.throw("No raw materials found. Please fetch work orders first.")
     
     def validate_sales_order(self):
         print(f"🔍 DEBUG: validate_sales_order() called")
@@ -44,13 +66,7 @@ class WorkOrderTransferManager(frappe.model.document.Document):
     def on_submit(self):
         """Called when document is submitted"""
         print(f"🔍 DEBUG: on_submit() called for document: {self.name}")
-        # Validate that we have data
-        if not self.work_order_details:
-            frappe.throw("Please fetch work orders before submitting")
-        
-        if not self.transfer_items:
-            frappe.throw("No raw materials found. Please fetch work orders first.")
-        
+        # Validation is already done in before_submit()
         print(f"🔍 DEBUG: Document submitted successfully")
     
     def on_cancel(self):
@@ -76,30 +92,42 @@ def populate_work_order_tables(sales_order, doc_name):
             doc.posting_date = frappe.utils.today()
             doc.posting_time = frappe.utils.nowtime()
             
-            # Set default warehouse - simplified approach
-            print(f"🔍 DEBUG: Setting default warehouse")
+            # Set default warehouses - simplified approach
+            print(f"🔍 DEBUG: Setting default warehouses")
             try:
-                # Try to get a default warehouse from company settings
+                # Ensure company is set on the document
                 company = getattr(doc, 'company', None) or frappe.defaults.get_global_default("company")
+                if company and not getattr(doc, 'company', None):
+                    doc.company = company
+                
+                # Try to get a default warehouse from company settings
                 if company:
                     # Get the first available warehouse for the company
                     warehouses = frappe.db.sql("""
                         SELECT name FROM `tabWarehouse` 
-                        WHERE company = %s 
-                        ORDER BY is_group ASC, name ASC 
-                        LIMIT 1
+                        WHERE company = %s AND is_group = 0
+                        ORDER BY name ASC 
+                        LIMIT 2
                     """, (company,), as_dict=True)
                     
                     if warehouses:
-                        doc.warehouse = warehouses[0].name
-                        print(f"🔍 DEBUG: Set warehouse to: {doc.warehouse}")
+                        # Set source warehouse (first warehouse)
+                        doc.source_warehouse = warehouses[0].name
+                        print(f"🔍 DEBUG: Set source_warehouse to: {doc.source_warehouse}")
+                        
+                        # Set target warehouse (second warehouse if available, otherwise same as source)
+                        if len(warehouses) > 1:
+                            doc.target_warehouse = warehouses[1].name
+                        else:
+                            doc.target_warehouse = warehouses[0].name
+                        print(f"🔍 DEBUG: Set target_warehouse to: {doc.target_warehouse}")
                     else:
                         print(f"🔍 DEBUG: No warehouses found for company: {company}")
                 else:
                     print(f"🔍 DEBUG: No company found")
             except Exception as e:
-                print(f"🔍 DEBUG: Error setting warehouse: {e}")
-                # Continue without setting warehouse - user can set it manually
+                print(f"🔍 DEBUG: Error setting warehouses: {e}")
+                # Continue without setting warehouses - user can set them manually
             
             print(f"🔍 DEBUG: About to insert new document")
             doc.insert()
@@ -107,6 +135,10 @@ def populate_work_order_tables(sales_order, doc_name):
         else:
             print(f"🔍 DEBUG: Found existing document: {doc_name}")
             doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+            # Ensure company exists on existing docs as well
+            if not getattr(doc, 'company', None):
+                doc.company = frappe.defaults.get_global_default("company")
+                doc.save()
         
         # Clear existing data
         print(f"🔍 DEBUG: Clearing existing tables")
@@ -261,14 +293,56 @@ def populate_work_order_tables(sales_order, doc_name):
             print(f"🔍 DEBUG: Raw material data: {raw_summary}")
             
             try:
+                # Get actual quantity at source warehouse
+                source_warehouse = doc.source_warehouse or ""
+                actual_qty_at_warehouse = 0
+                
+                if source_warehouse:
+                    actual_qty = frappe.db.sql("""
+                        SELECT actual_qty FROM `tabBin` 
+                        WHERE item_code = %s AND warehouse = %s
+                    """, (raw_item_code, source_warehouse), as_dict=True)
+                    
+                    actual_qty_at_warehouse = flt(actual_qty[0].actual_qty) if actual_qty else 0
+                
+                # Company-wide qty for this item (sum of all non-group warehouses for company)
+                actual_company_qty = 0
+                if doc.company:
+                    company_bins = frappe.db.sql(
+                        """
+                        SELECT SUM(b.actual_qty) AS qty
+                        FROM `tabBin` b
+                        JOIN `tabWarehouse` w ON w.name = b.warehouse
+                        WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                        """,
+                        (raw_item_code, doc.company), as_dict=True
+                    )
+                    actual_company_qty = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
+                
+                # Already transferred so far for this item from this manager
+                transferred_so_far = 0
+                existing_transfers = frappe.get_all(
+                    "Raw Material Transfer",
+                    filters={"work_order_transfer_manager": doc.name},
+                    fields=["name"]
+                )
+                for t in existing_transfers:
+                    tdoc = frappe.get_doc("Raw Material Transfer", t.name)
+                    for rt in tdoc.raw_materials:
+                        if rt.item_code == raw_item_code:
+                            transferred_so_far += flt(rt.transfer_qty)
+                
                 transfer_item_data = {
-                    "work_order": "",  # Leave empty for raw materials - no link validation needed
                     "item_code": raw_item_code,
                     "item_name": raw_summary["item_name"],
                     "pending_qty": raw_summary["total_qty_needed"],
                     "transfer_qty": 0,
+                    "transferred_qty_so_far": transferred_so_far,
+                    "actual_qty_at_warehouse": actual_qty_at_warehouse,
+                    "actual_qty_at_company": actual_company_qty,
                     "uom": raw_summary["uom"],
-                    "warehouse": doc.warehouse or ""
+                    "warehouse": source_warehouse,
+                    "company": doc.company or ""
                 }
                 print(f"🔍 DEBUG: Transfer item data to append: {transfer_item_data}")
                 
@@ -360,21 +434,47 @@ def create_raw_material_transfer_doc(doc_name):
         raw_transfer_doc.posting_date = doc.posting_date
         raw_transfer_doc.posting_time = doc.posting_time
         raw_transfer_doc.company = doc.company
-        raw_transfer_doc.warehouse = doc.warehouse
+        raw_transfer_doc.source_warehouse = doc.source_warehouse
+        raw_transfer_doc.target_warehouse = doc.target_warehouse
         raw_transfer_doc.stock_entry_type = doc.stock_entry_type
         
         # Add selected raw materials
         for item in selected_items:
+            # Get actual quantities
+            actual_qty_at_warehouse = 0
+            actual_qty_at_company = 0
+            
+            if doc.source_warehouse:
+                bin_qty = frappe.db.sql("""
+                    SELECT actual_qty FROM `tabBin` 
+                    WHERE item_code = %s AND warehouse = %s
+                """, (item.item_code, doc.source_warehouse), as_dict=True)
+                actual_qty_at_warehouse = flt(bin_qty[0].actual_qty) if bin_qty else 0
+            
+            if doc.company:
+                company_bins = frappe.db.sql("""
+                    SELECT SUM(b.actual_qty) AS qty
+                    FROM `tabBin` b
+                    JOIN `tabWarehouse` w ON w.name = b.warehouse
+                    WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                """, (item.item_code, doc.company), as_dict=True)
+                actual_qty_at_company = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
+            
             raw_transfer_doc.append("raw_materials", {
                 "item_code": item.item_code,
                 "item_name": item.item_name,
                 "pending_qty": item.pending_qty,
                 "transfer_qty": item.transfer_qty or item.pending_qty,  # Use transfer_qty if set, otherwise use pending_qty
                 "uom": item.uom,
-                "warehouse": doc.warehouse
+                "warehouse": doc.source_warehouse,
+                "actual_qty_at_warehouse": actual_qty_at_warehouse,
+                "actual_qty_at_company": actual_qty_at_company
             })
         
         raw_transfer_doc.insert()
+        
+        # Update transfer quantities in the work order transfer manager
+        update_transfer_quantities(doc_name, raw_transfer_doc.name)
         
         return {
             "success": True,
@@ -424,21 +524,47 @@ def create_all_pending_transfer(doc_name):
         raw_transfer_doc.posting_date = doc.posting_date
         raw_transfer_doc.posting_time = doc.posting_time
         raw_transfer_doc.company = doc.company
-        raw_transfer_doc.warehouse = doc.warehouse
+        raw_transfer_doc.source_warehouse = doc.source_warehouse
+        raw_transfer_doc.target_warehouse = doc.target_warehouse
         raw_transfer_doc.stock_entry_type = doc.stock_entry_type
         
         # Add pending raw materials (set transfer quantities to pending quantities by default)
         for item in pending_items:
+            # Get actual quantities
+            actual_qty_at_warehouse = 0
+            actual_qty_at_company = 0
+            
+            if doc.source_warehouse:
+                bin_qty = frappe.db.sql("""
+                    SELECT actual_qty FROM `tabBin` 
+                    WHERE item_code = %s AND warehouse = %s
+                """, (item.item_code, doc.source_warehouse), as_dict=True)
+                actual_qty_at_warehouse = flt(bin_qty[0].actual_qty) if bin_qty else 0
+            
+            if doc.company:
+                company_bins = frappe.db.sql("""
+                    SELECT SUM(b.actual_qty) AS qty
+                    FROM `tabBin` b
+                    JOIN `tabWarehouse` w ON w.name = b.warehouse
+                    WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                """, (item.item_code, doc.company), as_dict=True)
+                actual_qty_at_company = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
+            
             raw_transfer_doc.append("raw_materials", {
                 "item_code": item.item_code,
                 "item_name": item.item_name,
                 "pending_qty": item.pending_qty,
                 "transfer_qty": item.pending_qty,  # Set to pending quantity by default
                 "uom": item.uom,
-                "warehouse": doc.warehouse
+                "warehouse": doc.source_warehouse,
+                "actual_qty_at_warehouse": actual_qty_at_warehouse,
+                "actual_qty_at_company": actual_qty_at_company
             })
         
         raw_transfer_doc.insert()
+        
+        # Update transfer quantities in the work order transfer manager
+        update_transfer_quantities(doc_name, raw_transfer_doc.name)
         
         return {
             "success": True,
@@ -521,7 +647,8 @@ def create_all_pending_transfer_job(doc_name):
         raw_transfer_doc.posting_date = doc.posting_date
         raw_transfer_doc.posting_time = doc.posting_time
         raw_transfer_doc.company = doc.company
-        raw_transfer_doc.warehouse = doc.warehouse
+        raw_transfer_doc.source_warehouse = doc.source_warehouse
+        raw_transfer_doc.target_warehouse = doc.target_warehouse
         raw_transfer_doc.stock_entry_type = doc.stock_entry_type
         
         # Add pending raw materials (set transfer quantities to pending quantities by default)
@@ -532,7 +659,7 @@ def create_all_pending_transfer_job(doc_name):
                 "pending_qty": item.pending_qty,
                 "transfer_qty": item.pending_qty,  # Set to pending quantity by default
                 "uom": item.uom,
-                "warehouse": doc.warehouse
+                "warehouse": doc.source_warehouse
             })
         
         raw_transfer_doc.insert()
@@ -605,7 +732,7 @@ def get_remaining_pending_items(doc_name):
                     "item_name": item.item_name,
                     "pending_qty": remaining_qty,
                     "uom": item.uom,
-                    "warehouse": doc.warehouse
+                    "warehouse": doc.source_warehouse
                 })
         
         print(f"🔍 DEBUG: Found {len(remaining_items)} items with remaining pending quantities")
@@ -640,8 +767,8 @@ def create_selective_transfer(doc_name):
         stock_entry.posting_date = doc.posting_date
         stock_entry.posting_time = doc.posting_time
         stock_entry.company = doc.company
-        stock_entry.from_warehouse = doc.warehouse
-        stock_entry.to_warehouse = doc.warehouse
+        stock_entry.from_warehouse = doc.source_warehouse
+        stock_entry.to_warehouse = doc.target_warehouse
         
         # Add raw materials directly
         for item in selected_items:
@@ -649,8 +776,8 @@ def create_selective_transfer(doc_name):
                 "item_code": item.item_code,
                 "qty": flt(item.transfer_qty),
                 "uom": item.uom,
-                "from_warehouse": doc.warehouse,
-                "to_warehouse": doc.warehouse,
+                "from_warehouse": doc.source_warehouse,
+                "to_warehouse": doc.target_warehouse,
                 "is_finished_item": 0
             })
         
@@ -676,6 +803,103 @@ def create_selective_transfer(doc_name):
             full_message = f"Error creating selective transfer: {error_msg[:50]}..."
         
         frappe.log_error(full_message)
+        return {"success": False, "message": str(e)}
+
+@frappe.whitelist()
+def update_transfer_quantities(doc_name, transfer_doc_name):
+    """Update transfer quantities in Work Order Transfer Manager after a transfer is created"""
+    print(f"🔍 DEBUG: Starting update_transfer_quantities for doc_name: {doc_name}, transfer_doc_name: {transfer_doc_name}")
+    try:
+        doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+        
+        # If transfer_doc_name is empty, recompute from existing transfers
+        if not transfer_doc_name:
+            print(f"🔍 DEBUG: transfer_doc_name is empty, recomputing from existing transfers")
+            existing_transfers = frappe.get_all("Raw Material Transfer", 
+                filters={"work_order_transfer_manager": doc_name, "docstatus": 1},
+                fields=["name"])
+            
+            item_to_delta = {}
+            for transfer in existing_transfers:
+                transfer_doc = frappe.get_doc("Raw Material Transfer", transfer.name)
+                for ti in transfer_doc.raw_materials:
+                    item_to_delta[ti.item_code] = item_to_delta.get(ti.item_code, 0) + flt(ti.transfer_qty)
+            
+            # Update rows
+            for row in doc.transfer_items:
+                if row.item_code in item_to_delta:
+                    row.transferred_qty_so_far = flt(row.transferred_qty_so_far) + item_to_delta[row.item_code]
+                    # also bump transfer_qty if this row was selected for transfer (visual feedback)
+                    if row.select_for_transfer:
+                        row.transfer_qty = 0
+                # refresh current stock snapshots
+                if getattr(doc, 'source_warehouse', None):
+                    bin_qty = frappe.db.sql(
+                        """
+                        SELECT actual_qty FROM `tabBin` WHERE item_code=%s AND warehouse=%s
+                        """,
+                        (row.item_code, doc.source_warehouse), as_dict=True
+                    )
+                    row.actual_qty_at_warehouse = flt(bin_qty[0].actual_qty) if bin_qty else 0
+                if getattr(doc, 'company', None):
+                    company_bins = frappe.db.sql(
+                        """
+                        SELECT SUM(b.actual_qty) AS qty
+                        FROM `tabBin` b
+                        JOIN `tabWarehouse` w ON w.name = b.warehouse
+                        WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                        """,
+                        (row.item_code, doc.company), as_dict=True
+                    )
+                    row.actual_qty_at_company = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
+        else:
+            # If transfer_doc_name is provided, get the specific transfer document
+            transfer_doc = frappe.get_doc("Raw Material Transfer", transfer_doc_name)
+            
+            # Build item -> delta map from the specific transfer document
+            item_to_delta = {}
+            for ti in transfer_doc.raw_materials:
+                item_to_delta[ti.item_code] = item_to_delta.get(ti.item_code, 0) + flt(ti.transfer_qty)
+            
+            # Update rows
+            for row in doc.transfer_items:
+                if row.item_code in item_to_delta:
+                    row.transferred_qty_so_far = flt(row.transferred_qty_so_far) + item_to_delta[row.item_code]
+                    # also bump transfer_qty if this row was selected for transfer (visual feedback)
+                    if row.select_for_transfer:
+                        row.transfer_qty = 0
+                # refresh current stock snapshots
+                if getattr(doc, 'source_warehouse', None):
+                    bin_qty = frappe.db.sql(
+                        """
+                        SELECT actual_qty FROM `tabBin` WHERE item_code=%s AND warehouse=%s
+                        """,
+                        (row.item_code, doc.source_warehouse), as_dict=True
+                    )
+                    row.actual_qty_at_warehouse = flt(bin_qty[0].actual_qty) if bin_qty else 0
+                if getattr(doc, 'company', None):
+                    company_bins = frappe.db.sql(
+                        """
+                        SELECT SUM(b.actual_qty) AS qty
+                        FROM `tabBin` b
+                        JOIN `tabWarehouse` w ON w.name = b.warehouse
+                        WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                        """,
+                        (row.item_code, doc.company), as_dict=True
+                    )
+                    row.actual_qty_at_company = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
+        
+        # Only save if there are actual changes (when transfer_doc_name is provided)
+        # For stock snapshot refresh (empty transfer_doc_name), don't save to avoid timestamp conflicts
+        if transfer_doc_name:
+            doc.save()
+            print("🔍 DEBUG: Quantities updated on parent doc and saved")
+        else:
+            print("🔍 DEBUG: Stock snapshots refreshed (no save to avoid timestamp conflicts)")
+        
+        return {"success": True}
+    except Exception as e:
+        print(f"❌ DEBUG: Error updating transfer quantities: {e}")
         return {"success": False, "message": str(e)}
 
 def get_transfer_status(transferred_qty, ordered_qty):

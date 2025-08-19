@@ -10,10 +10,12 @@ class RawMaterialTransfer(frappe.model.document.Document):
         self.validate_stock_entry_type()
         self.validate_allocation()
         self.calculate_totals()
+        self.populate_actual_quantities()
     
     def before_save(self):
         """Actions to perform before saving the document"""
         self.calculate_totals()
+        self.populate_actual_quantities()
     
     def calculate_totals(self):
         """Calculate totals for the document"""
@@ -25,6 +27,39 @@ class RawMaterialTransfer(frappe.model.document.Document):
         
         self.total_transfer_qty = total_transfer_qty
         self.total_items = total_items
+    
+    def populate_actual_quantities(self):
+        """Populate actual quantities at warehouse and company level"""
+        print(f"🔍 DEBUG: populate_actual_quantities() called for Raw Material Transfer: {self.name}")
+        
+        if not self.raw_materials:
+            return
+            
+        for item in self.raw_materials:
+            if not item.item_code:
+                continue
+                
+            # Get actual quantity at warehouse
+            if item.warehouse:
+                bin_qty = frappe.db.sql("""
+                    SELECT actual_qty FROM `tabBin` 
+                    WHERE item_code = %s AND warehouse = %s
+                """, (item.item_code, item.warehouse), as_dict=True)
+                
+                item.actual_qty_at_warehouse = flt(bin_qty[0].actual_qty) if bin_qty else 0
+                print(f"🔍 DEBUG: {item.item_code} - Actual qty at warehouse {item.warehouse}: {item.actual_qty_at_warehouse}")
+            
+            # Get actual quantity at company level
+            if self.company:
+                company_bins = frappe.db.sql("""
+                    SELECT SUM(b.actual_qty) AS qty
+                    FROM `tabBin` b
+                    JOIN `tabWarehouse` w ON w.name = b.warehouse
+                    WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                """, (item.item_code, self.company), as_dict=True)
+                
+                item.actual_qty_at_company = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
+                print(f"🔍 DEBUG: {item.item_code} - Actual qty at company {self.company}: {item.actual_qty_at_company}")
     
     def before_submit(self):
         """Actions to perform before submitting the document"""

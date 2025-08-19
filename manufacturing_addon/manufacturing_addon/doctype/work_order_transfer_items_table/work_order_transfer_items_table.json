@@ -13,9 +13,13 @@
   "column_break_1",
   "pending_qty",
   "transfer_qty",
+  "transferred_qty_so_far",
+  "actual_qty_at_warehouse",
+  "actual_qty_at_company",
   "column_break_2",
   "uom",
-  "warehouse"
+  "warehouse",
+  "company"
  ],
  "fields": [
   {
@@ -73,6 +77,29 @@
    "reqd": 1
   },
   {
+   "fieldname": "transferred_qty_so_far",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Transferred So Far",
+   "read_only": 1
+  },
+  {
+   "fieldname": "actual_qty_at_warehouse",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Actual Qty at Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "actual_qty_at_company",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Actual Qty in Company",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_2",
    "fieldtype": "Column Break"
   },
@@ -90,7 +117,16 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Warehouse",
-   "options": "Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company",
    "reqd": 1
   }
  ],

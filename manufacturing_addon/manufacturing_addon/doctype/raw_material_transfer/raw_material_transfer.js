@@ -15,6 +15,15 @@ frappe.ui.form.on("Raw Material Transfer", {
             frm.add_custom_button(__("Clear All Transfer Qty"), function() {
                 frm.trigger("clear_all_transfer_qty");
             }, __("Actions"));
+            
+            // Bulk delete buttons for better performance
+            frm.add_custom_button(__("Bulk Delete Selected"), function() {
+                frm.trigger("bulk_delete_selected");
+            }, __("Actions"));
+            
+            frm.add_custom_button(__("Clear All Rows"), function() {
+                frm.trigger("bulk_clear_all_rows");
+            }, __("Actions"));
         }
     },
     
@@ -57,6 +66,88 @@ frappe.ui.form.on("Raw Material Transfer", {
         
         frm.refresh_field("raw_materials");
         frappe.show_alert(__("All transfer quantities set to pending quantities"), 3);
+    },
+    
+    bulk_delete_selected: function(frm) {
+        console.log("🔍 DEBUG: bulk_delete_selected() called");
+        
+        if (!frm.doc.raw_materials || frm.doc.raw_materials.length === 0) {
+            frappe.msgprint(__("No raw materials found"));
+            return;
+        }
+        
+        // Get selected rows from the grid
+        let selected_rows = [];
+        frm.doc.raw_materials.forEach(function(item, index) {
+            if (item.select_for_delete) {
+                selected_rows.push(index);
+            }
+        });
+        
+        if (selected_rows.length === 0) {
+            frappe.msgprint(__("Please select rows to delete"));
+            return;
+        }
+        
+        frappe.confirm(
+            __("Are you sure you want to delete {0} selected rows?", [selected_rows.length]),
+            function() {
+                // User confirmed
+                frappe.call({
+                    method: "manufacturing_addon.manufacturing_addon.doctype.raw_material_transfer.raw_material_transfer.bulk_delete_raw_material_rows",
+                    args: {
+                        doc_name: frm.doc.name,
+                        row_indices: selected_rows
+                    },
+                    callback: function(r) {
+                        if (r.message && r.message.success) {
+                            frappe.show_alert(r.message.message, 3);
+                            frm.reload_doc();
+                        } else {
+                            frappe.msgprint(__("Error: {0}", [r.message ? r.message.message : "Unknown error"]));
+                        }
+                    }
+                });
+            },
+            function() {
+                // User cancelled
+                frappe.show_alert(__("Operation cancelled"), 3);
+            }
+        );
+    },
+    
+    bulk_clear_all_rows: function(frm) {
+        console.log("🔍 DEBUG: bulk_clear_all_rows() called");
+        
+        if (!frm.doc.raw_materials || frm.doc.raw_materials.length === 0) {
+            frappe.msgprint(__("No raw materials found"));
+            return;
+        }
+        
+        frappe.confirm(
+            __("Are you sure you want to clear all {0} rows?", [frm.doc.raw_materials.length]),
+            function() {
+                // User confirmed
+                frappe.call({
+                    method: "manufacturing_addon.manufacturing_addon.doctype.raw_material_transfer.raw_material_transfer.bulk_clear_all_raw_material_rows",
+                    args: {
+                        doc_name: frm.doc.name
+                    },
+                    callback: function(r) {
+                        if (r.message && r.message.success) {
+                            frappe.show_alert(r.message.message, 3);
+                            frm.reload_doc();
+                        } else {
+                            frappe.msgprint(__("Error: {0}", [r.message ? r.message.message : "Unknown error"]));
+                        }
+                    }
+                });
+            },
+            function() {
+                // User cancelled
+                frappe.show_alert(__("Operation cancelled"), 3);
+            }
+        );
     }
 });
 

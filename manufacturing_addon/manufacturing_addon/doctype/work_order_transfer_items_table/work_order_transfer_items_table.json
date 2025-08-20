@@ -11,6 +11,7 @@
   "item_code",
   "item_name",
   "column_break_1",
+  "total_required_qty",
   "pending_qty",
   "transfer_qty",
   "transferred_qty_so_far",
@@ -57,6 +58,15 @@
   {
    "fieldname": "column_break_1",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_required_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Required Qty",
+   "read_only": 1
   },
   {
    "fieldname": "pending_qty",
@@ -127,7 +137,8 @@
    "in_standard_filter": 1,
    "label": "Company",
    "options": "Company",
-   "reqd": 1
+   "reqd": 1,
+   "default": "frappe.defaults.get_global_default('company')"
   }
  ],
  "index_web_pages_for_search": 1,

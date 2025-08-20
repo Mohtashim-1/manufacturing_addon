@@ -5,6 +5,11 @@ frappe.ui.form.on("Work Order Transfer Manager", {
     refresh: function(frm) {
         console.log("🔍 DEBUG: refresh() called for Work Order Transfer Manager");
         
+        // Set company field if not set
+        if (!frm.doc.company) {
+            frm.set_value("company", frappe.defaults.get_default("company"));
+        }
+        
         // Set up initial filters for sales_order field
         frm.trigger("setup_sales_order_filter");
         
@@ -85,6 +90,67 @@ frappe.ui.form.on("Work Order Transfer Manager", {
     after_save: function(frm) {
         console.log("🔍 DEBUG: after_save() called");
         frm._submitting = false;
+    },
+    
+    validate: function(frm) {
+        // Ensure company is set in all child rows
+        let company = frm.doc.company || frappe.defaults.get_default("company");
+        
+        if (frm.doc.transfer_items && frm.doc.transfer_items.length > 0) {
+            frm.doc.transfer_items.forEach(function(item) {
+                if (!item.company) {
+                    item.company = company;
+                }
+            });
+        }
+        
+        if (frm.doc.work_order_details && frm.doc.work_order_details.length > 0) {
+            frm.doc.work_order_details.forEach(function(item) {
+                if (!item.company) {
+                    item.company = company;
+                }
+            });
+        }
+        
+        if (frm.doc.work_order_summary && frm.doc.work_order_summary.length > 0) {
+            frm.doc.work_order_summary.forEach(function(item) {
+                if (!item.company) {
+                    item.company = company;
+                }
+            });
+        }
+    },
+    
+    setup_company_in_child_tables: function(frm) {
+        // Ensure company is set in all child table items
+        let company = frm.doc.company || frappe.defaults.get_default("company");
+        
+        if (frm.doc.transfer_items && frm.doc.transfer_items.length > 0) {
+            frm.doc.transfer_items.forEach(function(item) {
+                if (!item.company) {
+                    item.company = company;
+                }
+            });
+            frm.refresh_field("transfer_items");
+        }
+        
+        if (frm.doc.work_order_details && frm.doc.work_order_details.length > 0) {
+            frm.doc.work_order_details.forEach(function(item) {
+                if (!item.company) {
+                    item.company = company;
+                }
+            });
+            frm.refresh_field("work_order_details");
+        }
+        
+        if (frm.doc.work_order_summary && frm.doc.work_order_summary.length > 0) {
+            frm.doc.work_order_summary.forEach(function(item) {
+                if (!item.company) {
+                    item.company = company;
+                }
+            });
+            frm.refresh_field("work_order_summary");
+        }
     },
     
     refresh_stock_snapshots: function(frm) {
@@ -240,6 +306,11 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                         // Reload the form to show the populated data
                         console.log("🔍 DEBUG: Reloading current form");
                         frm.reload_doc();
+                        
+                        // Ensure company is set in child tables after reload
+                        setTimeout(function() {
+                            frm.trigger("setup_company_in_child_tables");
+                        }, 1000);
                     }
                 } else {
                     console.log("🔍 DEBUG: Server-side populate failed:", r.message);

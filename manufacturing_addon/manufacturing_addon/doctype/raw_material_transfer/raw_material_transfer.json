@@ -71,7 +71,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "frappe.defaults.get_global_default('company')",
    "fieldname": "company",
    "fieldtype": "Link",
    "label": "Company",

@@ -712,7 +712,7 @@ def populate_work_order_tables(sales_order, doc_name):
         print(f"🔍 DEBUG: Calling doc.save()...")
         try:
             doc.save()
-            print(f"🔍 DEBUG: Document saved successfully with {len(doc.work_order_details)} details, {len(doc.work_order_summary)} summary, {len(doc.transfer_items)} transfer items")
+            print(f"🔍 DEBUG: Document saved successfully with {len(doc.work_order_details)} details, {len(doc.work_order_summary)} summary, {len(doc.transfer_items)} raw material transfer items")
         except Exception as final_save_error:
             print(f"❌ DEBUG: Error in final save: {final_save_error}")
             # If the final save fails, try to save the child table rows directly
@@ -1491,3 +1491,125 @@ def cancel_background_job(job_id: str):
         return {"success": True, "message": "Cancellation signal sent."}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def get_wotm_dashboard_data(doc_name):
+    """Get dashboard data for Work Order Transfer Manager"""
+    print(f"🔍 DEBUG: get_wotm_dashboard_data called with doc_name: {doc_name}")
+    try:
+        doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+        print(f"🔍 DEBUG: Successfully loaded WOTM document: {doc.name}")
+        
+        # Get customer name
+        customer_name = ""
+        if doc.customer:
+            customer_name = frappe.db.get_value("Customer", doc.customer, "customer_name") or doc.customer
+            print(f"🔍 DEBUG: Customer name: {customer_name}")
+        
+        # Calculate totals from work order summary
+        total_work_orders = len(doc.work_order_details) if doc.work_order_details else 0
+        total_transferred = 0
+        total_pending = 0
+        completed_work_orders = 0
+        
+        print(f"🔍 DEBUG: Total work orders: {total_work_orders}")
+        print(f"🔍 DEBUG: Work order summary count: {len(doc.work_order_summary) if doc.work_order_summary else 0}")
+        print(f"🔍 DEBUG: Transfer items count: {len(doc.transfer_items) if doc.transfer_items else 0}")
+        
+        work_order_summary_data = []
+        if doc.work_order_summary:
+            for item in doc.work_order_summary:
+                total_transferred += flt(item.total_transferred_qty or 0)
+                total_pending += flt(item.total_pending_qty or 0)
+                
+                # Calculate progress percentage
+                total_ordered = flt(item.total_ordered_qty or 0)
+                progress_percentage = 0
+                if total_ordered > 0:
+                    progress_percentage = (flt(item.total_transferred_qty or 0) / total_ordered) * 100
+                
+                work_order_summary_data.append({
+                    "item_code": item.item_code,
+                    "item_name": item.item_name,
+                    "total_ordered_qty": total_ordered,
+                    "total_transferred_qty": flt(item.total_transferred_qty or 0),
+                    "total_pending_qty": flt(item.total_pending_qty or 0),
+                    "progress_percentage": round(progress_percentage, 1)
+                })
+        
+        # Count completed work orders
+        if doc.work_order_details:
+            for item in doc.work_order_details:
+                # Work Order Details Table does not have transferred_qty; use pending_qty to infer completion
+                if flt(getattr(item, "pending_qty", 0) or 0) <= 0:
+                    completed_work_orders += 1
+        
+        # Calculate work order progress percentage
+        work_order_progress_percentage = 0
+        if total_work_orders > 0:
+            work_order_progress_percentage = (completed_work_orders / total_work_orders) * 100
+        
+        # Get raw materials data
+        raw_materials_data = []
+        total_raw_materials = 0
+        if doc.transfer_items:
+            total_raw_materials = len(doc.transfer_items)
+            for item in doc.transfer_items:
+                raw_materials_data.append({
+                    "item_code": item.item_code,
+                    "item_name": item.item_name,
+                    "total_required_qty": flt(item.total_required_qty or 0),
+                    "transferred_qty_so_far": flt(item.transferred_qty_so_far or 0),
+                    "pending_qty": flt(item.pending_qty or 0),
+                    "item_transfer_status": item.item_transfer_status or "Pending",
+                    "item_transfer_percentage": flt(item.item_transfer_percentage or 0)
+                })
+        
+        # Calculate overall transfer percentage
+        overall_transfer_percentage = flt(doc.transfer_percentage or 0)
+        
+        # Determine status info
+        status_info = {
+            "status": doc.transfer_status or "Pending",
+            "message": "Transfer in progress",
+            "status_color": "#d32f2f"  # Default red
+        }
+        
+        if doc.transfer_status == "Completed":
+            status_info["message"] = "All transfers completed"
+            status_info["status_color"] = "#2e7d32"  # Green
+        elif doc.transfer_status == "In Progress":
+            status_info["message"] = f"Transfer {overall_transfer_percentage:.1f}% complete"
+            status_info["status_color"] = "#f57c00"  # Orange
+        else:
+            status_info["message"] = "No transfers started"
+            status_info["status_color"] = "#d32f2f"  # Red
+        
+        result_data = {
+            "wotm_name": doc.name,
+            "customer": doc.customer,
+            "customer_name": customer_name,
+            "sales_order": doc.sales_order,
+            "posting_date": doc.posting_date,
+            "total_work_orders": total_work_orders,
+            "total_transferred": total_transferred,
+            "total_pending": total_pending,
+            "total_raw_materials": total_raw_materials,
+            "completed_work_orders": completed_work_orders,
+            "overall_transfer_percentage": round(overall_transfer_percentage, 1),
+            "work_order_progress_percentage": round(work_order_progress_percentage, 1),
+            "status_info": status_info,
+            "work_order_summary": work_order_summary_data,
+            "raw_materials": raw_materials_data
+        }
+        
+        print(f"🔍 DEBUG: Returning dashboard data: {result_data}")
+        return result_data
+        
+    except Exception as e:
+        print(f"❌ DEBUG: Error in get_wotm_dashboard_data: {str(e)}")
+        import traceback
+        print(f"❌ DEBUG: Full traceback: {traceback.format_exc()}")
+        frappe.log_error(f"Error getting WOTM dashboard data: {str(e)}")
+        return None

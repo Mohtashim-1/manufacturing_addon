@@ -1147,10 +1147,18 @@ def calculate_transfer_status_and_percentage(transferred_qty, total_required_qty
     """
     Calculate transfer status and percentage based on transferred vs total required quantities
     """
+    # Ensure we have valid numbers
+    transferred_qty = flt(transferred_qty or 0)
+    total_required_qty = flt(total_required_qty or 0)
+    
     if total_required_qty <= 0:
         return "Pending", 0
     
     percentage = (transferred_qty / total_required_qty) * 100
+    
+    # Ensure percentage is a valid number
+    if percentage is None or percentage == float('inf') or percentage == float('-inf') or percentage != percentage:  # NaN check
+        percentage = 0
     
     if percentage >= 100:
         return "Completed", 100
@@ -1178,6 +1186,10 @@ def calculate_overall_wotm_status(doc):
         return "Pending", 0
     
     percentage = (total_transferred / total_required) * 100
+    
+    # Ensure percentage is a valid number
+    if percentage is None or percentage == float('inf') or percentage == float('-inf') or percentage != percentage:  # NaN check
+        percentage = 0
     
     if percentage >= 100:
         return "Completed", 100

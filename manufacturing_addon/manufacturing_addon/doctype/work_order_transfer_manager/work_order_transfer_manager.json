@@ -6,6 +6,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "detail_tab",
   "posting_date",
   "column_break_qzgl",
   "posting_time",
@@ -28,7 +29,9 @@
   "work_order_details",
   "section_break_4",
   "transfer_items",
-  "amended_from"
+  "amended_from",
+  "dashboard_tab",
+  "dashboard_status"
  ],
  "fields": [
   {
@@ -171,12 +174,27 @@
   {
    "fieldname": "column_break_sjws",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "dashboard_tab",
+   "fieldtype": "Tab Break",
+   "label": "Dashboard"
+  },
+  {
+   "fieldname": "dashboard_status",
+   "fieldtype": "HTML",
+   "label": "dashboard_status"
+  },
+  {
+   "fieldname": "detail_tab",
+   "fieldtype": "Tab Break",
+   "label": "Detail"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-08-20 00:44:03.090298",
+ "modified": "2025-08-20 21:53:42.909553",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Work Order Transfer Manager",

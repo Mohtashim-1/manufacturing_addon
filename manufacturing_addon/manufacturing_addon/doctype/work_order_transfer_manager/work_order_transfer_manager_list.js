@@ -14,9 +14,11 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 	// Add custom formatter for percentage column
 	formatters: {
 		transfer_percentage: function(value, df, doc) {
-			if (value === null || value === undefined) return "";
+			if (value === null || value === undefined || isNaN(value)) return "0.0%";
 			
 			const percentage = parseFloat(value);
+			if (isNaN(percentage)) return "0.0%";
+			
 			let color = "red";
 			
 			if (percentage >= 100) {
@@ -25,7 +27,7 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 				color = "orange";
 			}
 			
-			return `<span style="color: ${color}; font-weight: bold;">${percentage.toFixed(1)}%</span>`;
+			return `<div style="text-align: center; width: 100%;"><span style="color: ${color}; font-weight: bold;">${percentage.toFixed(1)}%</span></div>`;
 		},
 		
 		transfer_status: function(value, df, doc) {
@@ -49,7 +51,7 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 					break;
 			}
 			
-			return `<span style="color: ${color}; font-weight: bold;">${icon} ${value}</span>`;
+			return `<div style="text-align: center; width: 100%;"><span style="color: ${color}; font-weight: bold;">${icon} ${value}</span></div>`;
 		}
 	},
 	
@@ -96,8 +98,24 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 		}
 	},
 	
-	// Add custom field for progress bar
+
+	
+	// Add CSS for proper alignment
 	onload: function(listview) {
+		// Add custom CSS for header alignment
+		const style = document.createElement('style');
+		style.textContent = `
+			.list-view .list-row-header .list-row-col[data-fieldname="transfer_status"],
+			.list-view .list-row-header .list-row-col[data-fieldname="transfer_percentage"] {
+				text-align: center !important;
+			}
+			.list-view .list-row .list-row-col[data-fieldname="transfer_status"],
+			.list-view .list-row .list-row-col[data-fieldname="transfer_percentage"] {
+				text-align: center !important;
+			}
+		`;
+		document.head.appendChild(style);
+		
 		// Add progress bar column if not exists
 		if (!listview.columns.find(col => col.fieldname === "progress_bar")) {
 			listview.columns.push({
@@ -106,6 +124,8 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 				width: 120,
 				formatter: function(value, df, doc) {
 					const percentage = parseFloat(doc.transfer_percentage || 0);
+					if (isNaN(percentage)) return "0.0%";
+					
 					const status = doc.transfer_status || "Pending";
 					
 					let color = "#ff6b6b"; // red

@@ -1133,6 +1133,7 @@ function create_wotm_dashboard_html(data) {
                 <div style="text-align: right;">
                     <div style="font-size: 20px; font-weight: bold; color: ${data.status_info.status_color};">${data.status_info.status}</div>
                     <div style="color: #666; font-size: 12px;">${data.status_info.message}</div>
+                    <button onclick="cur_frm.trigger('load_dashboard_status')" style="margin-top: 10px; padding: 5px 10px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">🔄 Refresh</button>
                 </div>
             </div>
 

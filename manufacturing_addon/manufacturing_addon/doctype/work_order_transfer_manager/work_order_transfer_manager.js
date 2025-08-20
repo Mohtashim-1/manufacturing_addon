@@ -471,100 +471,24 @@ frappe.ui.form.on("Work Order Transfer Manager", {
     },
     
     start_background_transfer_job: function(frm) {
-        console.log("🔍 DEBUG: Starting background transfer job");
-        
-        // Show progress dialog
-        let progress_dialog = new frappe.ui.Dialog({
-            title: __("Creating Raw Material Transfer"),
-            fields: [
-                {
-                    fieldtype: 'HTML',
-                    fieldname: 'progress_html',
-                    options: `
-                        <div style="text-align: center; padding: 20px;">
-                            <div class="progress-bar" style="width: 100%; height: 20px; background-color: #f0f0f0; border-radius: 10px; overflow: hidden;">
-                                <div class="progress-fill" style="width: 0%; height: 100%; background-color: #5cb85c; transition: width 0.3s ease;"></div>
-                            </div>
-                            <div style="margin-top: 10px; font-size: 14px;">
-                                <span class="progress-text">Starting background job...</span>
-                            </div>
-                            <div style="margin-top: 5px; font-size: 12px; color: #666;">
-                                <span class="progress-details">Processing ${frm.doc.transfer_items.filter(item => flt(item.pending_qty) > 0).length} items</span>
-                            </div>
-                        </div>
-                    `
-                }
-            ],
-            primary_action_label: __("Close"),
-            primary_action: function() {
-                progress_dialog.hide();
-            }
-        });
-        
-        progress_dialog.show();
-        
-        // Start the background job
+        console.log("🔍 DEBUG: Starting background transfer job (no UI)");
         frappe.call({
             method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.create_all_pending_transfer_background",
             args: {
                 doc_name: frm.doc.name
             },
+            freeze: false,
             callback: function(r) {
                 console.log("🔍 DEBUG: Background job started callback:", r);
                 if (r.message && r.message.success) {
-                    // Update progress
-                    let progress_fill = progress_dialog.get_field('progress_html').$wrapper.find('.progress-fill');
-                    let progress_text = progress_dialog.get_field('progress_html').$wrapper.find('.progress-text');
-                    let progress_details = progress_dialog.get_field('progress_html').$wrapper.find('.progress-details');
-                    
-                    progress_fill.css('width', '50%');
-                    progress_text.text("Background job started successfully");
-                    progress_details.text("Waiting for completion...");
-                    
-                    // Set up real-time listeners
-                    frappe.realtime.on('raw_material_transfer_created', function(data) {
-                        console.log("🔍 DEBUG: Raw material transfer created:", data);
-                        progress_fill.css('width', '100%');
-                        progress_text.text("Raw Material Transfer created successfully!");
-                        progress_details.text(`Document: ${data.doc_name}`);
-                        
-                        // Show success message and offer to open the document
-                        setTimeout(function() {
-                            progress_dialog.hide();
-                            frappe.show_alert(__("Raw Material Transfer document created successfully!"), 5);
-                            // Reload the form to show updated transfer quantities
-                            frm.reload_doc();
-                            
-                            frappe.confirm(
-                                __("Would you like to open the newly created Raw Material Transfer document?"),
-                                function() {
-                                    // User wants to open the document
-                                    frappe.set_route("Form", "Raw Material Transfer", data.doc_name);
-                                },
-                                function() {
-                                    // User doesn't want to open it
-                                    console.log("User chose not to open the document");
-                                }
-                            );
-                        }, 2000);
-                    });
-                    
-                    frappe.realtime.on('raw_material_transfer_error', function(data) {
-                        console.log("🔍 DEBUG: Raw material transfer error:", data);
-                        progress_fill.css('width', '100%').css('background-color', '#d9534f');
-                        progress_text.text("Error occurred during creation");
-                        progress_details.text(data.message);
-                        
-                        setTimeout(function() {
-                            progress_dialog.hide();
-                            frappe.show_alert(__("Error creating Raw Material Transfer: ") + data.message, 8);
-                        }, 3000);
-                    });
-                    
+                    frappe.show_alert({ message: __("Background job started"), indicator: "green" });
                 } else {
-                    progress_dialog.hide();
-                    frappe.show_alert(__("Error starting background job: ") + (r.message ? r.message.message : "Unknown error"), 5);
+                    frappe.show_alert({ message: __("Error starting background job"), indicator: "red" });
                 }
+            },
+            error: function(err) {
+                console.error("❌ DEBUG: Error starting background job:", err);
+                frappe.show_alert({ message: __("Error starting background job"), indicator: "red" });
             }
         });
     },

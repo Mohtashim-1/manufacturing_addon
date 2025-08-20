@@ -1,6 +1,9 @@
 import frappe
 from frappe import _
 from frappe.utils import flt
+from rq.job import Job
+from rq.command import send_stop_job_command
+from frappe.utils.background_jobs import get_redis_conn
 
 class WorkOrderTransferManager(frappe.model.document.Document):
     def __init__(self, *args, **kwargs):
@@ -967,41 +970,59 @@ def create_all_pending_transfer(doc_name):
 
 @frappe.whitelist()
 def create_all_pending_transfer_background(doc_name):
-    print(f"🔍 DEBUG: Starting create_all_pending_transfer_background for doc_name: {doc_name}")
-    try:
-        frappe.enqueue(
-            "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.create_all_pending_transfer_job",
-            doc_name=doc_name,
-            queue="long",
-            timeout=600,
-            job_name=f"create_raw_material_transfer_{doc_name}"
-        )
-        return {"success": True, "message": "Background job started.", "job_started": True}
-    except Exception as e:
-        error_msg = str(e)
-        if len(error_msg) > 60:
-            error_msg = error_msg[:57] + "..."
-        full_message = f"Error starting background job: {error_msg}"
-        if len(full_message) > 140:
-            full_message = f"Error starting background job: {error_msg[:50]}..."
-        frappe.log_error(full_message)
-        return {"success": False, "message": str(e)}
+	"""Create a new Raw Material Transfer with ALL remaining items in background and return job id"""
+	print(f"🔍 DEBUG: Starting create_all_pending_transfer_background for doc_name: {doc_name}")
+	try:
+		job = frappe.enqueue(
+			"manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.create_all_pending_transfer_job",
+			doc_name=doc_name,
+			queue="long",
+			timeout=600,
+			job_name=f"create_raw_material_transfer_{doc_name}"
+		)
+		job_id = job.get_id() if job else None
+		return {"success": True, "message": "Background job started.", "job_started": True, "job_id": job_id, "job_name": f"create_raw_material_transfer_{doc_name}"}
+	except Exception as e:
+		error_msg = str(e)
+		if len(error_msg) > 60:
+			error_msg = error_msg[:57] + "..."
+		full_message = f"Error starting background job: {error_msg}"
+		if len(full_message) > 140:
+			full_message = f"Error starting background job: {error_msg[:50]}..."
+		frappe.log_error(full_message)
+		return {"success": False, "message": str(e)}
 
 
 def create_all_pending_transfer_job(doc_name):
-    print(f"🔍 DEBUG: Background job started for doc_name: {doc_name}")
-    try:
-        # reuse foreground creator
-        out = create_all_pending_transfer(doc_name)
-        print(f"🔍 DEBUG: Background job result: {out}")
-    except Exception as e:
-        error_msg = str(e)
-        if len(error_msg) > 60:
-            error_msg = error_msg[:57] + "..."
-        full_message = f"Error in background job: {error_msg}"
-        if len(full_message) > 140:
-            full_message = f"Error in background job: {error_msg[:50]}..."
-        frappe.log_error(full_message)
+	print(f"🔍 DEBUG: Background job started for doc_name: {doc_name}")
+	channel = f"raw_material_transfer_job_{doc_name}"
+	try:
+		# reuse foreground creator
+		out = create_all_pending_transfer(doc_name)
+		print(f"🔍 DEBUG: Background job result: {out}")
+		try:
+			frappe.publish_realtime(event=channel, message={"success": True, "result": out}, user=frappe.session.user)
+		except Exception:
+			pass
+		return out
+	except Exception as e:
+		error_msg = str(e)
+		if len(error_msg) > 60:
+			error_msg = error_msg[:57] + "..."
+		full_message = f"Error in background job: {error_msg}"
+		if len(full_message) > 140:
+			full_message = f"Error in background job: {error_msg[:50]}..."
+		frappe.log_error(full_message)
+		try:
+			frappe.publish_realtime(event=channel, message={"success": False, "message": error_msg}, user=frappe.session.user)
+		except Exception:
+			pass
+
+@frappe.whitelist()
+def create_all_pending_transfer_direct(doc_name):
+	"""Synchronous version: create ALL pending transfer in the same request (no background)."""
+	print(f"🔍 DEBUG: Starting create_all_pending_transfer_direct for doc_name: {doc_name}")
+	return create_all_pending_transfer(doc_name)
 
 
 @frappe.whitelist()
@@ -1310,7 +1331,7 @@ def fix_missing_company_fields():
 def populate_work_order_tables_background(sales_order, doc_name):
     print(f"🔍 DEBUG: Starting populate_work_order_tables_background for sales_order: {sales_order}, doc_name: {doc_name}")
     try:
-        frappe.enqueue(
+        job = frappe.enqueue(
             "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.populate_work_order_tables_job",
             sales_order=sales_order,
             doc_name=doc_name,
@@ -1318,7 +1339,8 @@ def populate_work_order_tables_background(sales_order, doc_name):
             timeout=1200,
             job_name=f"populate_work_order_tables_{doc_name}"
         )
-        return {"success": True, "message": "Background job started.", "job_started": True}
+        job_id = job.get_id() if job else None
+        return {"success": True, "message": "Background job started.", "job_started": True, "job_id": job_id, "job_name": f"populate_work_order_tables_{doc_name}"}
     except Exception as e:
         error_msg = str(e)
         if len(error_msg) > 60:
@@ -1343,3 +1365,46 @@ def populate_work_order_tables_job(sales_order, doc_name):
         if len(full_message) > 140:
             full_message = f"Error in populate background job: {error_msg[:50]}..."
         frappe.log_error(full_message)
+
+@frappe.whitelist()
+def get_background_job_status(job_id: str = None, job_name: str = None):
+    """Return status for a background job by job_id or job_name."""
+    try:
+        conn = get_redis_conn()
+        job = None
+        if job_id:
+            job = Job.fetch(job_id, connection=conn)
+        elif job_name:
+            # Try to resolve job by name from RQ Job doctype
+            jq = frappe.get_all("RQ Job", filters={"job_name": job_name}, fields=["name", "job_id", "status"], order_by="creation desc", limit=1)
+            if jq:
+                job = Job.fetch(jq[0].job_id, connection=conn)
+        if not job:
+            return {"success": False, "message": "Job not found"}
+        return {
+            "success": True,
+            "status": job.get_status(),
+            "is_finished": job.is_finished,
+            "is_failed": job.is_failed,
+            "enqueued_at": str(getattr(job, "enqueued_at", None)),
+            "ended_at": str(getattr(job, "ended_at", None)),
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@frappe.whitelist()
+def cancel_background_job(job_id: str):
+    """Attempt to cancel a running/enqueued RQ job"""
+    try:
+        conn = get_redis_conn()
+        job = Job.fetch(job_id, connection=conn)
+        # Ask workers to stop this job if running
+        send_stop_job_command(conn, job_id)
+        # Also mark as canceled if possible
+        try:
+            job.cancel()
+        except Exception:
+            pass
+        return {"success": True, "message": "Cancellation signal sent."}
+    except Exception as e:
+        return {"success": False, "message": str(e)}

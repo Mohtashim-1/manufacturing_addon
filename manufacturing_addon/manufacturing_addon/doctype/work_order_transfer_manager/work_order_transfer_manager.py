@@ -1215,6 +1215,11 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
             doc.save()
             print(f"🔍 DEBUG: Set company in update_transfer_quantities: {doc.company}")
 
+        # Check if document is submitted - if so, use direct database approach
+        if doc.docstatus == 1:
+            print(f"🔍 DEBUG: Document is submitted, using direct database approach")
+            return update_transfer_quantities_submitted(doc_name, transfer_doc_name)
+
         # Aggregate transfers from all SUBMITTED Raw Material Transfers
         item_total_transferred = {}
         existing_transfers = frappe.get_all(
@@ -1227,61 +1232,95 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
             for ti in tr_doc.raw_materials:
                 item_total_transferred[ti.item_code] = item_total_transferred.get(ti.item_code, 0) + flt(ti.transfer_qty)
 
-        # Update each child row
+        # Update each child row with proper error handling
         for row in doc.transfer_items:
-            total_trans = flt(item_total_transferred.get(row.item_code, 0))
-            
-            # Ensure company is set before updating
-            if not row.company:
-                frappe.db.set_value("Work Order Transfer Items Table", row.name, "company", doc.company)
-            
-            # Update transferred_qty_so_far
-            frappe.db.set_value("Work Order Transfer Items Table", row.name, "transferred_qty_so_far", total_trans)
-            
-            # Also update transfer_qty with the same value as transferred_qty_so_far
-            frappe.db.set_value("Work Order Transfer Items Table", row.name, "transfer_qty", total_trans)
+            try:
+                total_trans = flt(item_total_transferred.get(row.item_code, 0))
+                
+                # Validate that the row exists in the database before updating
+                if not row.name or not frappe.db.exists("Work Order Transfer Items Table", row.name):
+                    print(f"⚠️ WARNING: Row {row.name} for item {row.item_code} does not exist, skipping...")
+                    continue
+                
+                # Ensure company is set before updating
+                if not row.company:
+                    try:
+                        frappe.db.set_value("Work Order Transfer Items Table", row.name, "company", doc.company)
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Could not set company for row {row.name}: {e}")
+                
+                # Update transferred_qty_so_far
+                try:
+                    frappe.db.set_value("Work Order Transfer Items Table", row.name, "transferred_qty_so_far", total_trans)
+                except Exception as e:
+                    print(f"⚠️ WARNING: Could not update transferred_qty_so_far for row {row.name}: {e}")
+                
+                # Also update transfer_qty with the same value as transferred_qty_so_far
+                try:
+                    frappe.db.set_value("Work Order Transfer Items Table", row.name, "transfer_qty", total_trans)
+                except Exception as e:
+                    print(f"⚠️ WARNING: Could not update transfer_qty for row {row.name}: {e}")
 
-            # Use total_required_qty to compute remaining; if missing, infer (backward compatible)
-            total_required = flt(getattr(row, "total_required_qty", 0))
-            if not total_required:
-                # If total_required_qty is not set, calculate it from pending + transferred
-                total_required = flt(row.pending_qty) + total_trans
-                # Also update the total_required_qty field
-                frappe.db.set_value("Work Order Transfer Items Table", row.name, "total_required_qty", total_required)
-            
-            remaining = max(total_required - total_trans, 0)
-            frappe.db.set_value("Work Order Transfer Items Table", row.name, "pending_qty", remaining)
-            
-            # Calculate and update item transfer status and percentage
-            item_status, item_percentage = calculate_transfer_status_and_percentage(total_trans, total_required)
-            frappe.db.set_value("Work Order Transfer Items Table", row.name, "item_transfer_status", item_status)
-            frappe.db.set_value("Work Order Transfer Items Table", row.name, "item_transfer_percentage", item_percentage)
+                # Use total_required_qty to compute remaining; if missing, infer (backward compatible)
+                total_required = flt(getattr(row, "total_required_qty", 0))
+                if not total_required:
+                    # If total_required_qty is not set, calculate it from pending + transferred
+                    total_required = flt(row.pending_qty) + total_trans
+                    # Also update the total_required_qty field
+                    try:
+                        frappe.db.set_value("Work Order Transfer Items Table", row.name, "total_required_qty", total_required)
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Could not update total_required_qty for row {row.name}: {e}")
+                
+                remaining = max(total_required - total_trans, 0)
+                try:
+                    frappe.db.set_value("Work Order Transfer Items Table", row.name, "pending_qty", remaining)
+                except Exception as e:
+                    print(f"⚠️ WARNING: Could not update pending_qty for row {row.name}: {e}")
+                
+                # Calculate and update item transfer status and percentage
+                item_status, item_percentage = calculate_transfer_status_and_percentage(total_trans, total_required)
+                try:
+                    frappe.db.set_value("Work Order Transfer Items Table", row.name, "item_transfer_status", item_status)
+                    frappe.db.set_value("Work Order Transfer Items Table", row.name, "item_transfer_percentage", item_percentage)
+                except Exception as e:
+                    print(f"⚠️ WARNING: Could not update status/percentage for row {row.name}: {e}")
 
-            # Refresh stock snapshots
-            if getattr(doc, 'source_warehouse', None):
-                bin_qty = frappe.db.sql("""
-                    SELECT actual_qty FROM `tabBin` WHERE item_code=%s AND warehouse=%s
-                """, (row.item_code, doc.source_warehouse), as_dict=True)
-                frappe.db.set_value(
-                    "Work Order Transfer Items Table",
-                    row.name,
-                    "actual_qty_at_warehouse",
-                    flt(bin_qty[0].actual_qty) if bin_qty else 0,
-                )
+                # Refresh stock snapshots
+                if getattr(doc, 'source_warehouse', None):
+                    try:
+                        bin_qty = frappe.db.sql("""
+                            SELECT actual_qty FROM `tabBin` WHERE item_code=%s AND warehouse=%s
+                        """, (row.item_code, doc.source_warehouse), as_dict=True)
+                        frappe.db.set_value(
+                            "Work Order Transfer Items Table",
+                            row.name,
+                            "actual_qty_at_warehouse",
+                            flt(bin_qty[0].actual_qty) if bin_qty else 0,
+                        )
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Could not update warehouse stock for row {row.name}: {e}")
 
-            if getattr(doc, 'company', None):
-                company_bins = frappe.db.sql("""
-                    SELECT SUM(b.actual_qty) AS qty
-                    FROM `tabBin` b
-                    JOIN `tabWarehouse` w ON w.name = b.warehouse
-                    WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
-                """, (row.item_code, doc.company), as_dict=True)
-                frappe.db.set_value(
-                    "Work Order Transfer Items Table",
-                    row.name,
-                    "actual_qty_at_company",
-                    flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0,
-                )
+                if getattr(doc, 'company', None):
+                    try:
+                        company_bins = frappe.db.sql("""
+                            SELECT SUM(b.actual_qty) AS qty
+                            FROM `tabBin` b
+                            JOIN `tabWarehouse` w ON w.name = b.warehouse
+                            WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                        """, (row.item_code, doc.company), as_dict=True)
+                        frappe.db.set_value(
+                            "Work Order Transfer Items Table",
+                            row.name,
+                            "actual_qty_at_company",
+                            flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0,
+                        )
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Could not update company stock for row {row.name}: {e}")
+                        
+            except Exception as row_error:
+                print(f"❌ ERROR processing row for item {row.item_code}: {row_error}")
+                continue
 
         # Calculate overall WOTM status and percentage
         overall_status, overall_percentage = calculate_overall_wotm_status(doc)
@@ -1613,3 +1652,197 @@ def get_wotm_dashboard_data(doc_name):
         print(f"❌ DEBUG: Full traceback: {traceback.format_exc()}")
         frappe.log_error(f"Error getting WOTM dashboard data: {str(e)}")
         return None
+
+@frappe.whitelist()
+def get_stock_snapshots_only(doc_name):
+    """
+    Get stock snapshots for WOTM items without modifying the document.
+    This is a read-only method to prevent timestamp mismatch errors.
+    """
+    try:
+        doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+        stock_data = []
+        
+        if doc.transfer_items and doc.source_warehouse:
+            for item in doc.transfer_items:
+                # Get warehouse stock
+                warehouse_qty = 0
+                if doc.source_warehouse:
+                    bin_qty = frappe.db.sql("""
+                        SELECT actual_qty FROM `tabBin`
+                        WHERE item_code = %s AND warehouse = %s
+                    """, (item.item_code, doc.source_warehouse), as_dict=True)
+                    warehouse_qty = flt(bin_qty[0].actual_qty) if bin_qty else 0
+
+                # Get company stock
+                company_qty = 0
+                if doc.company:
+                    company_bins = frappe.db.sql("""
+                        SELECT SUM(b.actual_qty) AS qty
+                        FROM `tabBin` b
+                        JOIN `tabWarehouse` w ON w.name = b.warehouse
+                        WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                    """, (item.item_code, doc.company), as_dict=True)
+                    company_qty = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
+
+                stock_data.append({
+                    "item_code": item.item_code,
+                    "actual_qty_at_warehouse": warehouse_qty,
+                    "actual_qty_at_company": company_qty
+                })
+        
+        return {
+            "success": True,
+            "stock_data": stock_data
+        }
+        
+    except Exception as e:
+        print(f"❌ DEBUG: Error getting stock snapshots: {e}")
+        return {"success": False, "message": str(e)}
+
+def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
+    """
+    Update transfer quantities for submitted WOTM documents using direct database queries.
+    This avoids issues with child table access in submitted documents.
+    """
+    print(f"🔍 DEBUG: Starting update_transfer_quantities_submitted for doc_name: {doc_name}")
+    try:
+        # Get document info
+        doc_info = frappe.db.get_value("Work Order Transfer Manager", doc_name, 
+                                      ["company", "source_warehouse", "docstatus"], as_dict=True)
+        
+        if not doc_info:
+            print(f"❌ ERROR: Document {doc_name} not found")
+            return {"success": False, "message": "Document not found"}
+        
+        # Ensure company is set
+        if not doc_info.company:
+            company = frappe.defaults.get_global_default("company")
+            frappe.db.set_value("Work Order Transfer Manager", doc_name, "company", company)
+            doc_info.company = company
+            print(f"🔍 DEBUG: Set company in update_transfer_quantities_submitted: {company}")
+
+        # Aggregate transfers from all SUBMITTED Raw Material Transfers
+        item_total_transferred = {}
+        existing_transfers = frappe.get_all(
+            "Raw Material Transfer",
+            filters={"work_order_transfer_manager": doc_name, "docstatus": 1},
+            fields=["name"],
+        )
+        
+        for tr in existing_transfers:
+            tr_doc = frappe.get_doc("Raw Material Transfer", tr.name)
+            for ti in tr_doc.raw_materials:
+                item_total_transferred[ti.item_code] = item_total_transferred.get(ti.item_code, 0) + flt(ti.transfer_qty)
+
+        # Get all transfer items from database
+        transfer_items = frappe.db.get_all(
+            "Work Order Transfer Items Table",
+            filters={"parent": doc_name},
+            fields=["name", "item_code", "total_required_qty", "pending_qty", "transferred_qty_so_far"]
+        )
+        
+        print(f"🔍 DEBUG: Found {len(transfer_items)} transfer items to update")
+        
+        if not transfer_items:
+            print(f"⚠️ WARNING: No transfer items found for document {doc_name}")
+            return {"success": False, "message": "No transfer items found"}
+        
+        # Update each transfer item
+        for item in transfer_items:
+            try:
+                # Verify the item still exists in the database
+                if not frappe.db.exists("Work Order Transfer Items Table", item.name):
+                    print(f"⚠️ WARNING: Transfer item {item.name} for {item.item_code} no longer exists, skipping...")
+                    continue
+                    
+                total_trans = flt(item_total_transferred.get(item.item_code, 0))
+                
+                # Use total_required_qty to compute remaining; if missing, infer (backward compatible)
+                total_required = flt(item.total_required_qty or 0)
+                if not total_required:
+                    # If total_required_qty is not set, calculate it from pending + transferred
+                    total_required = flt(item.pending_qty or 0) + total_trans
+                    # Also update the total_required_qty field
+                    frappe.db.set_value("Work Order Transfer Items Table", item.name, "total_required_qty", total_required)
+                
+                remaining = max(total_required - total_trans, 0)
+                
+                # Calculate item transfer status and percentage
+                item_status, item_percentage = calculate_transfer_status_and_percentage(total_trans, total_required)
+                
+                # Update all fields at once
+                update_data = {
+                    "transferred_qty_so_far": total_trans,
+                    "transfer_qty": total_trans,
+                    "pending_qty": remaining,
+                    "item_transfer_status": item_status,
+                    "item_transfer_percentage": item_percentage,
+                    "company": doc_info.company
+                }
+                
+                # Update warehouse stock if source_warehouse is set
+                if doc_info.source_warehouse:
+                    bin_qty = frappe.db.sql("""
+                        SELECT actual_qty FROM `tabBin` WHERE item_code=%s AND warehouse=%s
+                    """, (item.item_code, doc_info.source_warehouse), as_dict=True)
+                    update_data["actual_qty_at_warehouse"] = flt(bin_qty[0].actual_qty) if bin_qty else 0
+
+                # Update company stock
+                if doc_info.company:
+                    company_bins = frappe.db.sql("""
+                        SELECT SUM(b.actual_qty) AS qty
+                        FROM `tabBin` b
+                        JOIN `tabWarehouse` w ON w.name = b.warehouse
+                        WHERE b.item_code = %s AND w.company = %s AND w.is_group = 0
+                    """, (item.item_code, doc_info.company), as_dict=True)
+                    update_data["actual_qty_at_company"] = flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0
+                
+                # Update the record
+                frappe.db.set_value("Work Order Transfer Items Table", item.name, update_data)
+                
+            except Exception as item_error:
+                print(f"❌ ERROR processing item {item.item_code}: {item_error}")
+                continue
+
+        # Calculate overall WOTM status and percentage
+        # Get updated data for calculation
+        updated_items = frappe.db.get_all(
+            "Work Order Transfer Items Table",
+            filters={"parent": doc_name},
+            fields=["total_required_qty", "transferred_qty_so_far", "pending_qty"]
+        )
+        
+        total_required = sum(flt(item.total_required_qty or 0) for item in updated_items)
+        total_transferred = sum(flt(item.transferred_qty_so_far or 0) for item in updated_items)
+        
+        overall_status, overall_percentage = calculate_overall_wotm_status_from_data(total_required, total_transferred)
+        
+        frappe.db.set_value("Work Order Transfer Manager", doc_name, {
+            "transfer_status": overall_status,
+            "transfer_percentage": overall_percentage
+        })
+
+        print("🔍 DEBUG: Quantities updated successfully for submitted document")
+        return {"success": True}
+
+    except Exception as e:
+        print(f"❌ DEBUG: Error updating transfer quantities for submitted document: {e}")
+        return {"success": False, "message": str(e)}
+
+
+def calculate_overall_wotm_status_from_data(total_required, total_transferred):
+    """
+    Calculate overall WOTM status and percentage from raw data.
+    """
+    if total_required == 0:
+        return "Pending", 0
+    
+    percentage = (total_transferred / total_required) * 100
+    
+    if percentage >= 100:
+        return "Completed", 100
+    elif percentage > 0:
+        return "In Progress", percentage
+    else:
+        return "Pending", 0

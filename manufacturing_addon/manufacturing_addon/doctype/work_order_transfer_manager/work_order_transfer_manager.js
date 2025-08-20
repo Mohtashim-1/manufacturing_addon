@@ -13,109 +13,108 @@ frappe.ui.form.on("Work Order Transfer Manager", {
         // Set up initial filters for sales_order field
         frm.trigger("setup_sales_order_filter");
         
-        // Refresh stock snapshots for grid when form opens, but not during submission
-        // Check if we're in the middle of a submit action
-        if (frm.doc.name && !frm.doc.__islocal && frm.doc.docstatus === 0 && !frm._submitting) {
-            frm.trigger("refresh_stock_snapshots");
+        // Only load dashboard if document is saved and not being edited
+        if (frm.doc.name && !frm.doc.__islocal && !frm.is_dirty()) {
+            // Add a small delay to ensure form is fully loaded
+            setTimeout(() => {
+                frm.trigger("load_dashboard_status");
+            }, 200);
         }
         
-        // Load dashboard data for dashboard_status field
+        // Add manual refresh button for dashboard
         if (frm.doc.name && !frm.doc.__islocal) {
-            frm.trigger("load_dashboard_status");
+            frm.add_custom_button(__('🔄 Refresh Dashboard'), function() {
+                frm.trigger("load_dashboard_status");
+            }, __('Quick View'));
         }
-        
-        // Add custom buttons based on document status
-        if (frm.doc.docstatus === 0) {
-            // Draft state - show fetch and submit buttons
-            frm.add_custom_button(__("Fetch Work Orders"), function() {
-                console.log("🔍 DEBUG: Fetch Work Orders button clicked");
-                frm.trigger("fetch_work_orders");
-            }, __("Actions"));
-            
-            frm.add_custom_button(__("Create Raw Material Transfer"), function() {
-                console.log("🔍 DEBUG: Create Raw Material Transfer button clicked");
-                frm.trigger("create_raw_material_transfer");
-            }, __("Actions"));
-            
-            frm.add_custom_button(__("Select All Raw Materials"), function() {
-                console.log("🔍 DEBUG: Select All Raw Materials button clicked");
-                frm.trigger("select_all_items");
-            }, __("Actions"));
-            
-            frm.add_custom_button(__("Deselect All"), function() {
-                console.log("🔍 DEBUG: Deselect All button clicked");
-                frm.trigger("deselect_all_items");
-            }, __("Actions"));
-        } else if (frm.doc.docstatus === 1) {
-            // Submitted state - show the new "Create All Pending Transfer" button
-            frm.add_custom_button(__("Create All Pending Transfer"), function() {
-                console.log("🔍 DEBUG: Create All Pending Transfer button clicked");
-                frm.trigger("create_all_pending_transfer");
-            }, __("Actions")).addClass("btn-primary");
-            
-            // Also show the regular transfer button for selective transfers
-            frm.add_custom_button(__("Create Remaining Transfer"), function() {
-                console.log("🔍 DEBUG: Create Remaining Transfer button clicked");
-                frm.trigger("create_remaining_transfer");
-            }, __("Actions"));
-            
-            frm.add_custom_button(__("Create Selective Transfer"), function() {
-                console.log("🔍 DEBUG: Create Selective Transfer button clicked");
-                frm.trigger("create_raw_material_transfer");
-            }, __("Actions"));
-        }
-        
-        // Add quick view buttons for related documents
-        frm.add_custom_button(__("View Sales Order"), function() {
-            if (frm.doc.sales_order) {
-                frappe.set_route("Form", "Sales Order", frm.doc.sales_order);
-            } else {
-                frappe.msgprint(__("No Sales Order linked"));
-            }
-        }, __("Quick View"));
-        
-        frm.add_custom_button(__("View Work Orders"), function() {
-            frm.trigger("show_work_orders");
-        }, __("Quick View"));
-        
-        frm.add_custom_button(__("View Raw Material Transfers"), function() {
-            frm.trigger("show_raw_material_transfers");
-        }, __("Quick View"));
-        
-        frm.add_custom_button(__("View Stock Entries"), function() {
-            frm.trigger("show_stock_entries");
-        }, __("Quick View"));
     },
     
     onload: function(frm) {
-        // Load dashboard data when form loads
+        // Load dashboard data when form loads, but only for saved documents
         if (frm.doc.name && !frm.doc.__islocal) {
-            frm.trigger("load_dashboard_status");
+            // Add a small delay to ensure form is fully loaded
+            setTimeout(() => {
+                frm.trigger("load_dashboard_status");
+            }, 100);
         }
     },
     
     load_dashboard_status: function(frm) {
-        console.log('🔍 DEBUG: load_dashboard_status called');
-        console.log('🔍 DEBUG: frm.doc.name =', frm.doc.name);
-        console.log('🔍 DEBUG: frm.fields_dict.dashboard_status =', frm.fields_dict.dashboard_status);
-        
-        if (!frm.fields_dict.dashboard_status) {
-            console.error('❌ ERROR: dashboard_status field not found!');
-            console.log('🔍 DEBUG: Available fields:', Object.keys(frm.fields_dict));
+        // Don't load dashboard if form is dirty (has unsaved changes)
+        if (frm.is_dirty()) {
+            console.log("Dashboard loading skipped - form has unsaved changes");
             return;
         }
         
-        console.log('🔍 DEBUG: Making API call to get dashboard data...');
-        frm.call({
-            method: 'manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.get_wotm_dashboard_data',
-            args: { doc_name: frm.doc.name },
+        // Don't load if already loading
+        if (frm.dashboard_loading) {
+            return;
+        }
+        
+        // Don't load if form is in a transitional state (saving, submitting, etc.)
+        if (frm.saving || frm.submitting) {
+            console.log("Dashboard loading skipped - form is in transitional state");
+            return;
+        }
+        
+        // Don't load if form is being validated
+        if (frm.validating) {
+            console.log("Dashboard loading skipped - form is being validated");
+            return;
+        }
+        
+        // Don't load if dashboard is disabled
+        if (frm.dashboard_disabled) {
+            console.log("Dashboard loading skipped - dashboard is disabled");
+            return;
+        }
+        
+        frm.dashboard_loading = true;
+        
+        // Show loading spinner without affecting form state
+        if (frm.fields_dict.dashboard_status) {
+            const wrapper = $(frm.fields_dict.dashboard_status.wrapper);
+            $(wrapper).empty();
+            $(wrapper).append(`
+                <div style="padding: 40px; text-align: center; color: #666;">
+                    <div style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #1976d2; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    <div style="margin-top: 15px; font-size: 14px;">Loading dashboard data...</div>
+                </div>
+                <style>
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                </style>
+            `);
+        }
+        
+        // Use a completely isolated call to avoid any form state interference
+        const original_dirty_state = frm.is_dirty();
+        const original_unsaved_flag = frm.doc.__unsaved;
+        
+        frappe.call({
+            method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.get_wotm_dashboard_data",
+            args: {
+                doc_name: frm.doc.name
+            },
             callback: function(r) {
-                console.log('🔍 DEBUG: API response received:', r);
+                frm.dashboard_loading = false;
+                
+                // Ensure form dirty state is preserved exactly as it was
+                if (original_dirty_state !== frm.is_dirty()) {
+                    console.log("Dashboard loading affected form dirty state - restoring");
+                    frm.doc.__unsaved = original_unsaved_flag;
+                    if (original_dirty_state) {
+                        frm.$wrapper.addClass("dirty").removeClass("clean");
+                    } else {
+                        frm.$wrapper.removeClass("dirty").addClass("clean");
+                    }
+                }
+                
                 if (r.message) {
-                    console.log('🔍 DEBUG: Rendering dashboard with data:', r.message);
                     frm.events.render_dashboard_status(frm, r.message);
                 } else {
-                    console.warn('⚠️ WARNING: No dashboard data received');
                     // Show error message if no data
                     if (frm.fields_dict.dashboard_status) {
                         const wrapper = $(frm.fields_dict.dashboard_status.wrapper);
@@ -125,57 +124,180 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                 }
             },
             error: function(r) {
-                console.error('❌ ERROR loading dashboard data:', r);
+                frm.dashboard_loading = false;
+                console.error('Error loading dashboard data:', r);
+                
+                // Ensure form dirty state is preserved exactly as it was
+                if (original_dirty_state !== frm.is_dirty()) {
+                    console.log("Dashboard loading affected form dirty state - restoring");
+                    frm.doc.__unsaved = original_unsaved_flag;
+                    if (original_dirty_state) {
+                        frm.$wrapper.addClass("dirty").removeClass("clean");
+                    } else {
+                        frm.$wrapper.removeClass("dirty").addClass("clean");
+                    }
+                }
+                
+                // Show error message in the field if available
+                if (frm.fields_dict.dashboard_status) {
+                    const wrapper = $(frm.fields_dict.dashboard_status.wrapper);
+                    $(wrapper).empty();
+                    $(wrapper).append('<div style="padding: 20px; text-align: center; color: #d32f2f;">Error loading dashboard data</div>');
+                }
             }
         });
     },
     
     render_dashboard_status: function(frm, data) {
+        // Prevent rendering if form is in a transitional state
+        if (frm._submitting || frm._saving || frm._validating || frm._dashboard_locked) {
+            console.log('🔍 DEBUG: Skipping dashboard render - form is in transitional state or dashboard is locked');
+            return;
+        }
+        
         if (frm.fields_dict.dashboard_status) {
             const wrapper = $(frm.fields_dict.dashboard_status.wrapper);
             const dashboard_html = create_wotm_dashboard_html(data);
             $(wrapper).empty();
             $(dashboard_html).appendTo(wrapper);
+            
+            // Mark that auto refresh has been used
+            frm._dashboard_auto_refresh_used = true;
+            console.log('🔍 DEBUG: Auto refresh marked as used - manual refresh required for future updates');
         }
     },
     
-    // Reload dashboard when items are updated
-    transfer_items: function(frm) {
-        if (frm.doc.name && !frm.doc.__islocal) {
-            setTimeout(() => {
-                frm.trigger("load_dashboard_status");
-            }, 1000);
+    force_load_dashboard_status: function(frm) {
+        console.log('🔍 DEBUG: force_load_dashboard_status called - bypassing all checks');
+        
+        if (!frm.fields_dict.dashboard_status) {
+            console.error('❌ ERROR: dashboard_status field not found!');
+            return;
         }
+        
+        frm.call({
+            method: 'manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.get_wotm_dashboard_data',
+            args: { doc_name: frm.doc.name },
+            callback: function(r) {
+                console.log('🔍 DEBUG: Force API response received:', r);
+                if (r.message) {
+                    console.log('🔍 DEBUG: Force rendering dashboard with data:', r.message);
+                    // Reset auto refresh flag for manual refresh
+                    frm._dashboard_auto_refresh_used = false;
+                    frm.events.render_dashboard_status(frm, r.message);
+                } else {
+                    console.warn('⚠️ WARNING: No dashboard data received in force load');
+                }
+            },
+            error: function(r) {
+                console.error('❌ ERROR force loading dashboard data:', r);
+            }
+        });
+    },
+    
+    // Reload dashboard when items are updated - but only if not saving
+    transfer_items: function(frm) {
+        // Completely disable dashboard reloads during form operations
+        // Dashboard will be reloaded manually after save/submit operations
+        console.log("🔍 DEBUG: transfer_items changed - dashboard reload disabled");
     },
     
     work_order_details: function(frm) {
-        if (frm.doc.name && !frm.doc.__islocal) {
-            setTimeout(() => {
-                frm.trigger("load_dashboard_status");
-            }, 1000);
-        }
+        // Completely disable dashboard reloads during form operations
+        // Dashboard will be reloaded manually after save/submit operations
+        console.log("🔍 DEBUG: work_order_details changed - dashboard reload disabled");
     },
     
     work_order_summary: function(frm) {
-        if (frm.doc.name && !frm.doc.__islocal) {
-            setTimeout(() => {
-                frm.trigger("load_dashboard_status");
-            }, 1000);
+        // Completely disable dashboard reloads during form operations
+        // Dashboard will be reloaded manually after save/submit operations
+        console.log("🔍 DEBUG: work_order_summary changed - dashboard reload disabled");
+    },
+    
+    // Add save events to prevent dashboard interference
+    before_save: function(frm) {
+        // Set flag to prevent dashboard loading during save
+        frm.saving = true;
+        frm.dashboard_disabled = true;
+        
+        // Clear any pending dashboard reloads
+        if (frm.dashboard_reload_timeout) {
+            clearTimeout(frm.dashboard_reload_timeout);
+            frm.dashboard_reload_timeout = null;
         }
     },
     
-    before_save: function(frm) {
-        console.log("🔍 DEBUG: before_save() called");
+    before_submit: function(frm) {
+        console.log("🔍 DEBUG: before_submit() called");
         frm._submitting = true;
+        
+        // Clear any pending dashboard reload
+        if (frm._dashboard_reload_timeout) {
+            clearTimeout(frm._dashboard_reload_timeout);
+            frm._dashboard_reload_timeout = null;
+        }
+        
+        // Prevent any dashboard operations during submit
+        frm._dashboard_locked = true;
+    },
+    
+    after_submit: function(frm) {
+        console.log("🔍 DEBUG: after_submit() called");
+        frm._submitting = false;
+        frm._form_modified = false; // Reset form modification flag
+        frm._dashboard_locked = false; // Unlock dashboard operations
+        frm._stock_refresh_done = false; // Reset stock refresh flag
+        
+        // Reset auto refresh flag to allow one more automatic refresh after submit
+        frm._dashboard_auto_refresh_used = false;
+        
+        // Reload dashboard after submit is complete
+        setTimeout(() => {
+            if (frm.doc.name && !frm.doc.__islocal) {
+                frm.trigger("load_dashboard_status");
+            }
+        }, 1000);
     },
     
     after_save: function(frm) {
-        console.log("🔍 DEBUG: after_save() called");
-        frm._submitting = false;
+        // Clear saving flag
+        frm.saving = false;
+        
+        // Re-enable dashboard after a delay
+        setTimeout(() => {
+            frm.dashboard_disabled = false;
+        }, 500);
+        
+        // Reload dashboard after successful save with a longer delay
+        setTimeout(() => {
+            frm.trigger("load_dashboard_status");
+        }, 1000);
     },
     
+    // Clean up when form is destroyed
+    onload_post_render: function(frm) {
+        // Set up cleanup when form is destroyed
+        frm.$wrapper.on('destroy', function() {
+            if (frm._dashboard_reload_timeout) {
+                clearTimeout(frm._dashboard_reload_timeout);
+                frm._dashboard_reload_timeout = null;
+            }
+        });
+    },
+    
+    // Add validation to prevent dashboard interference
     validate: function(frm) {
-        // Ensure company is set in all child rows
+        // Set validating flag
+        frm.validating = true;
+        frm.dashboard_disabled = true;
+        
+        // Clear any pending dashboard reloads during validation
+        if (frm.dashboard_reload_timeout) {
+            clearTimeout(frm.dashboard_reload_timeout);
+            frm.dashboard_reload_timeout = null;
+        }
+        
+        // Simple validation - just set company if needed
         let company = frm.doc.company || frappe.defaults.get_default("company");
         
         if (frm.doc.transfer_items && frm.doc.transfer_items.length > 0) {
@@ -186,21 +308,11 @@ frappe.ui.form.on("Work Order Transfer Manager", {
             });
         }
         
-        if (frm.doc.work_order_details && frm.doc.work_order_details.length > 0) {
-            frm.doc.work_order_details.forEach(function(item) {
-                if (!item.company) {
-                    item.company = company;
-                }
-            });
-        }
-        
-        if (frm.doc.work_order_summary && frm.doc.work_order_summary.length > 0) {
-            frm.doc.work_order_summary.forEach(function(item) {
-                if (!item.company) {
-                    item.company = company;
-                }
-            });
-        }
+        // Clear validating flag after a short delay
+        setTimeout(() => {
+            frm.validating = false;
+            frm.dashboard_disabled = false;
+        }, 100);
     },
     
     setup_company_in_child_tables: function(frm) {
@@ -237,14 +349,38 @@ frappe.ui.form.on("Work Order Transfer Manager", {
     
     refresh_stock_snapshots: function(frm) {
         if (!frm.doc.name) return;
+        
+        // Only refresh stock snapshots if the form is not being saved/submitted
+        // and if the document hasn't been modified locally
+        if (frm._submitting || frm._saving || frm._validating || frm._form_modified) {
+            console.log("🔍 DEBUG: Skipping stock snapshot refresh - form is in transitional state or has been modified");
+            return;
+        }
+        
+        // Mark that stock refresh is being done
+        frm._stock_refresh_done = true;
+        
+        // Use a read-only method to get stock snapshots without modifying the document
         frappe.call({
-            method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.update_transfer_quantities",
+            method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.get_stock_snapshots_only",
             args: {
-                doc_name: frm.doc.name,
-                transfer_doc_name: "" // just refresh snapshots without a transfer
+                doc_name: frm.doc.name
             },
-            callback: function() {
-                frm.refresh_field("transfer_items");
+            callback: function(r) {
+                if (r.message && r.message.success && !frm._submitting && !frm._saving && !frm._validating) {
+                    // Update the actual quantities in the form without saving to database
+                    if (r.message.stock_data && frm.doc.transfer_items) {
+                        r.message.stock_data.forEach(function(stock_item) {
+                            let form_item = frm.doc.transfer_items.find(item => item.item_code === stock_item.item_code);
+                            if (form_item) {
+                                form_item.actual_qty_at_warehouse = stock_item.actual_qty_at_warehouse;
+                                form_item.actual_qty_at_company = stock_item.actual_qty_at_company;
+                            }
+                        });
+                        frm.refresh_field("transfer_items");
+                        console.log("🔍 DEBUG: Stock snapshots refreshed successfully");
+                    }
+                }
             }
         });
     },
@@ -860,7 +996,100 @@ frappe.ui.form.on("Work Order Transfer Manager", {
     target_warehouse: function(frm) {
         console.log("🔍 DEBUG: target_warehouse event triggered");
         // Add any target warehouse specific logic here if needed
-    }
+    },
+
+    update_transfer_status: function(frm) {
+        console.log("🔍 DEBUG: update_transfer_status() called");
+        if (!frm.doc.name) {
+            frappe.msgprint(__("Please save the document first"));
+            return;
+        }
+        
+        // Check if document is submitted
+        if (frm.doc.docstatus !== 1) {
+            frappe.msgprint(__("This function is only available for submitted documents"));
+            return;
+        }
+        
+        // Show confirmation dialog
+        frappe.confirm(
+            __("This will update the transfer status and quantities based on all submitted Raw Material Transfers. Continue?"),
+            function() {
+                // User confirmed
+                frappe.show_alert(__("Updating transfer status..."), 3);
+                
+                frappe.call({
+                    method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.update_transfer_quantities",
+                    args: {
+                        doc_name: frm.doc.name
+                    },
+                    callback: function(r) {
+                        console.log("🔍 DEBUG: Update transfer status callback:", r);
+                        if (r.message && r.message.success) {
+                            frappe.show_alert(__("Transfer status updated successfully!"), 3);
+                            // Reload the form to show updated data
+                            frm.reload_doc();
+                        } else {
+                            frappe.show_alert(__("Error updating transfer status: ") + (r.message ? r.message.message : "Unknown error"), 5);
+                        }
+                    },
+                    error: function(r) {
+                        console.error("❌ DEBUG: Error updating transfer status:", r);
+                        frappe.show_alert(__("Error updating transfer status. Please try again."), 5);
+                    }
+                });
+            },
+            function() {
+                // User cancelled
+                console.log("🔍 DEBUG: User cancelled transfer status update");
+            }
+        );
+    },
+
+    test_dashboard: function(frm) {
+        console.log("🔍 DEBUG: Testing dashboard functionality");
+        
+        // Test if dashboard field exists
+        if (frm.fields_dict.dashboard_status) {
+            console.log("✅ Dashboard field found");
+            frappe.show_alert(__("Dashboard field is working! ✅"), 3);
+        } else {
+            console.log("❌ Dashboard field not found");
+            frappe.show_alert(__("Dashboard field not found! ❌"), 5);
+        }
+        
+        // Test API call
+        frappe.call({
+            method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.get_wotm_dashboard_data",
+            args: {
+                doc_name: frm.doc.name
+            },
+            callback: function(r) {
+                if (r.message) {
+                    console.log("✅ API call successful");
+                    frappe.show_alert(__("API call successful! ✅"), 3);
+                } else {
+                    console.log("❌ API call failed");
+                    frappe.show_alert(__("API call failed! ❌"), 5);
+                }
+            },
+            error: function(r) {
+                console.log("❌ API call error:", r);
+                frappe.show_alert(__("API call error! ❌"), 5);
+            }
+        });
+    },
+
+    // Add field change handler to prevent dashboard interference
+    field_change: function(frm, fieldname, value) {
+        // Clear any pending dashboard reloads when fields change
+        if (frm.dashboard_reload_timeout) {
+            clearTimeout(frm.dashboard_reload_timeout);
+            frm.dashboard_reload_timeout = null;
+        }
+    },
+
+
 });
 
 // Field events for transfer items table

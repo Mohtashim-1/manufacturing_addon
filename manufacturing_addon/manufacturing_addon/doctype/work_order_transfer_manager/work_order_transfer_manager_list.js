@@ -89,10 +89,15 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 				callback: function(r) {
 					if (r.message && r.message.success) {
 						frappe.show_alert(__("Status updated successfully"), "green");
-						frappe.set_route("List", "Work Order Transfer Manager");
+						listview.refresh();
 					} else {
-						frappe.show_alert(__("Error updating status"), "red");
+						const error_msg = r.message && r.message.message ? r.message.message : "Unknown error";
+						frappe.show_alert(__("Error updating status: ") + error_msg, "red");
 					}
+				},
+				error: function(r) {
+					console.error("❌ DEBUG: Error updating status in list view:", r);
+					frappe.show_alert(__("Error updating status. Please try again."), "red");
 				}
 			});
 		}
@@ -168,13 +173,24 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 								frappe.call({
 									method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.update_transfer_quantities",
 									args: { doc_name: doc.name },
-									callback: function() {
+									callback: function(r) {
 										processed++;
 										frappe.show_progress(__("Updating status..."), processed, total);
 										
 										if (processed === total) {
 											frappe.hide_progress();
 											frappe.show_alert(__("All status updated successfully"), "green");
+											listview.refresh();
+										}
+									},
+									error: function(r) {
+										processed++;
+										console.error("❌ DEBUG: Error updating status for", doc.name, ":", r);
+										frappe.show_progress(__("Updating status..."), processed, total);
+										
+										if (processed === total) {
+											frappe.hide_progress();
+											frappe.show_alert(__("Status update completed with some errors. Check console for details."), "orange");
 											listview.refresh();
 										}
 									}

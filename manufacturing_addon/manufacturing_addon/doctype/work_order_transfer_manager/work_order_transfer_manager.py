@@ -628,14 +628,19 @@ def populate_work_order_tables(sales_order, doc_name):
                 
                 print(f"🔍 DEBUG: Using company value for {raw_item_code}: {company_value}")
                 
+                # Calculate initial status and percentage for this item
+                item_status, item_percentage = calculate_transfer_status_and_percentage(transferred_so_far, total_required)
+                
                 # Create the transfer item data with company explicitly set
                 transfer_item_data = {
                     "item_code": raw_item_code,
                     "item_name": raw_summary["item_name"],
                     "total_required_qty": total_required,
                     "pending_qty": remaining,
-                    "transfer_qty": 0,
+                    "transfer_qty": transferred_so_far,  # Set to same value as transferred_qty_so_far
                     "transferred_qty_so_far": transferred_so_far,
+                    "item_transfer_status": item_status,
+                    "item_transfer_percentage": item_percentage,
                     "actual_qty_at_warehouse": actual_qty_at_warehouse,
                     "actual_qty_at_company": actual_company_qty,
                     "uom": raw_summary["uom"],
@@ -719,8 +724,9 @@ def populate_work_order_tables(sales_order, doc_name):
                     INSERT INTO `tabWork Order Transfer Items Table`
                     (name, parent, parentfield, parenttype, idx, item_code, item_name, 
                      total_required_qty, pending_qty, transfer_qty, transferred_qty_so_far,
+                     item_transfer_status, item_transfer_percentage,
                      actual_qty_at_warehouse, actual_qty_at_company, uom, warehouse, company)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     item.name or f"transfer_item_{i+1}",
                     doc.name,
@@ -733,6 +739,8 @@ def populate_work_order_tables(sales_order, doc_name):
                     item.pending_qty,
                     item.transfer_qty,
                     item.transferred_qty_so_far,
+                    getattr(item, 'item_transfer_status', 'Pending'),
+                    getattr(item, 'item_transfer_percentage', 0),
                     item.actual_qty_at_warehouse,
                     item.actual_qty_at_company,
                     item.uom,
@@ -751,6 +759,12 @@ def populate_work_order_tables(sales_order, doc_name):
             # Reload the document
             doc = frappe.get_doc("Work Order Transfer Manager", doc.name)
 
+        # Calculate and set overall WOTM status and percentage
+        overall_status, overall_percentage = calculate_overall_wotm_status(doc)
+        doc.transfer_status = overall_status
+        doc.transfer_percentage = overall_percentage
+        doc.save()
+        
         return {
             "success": True,
             "message": f"Populated {len(doc.work_order_details)} work order details, {len(doc.work_order_summary)} summary items, {len(doc.transfer_items)} raw material transfer items",
@@ -1129,6 +1143,50 @@ def create_selective_transfer(doc_name):
         return {"success": False, "message": str(e)}
 
 
+def calculate_transfer_status_and_percentage(transferred_qty, total_required_qty):
+    """
+    Calculate transfer status and percentage based on transferred vs total required quantities
+    """
+    if total_required_qty <= 0:
+        return "Pending", 0
+    
+    percentage = (transferred_qty / total_required_qty) * 100
+    
+    if percentage >= 100:
+        return "Completed", 100
+    elif percentage > 0:
+        return "In Progress", percentage
+    else:
+        return "Pending", 0
+
+
+def calculate_overall_wotm_status(doc):
+    """
+    Calculate overall WOTM status and percentage based on all transfer items
+    """
+    if not doc.transfer_items:
+        return "Pending", 0
+    
+    total_required = 0
+    total_transferred = 0
+    
+    for item in doc.transfer_items:
+        total_required += flt(item.total_required_qty or 0)
+        total_transferred += flt(item.transferred_qty_so_far or 0)
+    
+    if total_required <= 0:
+        return "Pending", 0
+    
+    percentage = (total_transferred / total_required) * 100
+    
+    if percentage >= 100:
+        return "Completed", 100
+    elif percentage > 0:
+        return "In Progress", percentage
+    else:
+        return "Pending", 0
+
+
 @frappe.whitelist()
 def update_transfer_quantities(doc_name, transfer_doc_name=None):
     """
@@ -1167,6 +1225,9 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
             
             # Update transferred_qty_so_far
             frappe.db.set_value("Work Order Transfer Items Table", row.name, "transferred_qty_so_far", total_trans)
+            
+            # Also update transfer_qty with the same value as transferred_qty_so_far
+            frappe.db.set_value("Work Order Transfer Items Table", row.name, "transfer_qty", total_trans)
 
             # Use total_required_qty to compute remaining; if missing, infer (backward compatible)
             total_required = flt(getattr(row, "total_required_qty", 0))
@@ -1178,6 +1239,11 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
             
             remaining = max(total_required - total_trans, 0)
             frappe.db.set_value("Work Order Transfer Items Table", row.name, "pending_qty", remaining)
+            
+            # Calculate and update item transfer status and percentage
+            item_status, item_percentage = calculate_transfer_status_and_percentage(total_trans, total_required)
+            frappe.db.set_value("Work Order Transfer Items Table", row.name, "item_transfer_status", item_status)
+            frappe.db.set_value("Work Order Transfer Items Table", row.name, "item_transfer_percentage", item_percentage)
 
             # Refresh stock snapshots
             if getattr(doc, 'source_warehouse', None):
@@ -1204,6 +1270,11 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
                     "actual_qty_at_company",
                     flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0,
                 )
+
+        # Calculate overall WOTM status and percentage
+        overall_status, overall_percentage = calculate_overall_wotm_status(doc)
+        frappe.db.set_value("Work Order Transfer Manager", doc.name, "transfer_status", overall_status)
+        frappe.db.set_value("Work Order Transfer Manager", doc.name, "transfer_percentage", overall_percentage)
 
         print("🔍 DEBUG: Quantities updated on child rows (no parent save needed)")
         return {"success": True}

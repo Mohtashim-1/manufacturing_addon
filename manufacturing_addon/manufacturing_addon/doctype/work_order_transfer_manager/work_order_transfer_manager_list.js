@@ -71,35 +71,50 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 		}
 	],
 	
-	// Add custom button to refresh status
+	// Add custom button to fetch work order or refresh status
 	button: {
 		show: function(doc) {
-			return doc.transfer_status !== "Completed";
+			return true; // Show button for all documents
 		},
-		get_label: function() {
-			return __("Refresh Status");
+		get_label: function(doc) {
+			// Show "Fetch Work Order" if no work orders are loaded yet, otherwise "Refresh Status"
+			if (!doc.transfer_status || doc.transfer_status === "Pending") {
+				return __("Fetch Work Order");
+			} else {
+				return __("Refresh Status");
+			}
 		},
 		get_description: function(doc) {
-			return __("Update transfer status and percentage");
+			if (!doc.transfer_status || doc.transfer_status === "Pending") {
+				return __("Fetch and populate work orders from sales order");
+			} else {
+				return __("Update transfer status and percentage");
+			}
 		},
 		action: function(doc) {
-			frappe.call({
-				method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.update_transfer_quantities",
-				args: { doc_name: doc.name },
-				callback: function(r) {
-					if (r.message && r.message.success) {
-						frappe.show_alert(__("Status updated successfully"), "green");
-						listview.refresh();
-					} else {
-						const error_msg = r.message && r.message.message ? r.message.message : "Unknown error";
-						frappe.show_alert(__("Error updating status: ") + error_msg, "red");
+			if (!doc.transfer_status || doc.transfer_status === "Pending") {
+				// Open the document in form view to access fetch work order functionality
+				frappe.set_route("Form", "Work Order Transfer Manager", doc.name);
+			} else {
+				// Refresh status
+				frappe.call({
+					method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.update_transfer_quantities",
+					args: { doc_name: doc.name },
+					callback: function(r) {
+						if (r.message && r.message.success) {
+							frappe.show_alert(__("Status updated successfully"), "green");
+							listview.refresh();
+						} else {
+							const error_msg = r.message && r.message.message ? r.message.message : "Unknown error";
+							frappe.show_alert(__("Error updating status: ") + error_msg, "red");
+						}
+					},
+					error: function(r) {
+						console.error("❌ DEBUG: Error updating status in list view:", r);
+						frappe.show_alert(__("Error updating status. Please try again."), "red");
 					}
-				},
-				error: function(r) {
-					console.error("❌ DEBUG: Error updating status in list view:", r);
-					frappe.show_alert(__("Error updating status. Please try again."), "red");
-				}
-			});
+				});
+			}
 		}
 	},
 	

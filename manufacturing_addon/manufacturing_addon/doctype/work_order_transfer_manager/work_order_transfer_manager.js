@@ -27,6 +27,36 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                 frm.trigger("load_dashboard_status");
             }, __('Quick View'));
         }
+        
+        // Add Fetch Work Order button if sales order is selected but no work orders loaded yet
+        if (frm.doc.sales_order && (!frm.doc.transfer_status || frm.doc.transfer_status === "Pending")) {
+            frm.add_custom_button(__('📋 Fetch Work Order'), function() {
+                frm.trigger("fetch_work_orders");
+            }, __('Actions'));
+        }
+        
+        // Add transfer-related buttons for submitted documents
+        if (frm.doc.name && !frm.doc.__islocal && frm.doc.docstatus === 1) {
+            // Create All Pending Transfer button
+            frm.add_custom_button(__('🚀 Create All Pending Transfer'), function() {
+                frm.trigger("create_all_pending_transfer");
+            }, __('Actions'));
+            
+            // Create Remaining Transfer button
+            frm.add_custom_button(__('🔄 Create Remaining Transfer'), function() {
+                frm.trigger("create_remaining_transfer");
+            }, __('Actions'));
+            
+            // Select All Items button
+            frm.add_custom_button(__('✅ Select All Items'), function() {
+                frm.trigger("select_all_items");
+            }, __('Actions'));
+            
+            // Deselect All Items button
+            frm.add_custom_button(__('❌ Deselect All Items'), function() {
+                frm.trigger("deselect_all_items");
+            }, __('Actions'));
+        }
     },
     
     onload: function(frm) {

@@ -10,6 +10,8 @@ class StockEntryAgainstBOM(Document):
         self.calculate_total_qty()
         self.calculate_total_qty_raw_materials()
         self.initialize_tracking_fields()
+        # Adjust quantities based on remaining across previously submitted documents for the same Sales Order
+        self._enforce_cross_document_remaining()
 
     def onload(self):
         """Ensure tracking fields are properly initialized when document is loaded"""
@@ -270,8 +272,24 @@ class StockEntryAgainstBOM(Document):
 
     def on_submit(self):
         # Create Stock Entry for each finished item using BOM
+        # Before processing, cap by cross-document remaining for the Sales Order (if available)
+        remaining_by_item = self._get_remaining_by_item()
+        
         for row in self.stock_entry_item_table:
             if row.bom and row.qty:
+                # Determine how much is allowed to be created based on remaining
+                allowed_remaining = remaining_by_item.get(row.item, None)
+                if allowed_remaining is not None:
+                    if allowed_remaining <= 0:
+                        # Nothing remaining for this item across documents; skip
+                        continue
+                    if row.qty > allowed_remaining:
+                        frappe.msgprint(f"Capped {row.item} from {row.qty} to {allowed_remaining} based on remaining for Sales Order {self.sales_order}.")
+                        row.qty = allowed_remaining
+                        remaining_by_item[row.item] = 0
+                    else:
+                        remaining_by_item[row.item] = allowed_remaining - row.qty
+                
                 stock_entry = frappe.new_doc("Stock Entry")
                 stock_entry.stock_entry_type = self.stock_entry_type
                 stock_entry.from_bom = 1
@@ -279,6 +297,7 @@ class StockEntryAgainstBOM(Document):
                 stock_entry.fg_completed_qty = row.qty
                 stock_entry.bom_no = row.bom
                 stock_entry.custom_cost_center = self.cost_center
+                stock_entry.custom_stock_entry_against_bom = self.name
                 
                 # Set source and target warehouses from the document
                 if hasattr(self, 'source_warehouse') and self.source_warehouse:
@@ -368,6 +387,119 @@ class StockEntryAgainstBOM(Document):
         # Create Transfer Form after all Stock Entries are created
         self.create_transfer_form()
 
+    # --- Helper methods for cross-document remaining calculations ---
+    
+    def _get_so_totals_by_item(self):
+        """Return a dict of item_code -> ordered qty from the linked Sales Order. Returns {} if no Sales Order."""
+        print(f"DEBUG: _get_so_totals_by_item called for sales_order: {getattr(self, 'sales_order', None)}")
+        if not getattr(self, 'sales_order', None):
+            print("DEBUG: No sales_order found, returning empty dict")
+            return {}
+        totals = {}
+        so_items = frappe.get_all(
+            "Sales Order Item",
+            filters={"parent": self.sales_order},
+            fields=["item_code", "qty"],
+        )
+        print(f"DEBUG: Found {len(so_items)} Sales Order items")
+        for it in so_items:
+            totals[it.item_code] = totals.get(it.item_code, 0) + (it.qty or 0)
+            print(f"DEBUG: SO Item {it.item_code}: qty {it.qty}, running total: {totals[it.item_code]}")
+        print(f"DEBUG: Final SO totals: {totals}")
+        return totals
+    
+    def _get_processed_totals_by_item(self):
+        """Return a dict of item_code -> processed qty from submitted Stock Entry Against BOM documents for same Sales Order, excluding current doc."""
+        print(f"DEBUG: _get_processed_totals_by_item called for sales_order: {getattr(self, 'sales_order', None)}")
+        if not getattr(self, 'sales_order', None):
+            print("DEBUG: No sales_order found, returning empty dict")
+            return {}
+        processed = {}
+        parents = frappe.get_all(
+            "Stock Entry Against BOM",
+            filters={
+                "sales_order": self.sales_order,
+                "docstatus": 1,
+                "name": ["!=", self.name or ""],
+            },
+            pluck="name",
+        )
+        print(f"DEBUG: Found {len(parents)} submitted SEAB documents: {parents}")
+        if not parents:
+            print("DEBUG: No submitted SEAB documents found, returning empty dict")
+            return {}
+        # Sum finished items' qty from child table
+        child_rows = frappe.get_all(
+            "Stock Entry Item Table",
+            filters={"parent": ["in", parents]},
+            fields=["item", "qty"],
+        )
+        print(f"DEBUG: Found {len(child_rows)} finished item rows from submitted SEABs")
+        for r in child_rows:
+            if not r.item:
+                continue
+            processed[r.item] = processed.get(r.item, 0) + (r.qty or 0)
+            print(f"DEBUG: Processed item {r.item}: qty {r.qty}, running total: {processed[r.item]}")
+        print(f"DEBUG: Final processed totals: {processed}")
+        return processed
+    
+    def _get_remaining_by_item(self):
+        """Return cross-document remaining qty per item based on Sales Order minus processed in submitted docs."""
+        print(f"DEBUG: _get_remaining_by_item called")
+        so_totals = self._get_so_totals_by_item()
+        if not so_totals:
+            print("DEBUG: No SO totals found, returning empty dict")
+            return {}
+        processed = self._get_processed_totals_by_item()
+        remaining = {}
+        for item_code, ordered in so_totals.items():
+            done = processed.get(item_code, 0)
+            bal = (ordered or 0) - (done or 0)
+            remaining[item_code] = bal if bal > 0 else 0
+            print(f"DEBUG: Item {item_code}: ordered={ordered}, processed={done}, remaining={remaining[item_code]}")
+        print(f"DEBUG: Final remaining totals: {remaining}")
+        return remaining
+    
+    def _enforce_cross_document_remaining(self):
+        """Cap or remove finished item rows based on remaining quantities across documents for the same Sales Order."""
+        print(f"DEBUG: _enforce_cross_document_remaining called")
+        if not getattr(self, 'sales_order', None):
+            print("DEBUG: No sales_order found, skipping enforcement")
+            return
+        remaining_by_item = self._get_remaining_by_item()
+        if not remaining_by_item:
+            print("DEBUG: No remaining quantities found, skipping enforcement")
+            return
+        print(f"DEBUG: Processing {len(self.stock_entry_item_table)} finished item rows")
+        rows_to_remove = []
+        for i, row in enumerate(self.stock_entry_item_table):
+            print(f"DEBUG: Row {i}: item={row.item}, current_qty={row.qty}")
+            allowed = remaining_by_item.get(row.item, 0)
+            print(f"DEBUG:   Allowed remaining for {row.item}: {allowed}")
+            if allowed <= 0:
+                if (row.qty or 0) > 0:
+                    print(f"DEBUG:   Removing {row.item} (qty {row.qty}) as Sales Order remaining is 0")
+                    frappe.msgprint(f"Removed {row.item} (qty {row.qty}) as Sales Order remaining is 0.")
+                rows_to_remove.append(row)
+                continue
+            if row.qty > allowed:
+                print(f"DEBUG:   Capping {row.item} from {row.qty} to {allowed}")
+                frappe.msgprint(f"Capped {row.item} from {row.qty} to {allowed} based on Sales Order remaining.")
+                row.qty = allowed
+                remaining_by_item[row.item] = 0
+            else:
+                remaining_by_item[row.item] = allowed - row.qty
+                print(f"DEBUG:   Keeping {row.item} at {row.qty}, remaining becomes {remaining_by_item[row.item]}")
+        # Remove rows with no remaining
+        print(f"DEBUG: Removing {len(rows_to_remove)} rows")
+        for r in rows_to_remove:
+            self.remove(r)
+        # Recalculate totals after adjustments
+        print("DEBUG: Recalculating totals after adjustments")
+        self.calculate_total_qty()
+        self.calculate_total_qty_raw_materials()
+        print(f"DEBUG: Final totals - total_quantity: {self.total_quantity}, total_qty: {self.total_qty}")
+
     def create_transfer_form(self):
         """Create Transfer Form document with items from stock_entry_required_item_table"""
         try:
@@ -416,11 +548,17 @@ def show_transfer_dialog(docname):
         finished_items = []
         raw_materials = []
         
+        # Cross-document remaining for finished items
+        remaining_by_item = doc._get_remaining_by_item()
+        
         for row in doc.stock_entry_item_table:
-            if row.remaining_qty > 0:
+            # Available = min(intra-doc remaining, cross-doc remaining); if no sales order / mapping, use intra-doc only
+            cross_remaining = remaining_by_item.get(row.item, None)
+            available = row.remaining_qty if cross_remaining is None else min(row.remaining_qty, max(0, cross_remaining))
+            if available > 0:
                 finished_items.append({
                     'item': row.item,
-                    'available_qty': row.remaining_qty,
+                    'available_qty': available,
                     'total_qty': row.qty,
                     'issued_qty': row.issued_qty
                 })

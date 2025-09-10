@@ -371,12 +371,13 @@ class RawMaterialTransfer(frappe.model.document.Document):
                 "s_warehouse": s_wh,
                 "t_warehouse": t_wh,
                 "is_finished_item": 0,
-                "allow_zero_valuation_rate": 1
+                # "allow_zero_valuation_rate": 1
             })
 
         try:
             stock_entry.insert(ignore_permissions=True)
-            stock_entry.submit(ignore_permissions=True)
+            stock_entry.flags.ignore_permissions = True
+            stock_entry.submit()
             frappe.msgprint(_(f"Stock Entry created: {stock_entry.name} for Work Order {work_order_name}"), alert=True, indicator="green")
             print(f"🔍 DEBUG: Stock Entry created: {stock_entry.name} for work order {work_order_name}")
         except Exception as e:

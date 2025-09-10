@@ -1850,3 +1850,90 @@ def calculate_overall_wotm_status_from_data(total_required, total_transferred):
         return "In Progress", percentage
     else:
         return "Pending", 0
+
+@frappe.whitelist()
+def create_from_production_plan(pp_name: str, sales_order: str, source_warehouse: str | None = None, target_warehouse: str | None = None, posting_date: str | None = None, company: str | None = None):
+    """Create a Work Order Transfer Manager from a Production Plan and a selected Sales Order.
+    Returns { success: bool, doc_name?: str, message?: str }
+    """
+    try:
+        if not sales_order:
+            return {"success": False, "message": "Sales Order is required"}
+
+        # Resolve company and posting date
+        if not company and pp_name:
+            try:
+                pp = frappe.get_doc("Production Plan", pp_name)
+                company = company or getattr(pp, "company", None)
+                posting_date = posting_date or str(getattr(pp, "posting_date", ""))
+            except Exception:
+                pass
+
+        company = company or frappe.defaults.get_global_default("company")
+        posting_date = posting_date or str(frappe.utils.today())
+
+        # Create the WOTM doc
+        doc = frappe.new_doc("Work Order Transfer Manager")
+        doc.company = company
+        doc.posting_date = posting_date
+        doc.sales_order = sales_order
+        # Fetch and set customer from Sales Order (required)
+        try:
+            doc.customer = frappe.db.get_value("Sales Order", sales_order, "customer")
+        except Exception:
+            doc.customer = None
+        # Set defaults for required fields
+        doc.stock_entry_type = "Material Transfer for Manufacture"
+
+        # Set warehouses if provided; otherwise pick the first two real warehouses from the company
+        if source_warehouse:
+            doc.source_warehouse = source_warehouse
+        if target_warehouse:
+            doc.target_warehouse = target_warehouse
+
+        if not getattr(doc, "source_warehouse", None) or not getattr(doc, "target_warehouse", None):
+            if company:
+                warehouses = frappe.db.sql(
+                    """
+                    SELECT name FROM `tabWarehouse`
+                    WHERE company = %s AND is_group = 0
+                    ORDER BY name ASC LIMIT 2
+                    """,
+                    (company,),
+                    as_dict=True,
+                )
+                if warehouses:
+                    doc.source_warehouse = doc.source_warehouse or warehouses[0].name
+                    if len(warehouses) > 1:
+                        doc.target_warehouse = doc.target_warehouse or warehouses[1].name
+                    else:
+                        doc.target_warehouse = doc.target_warehouse or warehouses[0].name
+
+        doc.insert(ignore_permissions=True)
+
+        # Populate tables for the selected Sales Order BEFORE submit
+        out = populate_work_order_tables(sales_order, doc.name)
+        if isinstance(out, dict) and not out.get("success", True):
+            # Keep as draft so user can review/fix
+            return {"success": False, "message": out.get("message", "Populate failed"), "doc_name": doc.name}
+
+        # Reload to ensure child tables are attached
+        try:
+            doc = frappe.get_doc("Work Order Transfer Manager", doc.name)
+        except Exception:
+            pass
+
+        # If nothing populated, keep as draft and inform
+        has_rows = bool(getattr(doc, "transfer_items", None)) or bool(getattr(doc, "work_order_details", None))
+        if not has_rows:
+            return {"success": True, "doc_name": doc.name, "message": "Created as Draft. No work orders/raw materials found to populate."}
+
+        # Submit after successful populate
+        doc.flags.ignore_permissions = True
+        doc.submit()
+
+        return {"success": True, "doc_name": doc.name}
+
+    except Exception as e:
+        frappe.log_error(f"Error creating WOTM from Production Plan {pp_name}: {str(e)}")
+        return {"success": False, "message": str(e)}

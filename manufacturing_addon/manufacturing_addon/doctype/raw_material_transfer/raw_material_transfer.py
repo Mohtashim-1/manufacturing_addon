@@ -149,9 +149,14 @@ class RawMaterialTransfer(frappe.model.document.Document):
     def on_submit(self):
         try:
             if self.work_order_transfer_manager:
-                update_transfer_quantities(self.work_order_transfer_manager, self.name)
+                out = update_transfer_quantities(self.work_order_transfer_manager, self.name)
+                if isinstance(out, dict) and not out.get("success", True):
+                    frappe.msgprint(_(f"WOTM update failed: {out.get('message')}"), alert=True, indicator="red")
+                else:
+                    frappe.msgprint(_(f"WOTM updated successfully for {self.work_order_transfer_manager}"), alert=True, indicator="green")
                 print(f"🔍 DEBUG: WOTM quantities updated for {self.work_order_transfer_manager} using transfer {self.name}")
         except Exception as e:
+            frappe.msgprint(_(f"Error updating WOTM: {str(e)}"), alert=True, indicator="red")
             frappe.log_error(f"Error updating WOTM after submit for {self.name}: {str(e)}")
 
     def on_cancel(self):
@@ -230,12 +235,13 @@ class RawMaterialTransfer(frappe.model.document.Document):
 
     def create_stock_entries_for_work_orders(self):
         print(f"🔍 DEBUG: Creating stock entries for work orders")
-        work_orders = frappe.db.sql("""
-            SELECT name, production_item, qty, material_transferred_for_manufacturing, creation, docstatus
+        work_orders = frappe.db.sql(
+            """
+            SELECT name, production_item, qty, material_transferred_for_manufacturing, creation, docstatus, wip_warehouse
             FROM `tabWork Order`
             WHERE sales_order = %s AND docstatus = 1
             ORDER BY creation ASC
-        """, (self.sales_order,), as_dict=True)
+            """, (self.sales_order,), as_dict=True)
         print(f"🔍 DEBUG: Found {len(work_orders)} work orders for sales order {self.sales_order}")
 
         work_order_allocation = {}
@@ -284,6 +290,37 @@ class RawMaterialTransfer(frappe.model.document.Document):
                     })
 
                     remaining_qty -= qty_to_allocate
+
+        # Fallback: if no allocation was created at all, allocate full transfer to the earliest WO with WIP and pending
+        if not any(a.get("items") for a in work_order_allocation.values()):
+            print("🔍 DEBUG: No BOM-based allocation produced; using fallback allocation to earliest pending Work Order")
+            frappe.msgprint(_("No BOM-based allocation matched. Falling back to allocate full transfer to earliest pending Work Order."), alert=True, indicator="orange")
+            # Find first WO with pending and wip_warehouse
+            fallback_wo = None
+            for wo in work_orders:
+                wo_pending_qty = flt(wo.qty) - flt(wo.material_transferred_for_manufacturing)
+                if wo_pending_qty > 0 and wo.wip_warehouse:
+                    fallback_wo = wo
+                    break
+            if fallback_wo:
+                alloc = {"work_order": fallback_wo.name, "production_item": fallback_wo.production_item, "items": []}
+                for raw_item in self.raw_materials:
+                    if flt(raw_item.transfer_qty) <= 0:
+                        continue
+                    item_source_wh = getattr(raw_item, "source_warehouse", None) or getattr(raw_item, "warehouse", None) or self.warehouse
+                    item_target_wh = getattr(raw_item, "target_warehouse", None) or getattr(raw_item, "t_warehouse", None)
+                    alloc["items"].append({
+                        "item_code": raw_item.item_code,
+                        "item_name": raw_item.item_name,
+                        "qty": flt(raw_item.transfer_qty),
+                        "uom": raw_item.uom,
+                        "warehouse": item_source_wh,
+                        "s_warehouse": item_source_wh,
+                        "t_warehouse": item_target_wh
+                    })
+                work_order_allocation[fallback_wo.name] = alloc
+            else:
+                frappe.msgprint(_("No pending Work Orders with WIP Warehouse found. Cannot create Stock Entries."), alert=True, indicator="red")
 
         created_stock_entries = []
         for wo_name, allocation in work_order_allocation.items():
@@ -337,9 +374,15 @@ class RawMaterialTransfer(frappe.model.document.Document):
                 "allow_zero_valuation_rate": 1
             })
 
-        stock_entry.insert()
-        stock_entry.submit()
-        print(f"🔍 DEBUG: Stock Entry created: {stock_entry.name} for work order {work_order_name}")
+        try:
+            stock_entry.insert(ignore_permissions=True)
+            stock_entry.submit(ignore_permissions=True)
+            frappe.msgprint(_(f"Stock Entry created: {stock_entry.name} for Work Order {work_order_name}"), alert=True, indicator="green")
+            print(f"🔍 DEBUG: Stock Entry created: {stock_entry.name} for work order {work_order_name}")
+        except Exception as e:
+            frappe.msgprint(_(f"Error creating Stock Entry for Work Order {work_order_name}: {str(e)}"), alert=True, indicator="red")
+            frappe.log_error(f"Error creating Stock Entry for Work Order {work_order_name} in RMT {self.name}: {str(e)}")
+            raise
         return stock_entry
 
     def update_work_orders_with_allocation(self):

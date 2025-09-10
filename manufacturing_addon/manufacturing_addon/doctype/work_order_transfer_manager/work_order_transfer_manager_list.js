@@ -1,7 +1,7 @@
 frappe.listview_settings['Work Order Transfer Manager'] = {
 	add_fields: ["transfer_status", "transfer_percentage"],
+
 	get_indicator: function(doc) {
-		// Return indicator based on transfer status
 		if (doc.transfer_status === "Completed") {
 			return [__("Completed"), "green", "transfer_status,=,Completed"];
 		} else if (doc.transfer_status === "In Progress") {
@@ -10,133 +10,51 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 			return [__("Pending"), "red", "transfer_status,=,Pending"];
 		}
 	},
-	
-	// Add custom formatter for percentage column
+
 	formatters: {
 		transfer_percentage: function(value, df, doc) {
 			if (value === null || value === undefined || isNaN(value)) return "0.0%";
-			
 			const percentage = parseFloat(value);
 			if (isNaN(percentage)) return "0.0%";
-			
 			let color = "red";
-			
 			if (percentage >= 100) {
 				color = "green";
 			} else if (percentage > 0) {
 				color = "orange";
 			}
-			
 			return `<div style="text-align: center; width: 100%;"><span style="color: ${color}; font-weight: bold;">${percentage.toFixed(1)}%</span></div>`;
 		},
-		
+
 		transfer_status: function(value, df, doc) {
 			if (!value) return "";
-			
 			let color = "red";
 			let icon = "";
-			
 			switch(value) {
 				case "Completed":
-					color = "green";
-					icon = "✓";
-					break;
+					color = "green"; icon = "✓"; break;
 				case "In Progress":
-					color = "orange";
-					icon = "⟳";
-					break;
+					color = "orange"; icon = "⟳"; break;
 				case "Pending":
-					color = "red";
-					icon = "⏳";
-					break;
+					color = "red"; icon = "⏳"; break;
 			}
-			
 			return `<div style="text-align: center; width: 100%;"><span style="color: ${color}; font-weight: bold;">${icon} ${value}</span></div>`;
 		}
 	},
-	
-	// Add filters for status
-	filters: [
-		{
-			fieldname: "transfer_status",
-			label: __("Transfer Status"),
-			options: "Work Order Transfer Manager",
-			get_query: function() {
-				return {
-					filters: {
-						"transfer_status": ["in", ["Pending", "In Progress", "Completed"]]
-					}
-				}
-			}
-		}
-	],
-	
-	// Add custom button to fetch work order or refresh status
-	button: {
-		show: function(doc) {
-			return true; // Show button for all documents
-		},
-		get_label: function(doc) {
-			// Show "Fetch Work Order" if no work orders are loaded yet, otherwise "Refresh Status"
-			if (!doc.transfer_status || doc.transfer_status === "Pending") {
-				return __("Fetch Work Order");
-			} else {
-				return __("Refresh Status");
-			}
-		},
-		get_description: function(doc) {
-			if (!doc.transfer_status || doc.transfer_status === "Pending") {
-				return __("Fetch and populate work orders from sales order");
-			} else {
-				return __("Update transfer status and percentage");
-			}
-		},
-		action: function(doc) {
-			if (!doc.transfer_status || doc.transfer_status === "Pending") {
-				// Open the document in form view to access fetch work order functionality
-				frappe.set_route("Form", "Work Order Transfer Manager", doc.name);
-			} else {
-				// Refresh status
-				frappe.call({
-					method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.update_transfer_quantities",
-					args: { doc_name: doc.name },
-					callback: function(r) {
-						if (r.message && r.message.success) {
-							frappe.show_alert(__("Status updated successfully"), "green");
-							listview.refresh();
-						} else {
-							const error_msg = r.message && r.message.message ? r.message.message : "Unknown error";
-							frappe.show_alert(__("Error updating status: ") + error_msg, "red");
-						}
-					},
-					error: function(r) {
-						console.error("❌ DEBUG: Error updating status in list view:", r);
-						frappe.show_alert(__("Error updating status. Please try again."), "red");
-					}
-				});
-			}
-		}
-	},
-	
 
-	
-	// Add CSS for proper alignment
+	// IMPORTANT: Do not set default filters here to avoid corrupting saved list filters.
+	// Users can add filters via the UI. Leaving this empty prevents "filter is not iterable" errors.
+
 	onload: function(listview) {
-		// Add custom CSS for header alignment
 		const style = document.createElement('style');
 		style.textContent = `
 			.list-view .list-row-header .list-row-col[data-fieldname="transfer_status"],
-			.list-view .list-row-header .list-row-col[data-fieldname="transfer_percentage"] {
-				text-align: center !important;
-			}
+			.list-view .list-row-header .list-row-col[data-fieldname="transfer_percentage"] { text-align: center !important; }
 			.list-view .list-row .list-row-col[data-fieldname="transfer_status"],
-			.list-view .list-row .list-row-col[data-fieldname="transfer_percentage"] {
-				text-align: center !important;
-			}
+			.list-view .list-row .list-row-col[data-fieldname="transfer_percentage"] { text-align: center !important; }
 		`;
 		document.head.appendChild(style);
-		
-		// Add progress bar column if not exists
+
+		// Optional: add a visual progress bar column (read-only)
 		if (!listview.columns.find(col => col.fieldname === "progress_bar")) {
 			listview.columns.push({
 				fieldname: "progress_bar",
@@ -145,16 +63,10 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 				formatter: function(value, df, doc) {
 					const percentage = parseFloat(doc.transfer_percentage || 0);
 					if (isNaN(percentage)) return "0.0%";
-					
 					const status = doc.transfer_status || "Pending";
-					
 					let color = "#ff6b6b"; // red
-					if (status === "Completed") {
-						color = "#51cf66"; // green
-					} else if (status === "In Progress") {
-						color = "#ffd43b"; // orange
-					}
-					
+					if (status === "Completed") color = "#51cf66"; // green
+					else if (status === "In Progress") color = "#ffd43b"; // orange
 					return `
 						<div style="width: 100px; height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden;">
 							<div style="width: ${percentage}%; height: 100%; background: ${color}; transition: width 0.3s ease;"></div>
@@ -164,57 +76,5 @@ frappe.listview_settings['Work Order Transfer Manager'] = {
 				}
 			});
 		}
-	},
-	
-	// Add refresh button to list view
-	refresh: function(listview) {
-		listview.page.add_inner_button(__("Refresh All Status"), function() {
-			frappe.confirm(__("This will refresh the status of all Work Order Transfer Managers. Continue?"), function() {
-				frappe.show_progress(__("Updating status..."), 0, 100);
-				
-				// Get all WOTM documents
-				frappe.call({
-					method: "frappe.client.get_list",
-					args: {
-						doctype: "Work Order Transfer Manager",
-						fields: ["name"]
-					},
-					callback: function(r) {
-						if (r.message) {
-							let processed = 0;
-							const total = r.message.length;
-							
-							r.message.forEach(function(doc) {
-								frappe.call({
-									method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.update_transfer_quantities",
-									args: { doc_name: doc.name },
-									callback: function(r) {
-										processed++;
-										frappe.show_progress(__("Updating status..."), processed, total);
-										
-										if (processed === total) {
-											frappe.hide_progress();
-											frappe.show_alert(__("All status updated successfully"), "green");
-											listview.refresh();
-										}
-									},
-									error: function(r) {
-										processed++;
-										console.error("❌ DEBUG: Error updating status for", doc.name, ":", r);
-										frappe.show_progress(__("Updating status..."), processed, total);
-										
-										if (processed === total) {
-											frappe.hide_progress();
-											frappe.show_alert(__("Status update completed with some errors. Check console for details."), "orange");
-											listview.refresh();
-										}
-									}
-								});
-							});
-						}
-					}
-				});
-			});
-		});
 	}
 }; 

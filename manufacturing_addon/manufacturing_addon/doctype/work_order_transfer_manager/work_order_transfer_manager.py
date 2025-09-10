@@ -1126,8 +1126,8 @@ def create_selective_transfer(doc_name):
                 "is_finished_item": 0
             })
 
-        stock_entry.insert()
-        stock_entry.submit()
+        stock_entry.insert(ignore_permissions=True)
+        stock_entry.submit(ignore_permissions=True)
 
         frappe.msgprint(f"Stock Entry {stock_entry.name} created successfully")
         return {"success": True, "stock_entry": stock_entry.name}
@@ -1208,6 +1208,10 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
     print(f"🔍 DEBUG: Starting update_transfer_quantities for doc_name: {doc_name}, transfer_doc_name: {transfer_doc_name}")
     try:
         doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+
+        # Permission: only users with write on this doc can recompute
+        if not frappe.has_permission("Work Order Transfer Manager", ptype="write", doc=doc, user=frappe.session.user):
+            return {"success": False, "message": "Not permitted to update transfer quantities"}
         
         # Ensure company is set
         if not doc.company:

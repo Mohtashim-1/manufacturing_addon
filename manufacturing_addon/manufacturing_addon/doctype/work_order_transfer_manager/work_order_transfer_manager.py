@@ -57,44 +57,56 @@ class WorkOrderTransferManager(frappe.model.document.Document):
                         else:
                             frappe.throw(f"Company field is missing for work order summary {i+1} ({item.item_code}). Please ensure all items have a company set.")
 
+    def create_extra_qty_request(self):
+        if len(self.extra_transfer_items) > 0:
+            for item in self.extra_transfer_items:
+                if item.extra_qty > 0:
+                    self.create_extra_qty_request_item(item)
+
+
+    def create_extra_qty_request_item(self, item):
+        print(f"🔍 DEBUG: create_extra_qty_request_item() called for document: {self.name}")
+        frappe.msgprint(f"🔍 DEBUG: create_extra_qty_request_item() called for document: {self.name}")
+        doc = frappe.get_doc({
+            "doctype": "Extra Qty Request",
+            "sales_order": self.sales_order,
+            "work_order_transfer_maanger": self.name,
+            "company": self.company,
+            "from_warehouse": self.source_warehouse,
+            "to_warehouse": self.target_warehouse,
+        })
+        doc.append("extra_qty_request_item", {
+            "item": getattr(item, "item_code", None),
+            "qty": flt(getattr(item, "extra_qty", 0)),
+            "uom": getattr(item, "uom", None),
+        })
+        print(f"🔍 DEBUG: About to insert extra qty request item: {doc.name}")
+        frappe.msgprint(f"🔍 DEBUG: About to insert extra qty request item: {doc.name}")
+        doc.insert()
+        print(f"🔍 DEBUG: Created extra qty request item: {doc.name}")
+        frappe.msgprint(f"🔍 DEBUG: Created extra qty request item: {doc.name}")
+
+
+
+
     def ensure_company_in_child_tables(self):
-        """Ensure all child table items have the company field set"""
-        if not self.company:
-            self.company = frappe.defaults.get_global_default("company")
-            print(f"🔍 DEBUG: Set company on parent document: {self.company}")
+        """Ensure company is set in all child table rows"""
+        company = self.company or frappe.defaults.get_global_default("company")
         
-        # Ensure company is set in all child tables
-        if self.transfer_items:
-            for item in self.transfer_items:
-                if not item.company:
-                    item.company = self.company
-                    print(f"🔍 DEBUG: Set company for transfer item {item.item_code}: {item.company}")
-                elif item.company != self.company:
-                    # If company is set but different, update it
-                    item.company = self.company
-                    print(f"🔍 DEBUG: Updated company for transfer item {item.item_code}: {item.company}")
+        # Fix transfer items
+        for item in self.transfer_items:
+            if not item.company:
+                item.company = company
         
-        if self.work_order_details:
-            for item in self.work_order_details:
-                if hasattr(item, "company"):
-                    if not item.company:
-                        item.company = self.company
-                        print(f"🔍 DEBUG: Set company for work order detail {item.work_order}: {item.company}")
-                    elif item.company != self.company:
-                        # If company is set but different, update it
-                        item.company = self.company
-                        print(f"🔍 DEBUG: Updated company for work order detail {item.work_order}: {item.company}")
+        # Fix work order details
+        for item in self.work_order_details:
+            if hasattr(item, "company") and not item.company:
+                item.company = company
         
-        if self.work_order_summary:
-            for item in self.work_order_summary:
-                if hasattr(item, "company"):
-                    if not item.company:
-                        item.company = self.company
-                        print(f"🔍 DEBUG: Set company for work order summary {item.item_code}: {item.company}")
-                    elif item.company != self.company:
-                        # If company is set but different, update it
-                        item.company = self.company
-                        print(f"🔍 DEBUG: Updated company for work order summary {item.item_code}: {item.company}")
+        # Fix work order summary
+        for item in self.work_order_summary:
+            if hasattr(item, "company") and not item.company:
+                item.company = company
 
     def before_save(self):
         print(f"🔍 DEBUG: before_save() called for document: {self.name}")
@@ -171,6 +183,22 @@ class WorkOrderTransferManager(frappe.model.document.Document):
         if not self.company:
             self.company = frappe.defaults.get_global_default("company")
             print(f"🔍 DEBUG: Set company in on_submit: {self.company}")
+        
+        # Create Extra Qty Request(s) for extra items
+        try:
+            self.create_extra_qty_request()
+        except Exception as e:
+            print(f"⚠️ WARNING: Failed to create Extra Qty Request(s): {e}")
+        
+        # Auto-create Extra Raw Material Transfer if there are Production Plan extras (optional)
+        try:
+            pp_map = get_production_plan_raw_materials(self.sales_order, self.company)
+            has_extra = any(flt(v.get("extra_qty", 0)) > 0 for v in (pp_map or {}).values())
+            if has_extra and frappe.db.exists("DocType", "Extra Raw Material Transfer"):
+                out = create_extra_raw_material_transfer(self.name)
+                print(f"🔍 DEBUG: Auto-created Extra Raw Material Transfer: {out}")
+        except Exception as e:
+            print(f"⚠️ WARNING: Could not auto-create Extra Raw Material Transfer on submit: {e}")
         
         print(f"🔍 DEBUG: Document submitted successfully")
 
@@ -472,6 +500,17 @@ def populate_work_order_tables(sales_order, doc_name):
         if not doc.company:
             frappe.throw("Company is required. Please set the company field.")
 
+        # Ensure customer is set (required field)
+        if not doc.customer:
+            try:
+                customer = frappe.db.get_value("Sales Order", sales_order, "customer")
+                if not customer:
+                    frappe.throw(f"Sales Order {sales_order} does not have a customer. Please set a customer for the Sales Order first.")
+                doc.customer = customer
+                print(f"🔍 DEBUG: Set customer from Sales Order: {customer}")
+            except Exception as e:
+                frappe.throw(f"Error fetching customer from Sales Order {sales_order}: {str(e)}")
+
         # Fetch work orders (submitted)
         work_orders = frappe.db.sql("""
             SELECT
@@ -483,6 +522,32 @@ def populate_work_order_tables(sales_order, doc_name):
             ORDER BY creation ASC
         """, (sales_order,), as_dict=True)
         print(f"🔍 DEBUG: Retrieved {len(work_orders)} work orders")
+
+        # Fetch Production Plan raw materials
+        pp_raw_materials = get_production_plan_raw_materials(sales_order, company)
+        print(f"🔍 DEBUG: Retrieved {len(pp_raw_materials)} raw materials from Production Plans")
+
+        # Optional: populate extra items child-table if present (customization)
+        try:
+            if hasattr(doc, "extra_transfer_items"):
+                doc.extra_transfer_items = []
+                for raw_code, data in pp_raw_materials.items():
+                    extra_qty = flt(data.get("extra_qty", 0))
+                    if extra_qty > 0:
+                        doc.append("extra_transfer_items", {
+                            "item_code": raw_code,
+                            "item_name": data.get("item_name", raw_code),
+                            "uom": data.get("uom"),
+                            "base_required_qty": flt(data.get("base_required_qty", 0)),
+                            "extra_percentage": flt(data.get("extra_percentage", 0)),
+                            "extra_qty": extra_qty,
+                            "source_warehouse": doc.source_warehouse,
+                            "target_warehouse": doc.target_warehouse,
+                            "company": doc.company
+                        })
+                print(f"🔍 DEBUG: Populated extra_transfer_items table with Production Plan extras")
+        except Exception as e:
+            print(f"⚠️ WARNING: Could not populate extra_transfer_items: {e}")
 
         item_summary = {}
         raw_material_summary = {}
@@ -559,6 +624,7 @@ def populate_work_order_tables(sales_order, doc_name):
                                     "item_name": raw_name,
                                     "uom": bi.uom,
                                     "total_qty_needed": 0,
+                                    "source": "Work Order",
                                     "work_orders": []
                                 }
                             raw_material_summary[raw_code]["total_qty_needed"] += raw_needed
@@ -572,8 +638,53 @@ def populate_work_order_tables(sales_order, doc_name):
                 except Exception as e:
                     print(f"❌ DEBUG: Error calculating raw materials: {e}")
 
+        # Add Production Plan raw materials to the summary
+        for raw_code, pp_data in pp_raw_materials.items():
+            if raw_code not in raw_material_summary:
+                raw_material_summary[raw_code] = {
+                    "item_code": raw_code,
+                    "item_name": pp_data["item_name"],
+                    "uom": pp_data["uom"],
+                    "total_qty_needed": (pp_data.get("base_required_qty") or 0),
+                    "source": "Production Plan",
+                    "extra_percentage": pp_data.get("extra_percentage", 0),
+                    "work_orders": list(pp_data["work_orders"])
+                }
+            else:
+                # Prefer Production Plan quantities over Work Order-derived to avoid double counting
+                raw_material_summary[raw_code]["total_qty_needed"] = (pp_data.get("base_required_qty") or 0)
+                raw_material_summary[raw_code]["work_orders"] = list(pp_data["work_orders"])
+                raw_material_summary[raw_code]["source"] = "Production Plan"
+                raw_material_summary[raw_code]["extra_percentage"] = max(
+                    raw_material_summary[raw_code].get("extra_percentage", 0),
+                    pp_data.get("extra_percentage", 0)
+                )
+        
+        # Optional: populate extra items child-table if present (customization)
+        try:
+            if hasattr(doc, "extra_transfer_items"):
+                # Reset table
+                doc.extra_transfer_items = []
+                for raw_code, pp_data in pp_raw_materials.items():
+                    extra_qty = flt(pp_data.get("extra_qty", 0))
+                    if extra_qty > 0:
+                        doc.append("extra_transfer_items", {
+                            "item_code": raw_code,
+                            "item_name": pp_data.get("item_name", raw_code),
+                            "uom": pp_data.get("uom"),
+                            "base_required_qty": flt(pp_data.get("base_required_qty", 0)),
+                            "extra_percentage": flt(pp_data.get("extra_percentage", 0)),
+                            "extra_qty": extra_qty,
+                            "source_warehouse": doc.source_warehouse,
+                            "target_warehouse": doc.target_warehouse,
+                            "company": doc.company
+                        })
+                print(f"🔍 DEBUG: Populated extra_transfer_items table with Production Plan extras")
+        except Exception as e:
+            print(f"⚠️ WARNING: Could not populate extra_transfer_items: {e}")
+
         print(f"🔍 DEBUG: Processed {len(item_summary)} unique finished items")
-        print(f"🔍 DEBUG: Found {len(raw_material_summary)} unique raw materials")
+        print(f"🔍 DEBUG: Found {len(raw_material_summary)} unique raw materials (Work Orders + Production Plans)")
 
         # Summary rows
         for item_code, summary in item_summary.items():
@@ -645,7 +756,9 @@ def populate_work_order_tables(sales_order, doc_name):
                     "actual_qty_at_company": actual_company_qty,
                     "uom": raw_summary["uom"],
                     "warehouse": source_warehouse,
-                    "company": company_value
+                    "company": company_value,
+                    "source": raw_summary.get("source", "Work Order"),  # Add source information
+                    "extra_percentage": raw_summary.get("extra_percentage", 0)  # Add extra percentage
                 }
                 
                 transfer_item = doc.append("transfer_items", transfer_item_data)
@@ -704,88 +817,21 @@ def populate_work_order_tables(sales_order, doc_name):
                 missing_company_items.append(f"Work Order Summary {i+1} ({item.item_code})")
         
         if missing_company_items:
-            error_msg = f"The following items are missing company field: {', '.join(missing_company_items)}"
-            print(f"❌ DEBUG: {error_msg}")
-            frappe.throw(error_msg)
+            print(f"❌ DEBUG: Missing company for items: {missing_company_items}")
+            frappe.throw(f"Company is missing for the following items: {', '.join(missing_company_items)}")
         
-        # Save
-        print(f"🔍 DEBUG: Calling doc.save()...")
+        # Save the document
         try:
             doc.save()
-            print(f"🔍 DEBUG: Document saved successfully with {len(doc.work_order_details)} details, {len(doc.work_order_summary)} summary, {len(doc.transfer_items)} raw material transfer items")
-        except Exception as final_save_error:
-            print(f"❌ DEBUG: Error in final save: {final_save_error}")
-            # If the final save fails, try to save the child table rows directly
-            print(f"🔍 DEBUG: Attempting to save child table rows directly to database")
+            print(f"🔍 DEBUG: Successfully saved WOTM document: {doc.name}")
+            return {"success": True, "message": "Work Order Transfer Manager created successfully", "doc_name": doc.name}
+        except Exception as save_error:
+            print(f"❌ DEBUG: Error saving WOTM document: {save_error}")
+            frappe.throw(f"Error saving Work Order Transfer Manager: {str(save_error)}")
             
-            # Save transfer items directly to database
-            for i, item in enumerate(doc.transfer_items):
-                frappe.db.sql("""
-                    INSERT INTO `tabWork Order Transfer Items Table`
-                    (name, parent, parentfield, parenttype, idx, item_code, item_name, 
-                     total_required_qty, pending_qty, transfer_qty, transferred_qty_so_far,
-                     item_transfer_status, item_transfer_percentage,
-                     actual_qty_at_warehouse, actual_qty_at_company, uom, warehouse, company)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    item.name or f"transfer_item_{i+1}",
-                    doc.name,
-                    "transfer_items",
-                    "Work Order Transfer Manager",
-                    i+1,
-                    item.item_code,
-                    item.item_name,
-                    item.total_required_qty,
-                    item.pending_qty,
-                    item.transfer_qty,
-                    item.transferred_qty_so_far,
-                    getattr(item, 'item_transfer_status', 'Pending'),
-                    getattr(item, 'item_transfer_percentage', 0),
-                    item.actual_qty_at_warehouse,
-                    item.actual_qty_at_company,
-                    item.uom,
-                    item.warehouse,
-                    item.company
-                ))
-            
-            # Note: Work Order Details and Summary tables don't have transferred_qty and company columns
-            # Skip direct database inserts for these tables
-            print(f"🔍 DEBUG: Skipping direct database inserts for work order details/summary (missing columns)")
-            
-            # Commit the changes
-            frappe.db.commit()
-            print(f"🔍 DEBUG: Saved child table rows directly to database")
-            
-            # Reload the document
-            doc = frappe.get_doc("Work Order Transfer Manager", doc.name)
-
-        # Calculate and set overall WOTM status and percentage
-        overall_status, overall_percentage = calculate_overall_wotm_status(doc)
-        doc.transfer_status = overall_status
-        doc.transfer_percentage = overall_percentage
-        doc.save()
-        
-        return {
-            "success": True,
-            "message": f"Populated {len(doc.work_order_details)} work order details, {len(doc.work_order_summary)} summary items, {len(doc.transfer_items)} raw material transfer items",
-            "doc_name": doc.name
-        }
-
     except Exception as e:
-        print(f"❌ DEBUG: Error in populate_work_order_tables: {str(e)}")
-        import traceback
-        print(f"❌ DEBUG: Full traceback: {traceback.format_exc()}")
-        error_msg = str(e)
-        if len(error_msg) > 70:
-            error_msg = error_msg[:67] + "..."
-        full_message = f"Error populating work order tables for sales order {sales_order}: {error_msg}"
-        if len(full_message) > 140:
-            sales_order_short = sales_order[:20] + "..." if len(sales_order) > 23 else sales_order
-            full_message = f"Error populating work order tables for sales order {sales_order_short}: {error_msg}"
-            if len(full_message) > 140:
-                full_message = f"Error populating work order tables: {error_msg[:50]}..."
-        frappe.log_error(full_message)
-        return {"success": False, "message": f"Error: {str(e)}"}
+        print(f"❌ DEBUG: Error in populate_work_order_tables: {e}")
+        frappe.throw(f"Error creating Work Order Transfer Manager: {str(e)}")
 
 
 @frappe.whitelist()
@@ -1877,11 +1923,16 @@ def create_from_production_plan(pp_name: str, sales_order: str, source_warehouse
         doc.company = company
         doc.posting_date = posting_date
         doc.sales_order = sales_order
+        
         # Fetch and set customer from Sales Order (required)
         try:
-            doc.customer = frappe.db.get_value("Sales Order", sales_order, "customer")
-        except Exception:
-            doc.customer = None
+            customer = frappe.db.get_value("Sales Order", sales_order, "customer")
+            if not customer:
+                frappe.throw(f"Sales Order {sales_order} does not have a customer. Please set a customer for the Sales Order first.")
+            doc.customer = customer
+        except Exception as e:
+            frappe.throw(f"Error fetching customer from Sales Order {sales_order}: {str(e)}")
+        
         # Set defaults for required fields
         doc.stock_entry_type = "Material Transfer for Manufacture"
 
@@ -1936,4 +1987,225 @@ def create_from_production_plan(pp_name: str, sales_order: str, source_warehouse
 
     except Exception as e:
         frappe.log_error(f"Error creating WOTM from Production Plan {pp_name}: {str(e)}")
+        return {"success": False, "message": str(e)}
+
+@frappe.whitelist()
+def get_production_plan_raw_materials(sales_order, company):
+    """Fetch raw materials from Production Plans linked to the sales order with custom extra percentage"""
+    print(f"🔍 DEBUG: Fetching Production Plan raw materials for sales_order: {sales_order}")
+    
+    # Get the latest submitted Production Plan linked to this sales order (avoid double counting across multiple PPs)
+    production_plans = frappe.db.sql("""
+        SELECT pp.name
+        FROM `tabProduction Plan` pp
+        JOIN `tabProduction Plan Sales Order` pps ON pps.parent = pp.name
+        WHERE pps.sales_order = %s AND pp.docstatus = 1
+        ORDER BY pp.creation DESC
+        LIMIT 1
+    """, (sales_order,), as_dict=True)
+    
+    print(f"🔍 DEBUG: Found {len(production_plans)} Production Plans (using latest only)")
+    
+    raw_materials = {}
+    
+    for pp in production_plans:
+        print(f"🔍 DEBUG: Processing Production Plan (selected): {pp.name}")
+        
+        # Get raw materials from Production Plan mr_items table
+        pp_items = frappe.db.sql("""
+            SELECT 
+                item_code,
+                item_name,
+                quantity,
+                custom_extra_,
+                required_bom_qty,
+                actual_qty,
+                warehouse,
+                uom
+            FROM `tabMaterial Request Plan Item`
+            WHERE parent = %s AND parenttype = 'Production Plan'
+        """, (pp.name,), as_dict=True)
+        
+        print(f"🔍 DEBUG: Found {len(pp_items)} raw materials in Production Plan {pp.name}")
+        
+        for item in pp_items:
+            item_code = item.item_code
+            
+            # Calculate quantity with custom extra percentage
+            base_qty = flt(item.required_bom_qty or 0)
+            
+            # Apply item level extra percentage only (no PP level extra percentage)
+            item_extra_pct = flt(item.custom_extra_ or 0)
+            extra_pct = item_extra_pct
+            
+            # Calculate final quantity with extra percentage and isolate extra component
+            if base_qty > 0:
+                extra_qty = base_qty * (extra_pct / 100)
+                final_qty = base_qty + extra_qty
+            else:
+                # When base is not provided, treat quantity as final; extra component unknown
+                final_qty = flt(item.quantity or 0)
+                extra_qty = 0
+            
+            print(f"🔍 DEBUG: {item_code}: base={base_qty}, extra_pct={extra_pct}%, extra={extra_qty}, final={final_qty}")
+            
+            if item_code not in raw_materials:
+                raw_materials[item_code] = {
+                    "item_code": item_code,
+                    "item_name": item.item_name,
+                    "uom": item.uom,
+                    "total_qty_needed": 0,
+                    "source": "Production Plan",
+                    "production_plan": pp.name,
+                    "extra_percentage": extra_pct,
+                    "warehouse": item.warehouse,
+                    "work_orders": [],
+                    # new breakdown
+                    "base_required_qty": 0,
+                    "extra_qty": 0,
+                }
+            
+            raw_materials[item_code]["total_qty_needed"] += final_qty
+            raw_materials[item_code]["base_required_qty"] += base_qty
+            raw_materials[item_code]["extra_qty"] += extra_qty
+            raw_materials[item_code]["work_orders"].append({
+                "work_order": f"PP-{pp.name}",
+                "finished_item": "Production Plan Item",
+                "pending_qty": final_qty,
+                "raw_qty_needed": final_qty,
+                "creation": pp.name,
+                "extra_percentage": extra_pct
+            })
+    
+    print(f"🔍 DEBUG: Processed {len(raw_materials)} unique raw materials from Production Plans")
+    return raw_materials
+
+@frappe.whitelist()
+def create_extra_raw_material_transfer(doc_name: str):
+    """Create a separate Extra Raw Material Transfer document from WOTM Production Plan extras.
+    Returns { success: bool, message: str, doc_name?: str }
+    """
+    try:
+        doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+        # Ensure company
+        if not doc.company:
+            doc.company = frappe.defaults.get_global_default("company")
+            doc.save()
+        
+        # Check if custom DocType is installed
+        if not frappe.db.exists("DocType", "Extra Raw Material Transfer"):
+            return {"success": False, "message": "DocType 'Extra Raw Material Transfer' not installed. Please create it first."}
+        
+        # Collect extra items either from child table or recompute
+        extra_rows = []
+        if hasattr(doc, "extra_transfer_items") and doc.extra_transfer_items:
+            for r in doc.extra_transfer_items:
+                if flt(getattr(r, "extra_qty", 0)) > 0:
+                    extra_rows.append({
+                        "item_code": r.item_code,
+                        "item_name": getattr(r, "item_name", r.item_code),
+                        "uom": getattr(r, "uom", None),
+                        "base_required_qty": flt(getattr(r, "base_required_qty", 0)),
+                        "extra_percentage": flt(getattr(r, "extra_percentage", 0)),
+                        "extra_qty": flt(getattr(r, "extra_qty", 0)),
+                        "source_warehouse": doc.source_warehouse,
+                        "target_warehouse": doc.target_warehouse,
+                        "company": doc.company,
+                    })
+        else:
+            # Recompute from Production Plans for safety
+            pp_map = get_production_plan_raw_materials(doc.sales_order, doc.company)
+            for code, data in pp_map.items():
+                if flt(data.get("extra_qty", 0)) > 0:
+                    extra_rows.append({
+                        "item_code": code,
+                        "item_name": data.get("item_name", code),
+                        "uom": data.get("uom"),
+                        "base_required_qty": flt(data.get("base_required_qty", 0)),
+                        "extra_percentage": flt(data.get("extra_percentage", 0)),
+                        "extra_qty": flt(data.get("extra_qty", 0)),
+                        "source_warehouse": doc.source_warehouse,
+                        "target_warehouse": doc.target_warehouse,
+                        "company": doc.company,
+                    })
+        
+        if not extra_rows:
+            return {"success": False, "message": "No extra quantities found from Production Plans."}
+        
+        extra_doc = frappe.new_doc("Extra Raw Material Transfer")
+        extra_doc.sales_order = doc.sales_order
+        extra_doc.work_order_transfer_manager = doc.name
+        extra_doc.company = doc.company
+        extra_doc.posting_date = getattr(doc, "posting_date", frappe.utils.today())
+        extra_doc.posting_time = getattr(doc, "posting_time", frappe.utils.nowtime())
+        extra_doc.source_warehouse = doc.source_warehouse
+        extra_doc.target_warehouse = doc.target_warehouse
+        
+        # child table name assumed: Extra Raw Materials
+        child_table_field = "extra_raw_materials"
+        if not hasattr(extra_doc, child_table_field):
+            # try common fallback
+            child_table_field = "items"
+        
+        for row in extra_rows:
+            extra_doc.append(child_table_field, {
+                "item_code": row["item_code"],
+                "item_name": row.get("item_name"),
+                "uom": row.get("uom"),
+                "extra_percentage": row.get("extra_percentage"),
+                "extra_qty": row.get("extra_qty"),
+                "base_required_qty": row.get("base_required_qty"),
+                "source_warehouse": row.get("source_warehouse"),
+                "target_warehouse": row.get("target_warehouse"),
+            })
+        
+        extra_doc.insert()
+        return {"success": True, "message": f"Extra Raw Material Transfer created: {extra_doc.name}", "doc_name": extra_doc.name}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@frappe.whitelist()
+def extra_transfer_to_stock_entry(extra_transfer_name: str):
+    """Convert an Extra Raw Material Transfer document into a submitted Stock Entry (Material Transfer for Manufacture).
+    Returns { success: bool, message: str, stock_entry?: str }
+    """
+    try:
+        if not frappe.db.exists("Extra Raw Material Transfer", extra_transfer_name):
+            return {"success": False, "message": "Extra Raw Material Transfer not found"}
+        xt = frappe.get_doc("Extra Raw Material Transfer", extra_transfer_name)
+        
+        # build stock entry
+        se = frappe.new_doc("Stock Entry")
+        se.stock_entry_type = "Material Transfer for Manufacture"
+        se.company = getattr(xt, "company", frappe.defaults.get_global_default("company"))
+        se.posting_date = getattr(xt, "posting_date", frappe.utils.today())
+        se.posting_time = getattr(xt, "posting_time", frappe.utils.nowtime())
+        se.from_warehouse = getattr(xt, "source_warehouse", None)
+        se.to_warehouse = getattr(xt, "target_warehouse", None)
+        
+        child_field = "extra_raw_materials" if hasattr(xt, "extra_raw_materials") else ("items" if hasattr(xt, "items") else None)
+        if not child_field:
+            return {"success": False, "message": "No child table found on Extra Raw Material Transfer"}
+        
+        rows = getattr(xt, child_field) or []
+        if not rows:
+            return {"success": False, "message": "No rows found to transfer"}
+        
+        for r in rows:
+            qty = flt(getattr(r, "extra_qty", None) or getattr(r, "qty", 0))
+            if qty <= 0:
+                continue
+            se.append("items", {
+                "item_code": r.item_code,
+                "qty": qty,
+                "uom": getattr(r, "uom", None),
+                "from_warehouse": getattr(xt, "source_warehouse", None),
+                "to_warehouse": getattr(xt, "target_warehouse", None),
+                "is_finished_item": 0,
+            })
+        
+        se.insert(ignore_permissions=True)
+        se.submit(ignore_permissions=True)
+        return {"success": True, "message": f"Stock Entry {se.name} submitted", "stock_entry": se.name}
+    except Exception as e:
         return {"success": False, "message": str(e)}

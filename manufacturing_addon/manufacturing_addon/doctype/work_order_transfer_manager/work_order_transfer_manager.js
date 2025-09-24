@@ -1185,6 +1185,10 @@ function create_wotm_dashboard_html(data) {
                     <div style="font-size: 24px; font-weight: bold; color: #1976d2;">${data.total_raw_materials}</div>
                     <div style="color: #666; font-size: 12px;">Raw Materials</div>
                 </div>
+                <div style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold; color: #9c27b0;">${data.production_plan_materials || 0}</div>
+                    <div style="color: #666; font-size: 12px;">Production Plan Materials</div>
+                </div>
             </div>
 
             <!-- Progress Bars -->
@@ -1284,6 +1288,8 @@ function create_wotm_dashboard_html(data) {
                                 <th style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">Required</th>
                                 <th style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">Transferred</th>
                                 <th style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">Pending</th>
+                                <th style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">Source</th>
+                                <th style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">Extra %</th>
                                 <th style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">Status</th>
                                 <th style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">Progress %</th>
                             </tr>
@@ -1294,6 +1300,7 @@ function create_wotm_dashboard_html(data) {
     data.raw_materials.forEach(item => {
         let status_color = item.item_transfer_status === 'Completed' ? '#2e7d32' : item.item_transfer_status === 'In Progress' ? '#f57c00' : '#d32f2f';
         let progress_color = item.item_transfer_percentage >= 100 ? '#2e7d32' : item.item_transfer_percentage > 0 ? '#f57c00' : '#d32f2f';
+        let source_color = item.source === 'Production Plan' ? '#9c27b0' : item.source === 'Both' ? '#ff9800' : '#1976d2';
         
         html += `
             <tr>
@@ -1307,6 +1314,12 @@ function create_wotm_dashboard_html(data) {
                 </td>
                 <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">
                     <span style="color: #d32f2f; font-weight: bold;">${item.pending_qty}</span>
+                </td>
+                <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">
+                    <span style="color: ${source_color}; font-weight: bold; font-size: 10px; padding: 2px 6px; border-radius: 3px; background: ${source_color}20;">${item.source || 'Work Order'}</span>
+                </td>
+                <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">
+                    <span style="color: #9c27b0; font-weight: bold; font-size: 10px;">${item.extra_percentage || 0}%</span>
                 </td>
                 <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e0e0e0;">
                     <span style="color: ${status_color}; font-weight: bold; font-size: 10px;">${item.item_transfer_status}</span>

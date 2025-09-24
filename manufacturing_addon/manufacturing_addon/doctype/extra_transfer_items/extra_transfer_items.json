@@ -1,0 +1,101 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-23 00:37:56.576990",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "uom",
+  "base_required_qty",
+  "extra_percentage",
+  "column_break_gtzo",
+  "extra_qty",
+  "source_warehouse",
+  "target_warehouse",
+  "company"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "options": "Item"
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "UOM",
+   "options": "UOM"
+  },
+  {
+   "fieldname": "base_required_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Required Qty"
+  },
+  {
+   "fieldname": "extra_percentage",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Extra Percentage"
+  },
+  {
+   "fieldname": "column_break_gtzo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "extra_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Extra Qty"
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-09-23 00:40:58.988589",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Extra Transfer Items",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

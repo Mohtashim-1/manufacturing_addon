@@ -1,0 +1,138 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:EQR-{MM}-{YY}-{##}",
+ "creation": "2025-09-24 11:39:56.989630",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_fgnt",
+  "posting_date",
+  "sales_order",
+  "company",
+  "column_break_azaw",
+  "posting_time",
+  "work_order_transfer_maanger",
+  "from_warehouse",
+  "to_warehouse",
+  "items_section",
+  "extra_qty_request_item",
+  "stock_entry",
+  "section_break_fvpf",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_fgnt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Posting Date"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "column_break_azaw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Now",
+   "fieldname": "posting_time",
+   "fieldtype": "Datetime",
+   "label": "Posting Time"
+  },
+  {
+   "fieldname": "work_order_transfer_maanger",
+   "fieldtype": "Link",
+   "label": "Work Order Transfer Maanger",
+   "options": "Work Order Transfer Manager"
+  },
+  {
+   "fieldname": "section_break_fvpf",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Extra Qty Request",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "extra_qty_request_item",
+   "fieldtype": "Table",
+   "label": "Extra Qty Request Item",
+   "options": "Extra Qty Request Item"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "from_warehouse",
+   "fieldtype": "Link",
+   "label": "From Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "to_warehouse",
+   "fieldtype": "Link",
+   "label": "To Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Entry",
+   "options": "Stock Entry",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-09-24 11:46:50.857643",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Extra Qty Request",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

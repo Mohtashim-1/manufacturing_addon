@@ -1,16 +1,13 @@
 {
  "actions": [],
- "allow_rename": 1,
- "creation": "2025-08-12 12:40:56.242596",
+ "autoname": "hash",
+ "creation": "2025-01-19 10:30:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "select_for_transfer",
-  "work_order",
   "item_code",
   "item_name",
-  "column_break_1",
   "total_required_qty",
   "pending_qty",
   "transfer_qty",
@@ -19,54 +16,32 @@
   "item_transfer_percentage",
   "actual_qty_at_warehouse",
   "actual_qty_at_company",
-  "column_break_2",
   "uom",
   "warehouse",
-  "company"
+  "company",
+  "source",
+  "extra_percentage"
  ],
  "fields": [
-  {
-   "default": "0",
-   "fieldname": "select_for_transfer",
-   "fieldtype": "Check",
-   "label": "Select for Transfer"
-  },
-  {
-   "fieldname": "work_order",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Work Order",
-   "options": "Work Order",
-   "read_only": 1
-  },
   {
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "Item Code",
    "options": "Item",
-   "read_only": 1
+   "reqd": 1
   },
   {
    "fieldname": "item_name",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Item Name",
    "read_only": 1
-  },
-  {
-   "fieldname": "column_break_1",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "total_required_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "Total Required Qty",
    "read_only": 1
   },
@@ -74,8 +49,6 @@
    "fieldname": "pending_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "Pending Qty",
    "read_only": 1
   },
@@ -83,25 +56,20 @@
    "fieldname": "transfer_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Transfer Qty",
-   "reqd": 1
+   "label": "Transfer Qty"
   },
   {
    "fieldname": "transferred_qty_so_far",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Transferred So Far",
+   "label": "Transferred Qty So Far",
    "read_only": 1
   },
   {
-   "default": "Pending",
    "fieldname": "item_transfer_status",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Item Transfer Status",
-   "options": "Pending\nIn Progress\nCompleted",
    "read_only": 1
   },
   {
@@ -114,22 +82,14 @@
   {
    "fieldname": "actual_qty_at_warehouse",
    "fieldtype": "Float",
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "Actual Qty at Warehouse",
    "read_only": 1
   },
   {
    "fieldname": "actual_qty_at_company",
    "fieldtype": "Float",
-   "in_list_view": 1,
-   "label": "Actual Qty in Company",
+   "label": "Actual Qty at Company",
    "read_only": 1
-  },
-  {
-   "fieldname": "column_break_2",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "uom",
@@ -141,34 +101,43 @@
   {
    "fieldname": "warehouse",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "Warehouse",
-   "options": "Warehouse"
+   "options": "Warehouse",
+   "read_only": 1
   },
   {
    "fieldname": "company",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
    "label": "Company",
    "options": "Company",
-   "reqd": 1,
-   "default": "frappe.defaults.get_global_default('company')"
+   "reqd": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Work Order\nProduction Plan\nBoth",
+   "read_only": 1,
+   "default": "Work Order"
+  },
+  {
+   "fieldname": "extra_percentage",
+   "fieldtype": "Percent",
+   "label": "Extra %",
+   "read_only": 1,
+   "default": 0
   }
  ],
- "index_web_pages_for_search": 1,
+ "indexes": [],
  "istable": 1,
  "links": [],
- "modified": "2025-08-12 12:47:14.219645",
+ "modified": "2025-01-19 10:30:00.000000",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Work Order Transfer Items Table",
+ "naming_rule": "By \"Parent\"",
  "owner": "Administrator",
  "permissions": [],
- "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

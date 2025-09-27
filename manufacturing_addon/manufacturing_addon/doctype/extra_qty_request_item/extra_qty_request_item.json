@@ -8,7 +8,10 @@
  "field_order": [
   "item",
   "qty",
-  "uom"
+  "uom",
+  "column_break_lhvy",
+  "actual_qty_at_warehouse",
+  "actual_qty_at_company"
  ],
  "fields": [
   {
@@ -37,13 +40,35 @@
    "in_standard_filter": 1,
    "label": "UOM",
    "options": "UOM"
+  },
+  {
+   "fieldname": "actual_qty_at_warehouse",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Actual Qty at Warehouse",
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "actual_qty_at_company",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Actual Qty at Company",
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_lhvy",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-24 11:42:17.811812",
+ "modified": "2025-09-27 20:40:06.801199",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Extra Qty Request Item",

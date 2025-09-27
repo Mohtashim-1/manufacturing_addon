@@ -4,6 +4,7 @@ from frappe.utils import flt
 from rq.job import Job
 from rq.command import send_stop_job_command
 from frappe.utils.background_jobs import get_redis_conn
+import time
 
 class WorkOrderTransferManager(frappe.model.document.Document):
     def __init__(self, *args, **kwargs):
@@ -58,15 +59,84 @@ class WorkOrderTransferManager(frappe.model.document.Document):
                             frappe.throw(f"Company field is missing for work order summary {i+1} ({item.item_code}). Please ensure all items have a company set.")
 
     def create_extra_qty_request(self):
-        if len(self.extra_transfer_items) > 0:
-            for item in self.extra_transfer_items:
-                if item.extra_qty > 0:
-                    self.create_extra_qty_request_item(item)
+        """Create a single consolidated Extra Qty Request based on extra_percentage in transfer_items"""
+        print(f"🔍 DEBUG: create_extra_qty_request() called for document: {self.name}")
+        
+        # Check if we have transfer_items with extra_percentage > 0
+        if not self.transfer_items:
+            print(f"🔍 DEBUG: No transfer items found")
+            return
+        
+        # Collect all items with extra percentage and calculate their extra quantities
+        extra_items = []
+        for item in self.transfer_items:
+            extra_percentage = flt(item.extra_percentage or 0)
+            if extra_percentage > 0:
+                total_required_qty = flt(item.total_required_qty or 0)
+                if total_required_qty > 0:
+                    extra_qty = total_required_qty * (extra_percentage / 100)
+                    if extra_qty > 0:
+                        extra_items.append({
+                            'item_code': item.item_code,
+                            'item_name': item.item_name,
+                            'extra_qty': extra_qty,
+                            'uom': item.uom,
+                            'extra_percentage': extra_percentage,
+                            'total_required_qty': total_required_qty
+                        })
+                        print(f"🔍 DEBUG: Item {item.item_code}: total_required={total_required_qty}, extra_pct={extra_percentage}%, extra_qty={extra_qty}")
+        
+        if not extra_items:
+            print(f"🔍 DEBUG: No items with extra quantities found")
+            return
+        
+        print(f"🔍 DEBUG: Creating consolidated Extra Qty Request with {len(extra_items)} items")
+        
+        # Create a single consolidated Extra Qty Request document
+        doc = frappe.get_doc({
+            "doctype": "Extra Qty Request",
+            "sales_order": self.sales_order,
+            "work_order_transfer_maanger": self.name,
+            "company": self.company,
+            "from_warehouse": self.source_warehouse,
+            "to_warehouse": self.target_warehouse,
+        })
+        
+        # Add all extra items to the single document
+        for item_data in extra_items:
+            doc.append("extra_qty_request_item", {
+                "item": item_data['item_code'],
+                "qty": flt(item_data['extra_qty']),
+                "uom": item_data['uom'],
+            })
+        
+        # Insert the consolidated document
+        doc.insert()
+        print(f"🔍 DEBUG: Created consolidated Extra Qty Request: {doc.name} with {len(extra_items)} items")
+        frappe.msgprint(f"Created consolidated Extra Qty Request: {doc.name} with {len(extra_items)} items")
+        
+        return doc.name
 
-
-    def create_extra_qty_request_item(self, item):
+    def create_extra_qty_request_item(self, item, extra_qty=None):
+        """Create individual Extra Qty Request item"""
         print(f"🔍 DEBUG: create_extra_qty_request_item() called for document: {self.name}")
         frappe.msgprint(f"🔍 DEBUG: create_extra_qty_request_item() called for document: {self.name}")
+        
+        # Calculate extra_qty if not provided (for backward compatibility)
+        if extra_qty is None:
+            if hasattr(item, 'extra_qty'):
+                # Old logic: use extra_qty directly from extra_transfer_items
+                extra_qty = flt(getattr(item, "extra_qty", 0))
+            else:
+                # New logic: calculate from total_required_qty and extra_percentage
+                total_required_qty = flt(getattr(item, "total_required_qty", 0))
+                extra_percentage = flt(getattr(item, "extra_percentage", 0))
+                extra_qty = total_required_qty * (extra_percentage / 100) if total_required_qty > 0 and extra_percentage > 0 else 0
+        
+        if extra_qty <= 0:
+            print(f"🔍 DEBUG: No extra qty to create request for item {item.item_code}")
+            return
+        
         doc = frappe.get_doc({
             "doctype": "Extra Qty Request",
             "sales_order": self.sales_order,
@@ -77,7 +147,7 @@ class WorkOrderTransferManager(frappe.model.document.Document):
         })
         doc.append("extra_qty_request_item", {
             "item": getattr(item, "item_code", None),
-            "qty": flt(getattr(item, "extra_qty", 0)),
+            "qty": flt(extra_qty),
             "uom": getattr(item, "uom", None),
         })
         print(f"🔍 DEBUG: About to insert extra qty request item: {doc.name}")
@@ -184,21 +254,22 @@ class WorkOrderTransferManager(frappe.model.document.Document):
             self.company = frappe.defaults.get_global_default("company")
             print(f"🔍 DEBUG: Set company in on_submit: {self.company}")
         
-        # Create Extra Qty Request(s) for extra items
+        # Create Extra Qty Request(s) for items with extra_percentage > 0
         try:
             self.create_extra_qty_request()
         except Exception as e:
             print(f"⚠️ WARNING: Failed to create Extra Qty Request(s): {e}")
         
-        # Auto-create Extra Raw Material Transfer if there are Production Plan extras (optional)
-        try:
-            pp_map = get_production_plan_raw_materials(self.sales_order, self.company)
-            has_extra = any(flt(v.get("extra_qty", 0)) > 0 for v in (pp_map or {}).values())
-            if has_extra and frappe.db.exists("DocType", "Extra Raw Material Transfer"):
-                out = create_extra_raw_material_transfer(self.name)
-                print(f"🔍 DEBUG: Auto-created Extra Raw Material Transfer: {out}")
-        except Exception as e:
-            print(f"⚠️ WARNING: Could not auto-create Extra Raw Material Transfer on submit: {e}")
+        # COMMENTED OUT: Auto-create Extra Raw Material Transfer based on Production Plan extras
+        # This logic is now replaced by user-defined extra_percentage in transfer_items
+        # try:
+        #     pp_map = get_production_plan_raw_materials(self.sales_order, self.company)
+        #     has_extra = any(flt(v.get("extra_qty", 0)) > 0 for v in (pp_map or {}).values())
+        #     if has_extra and frappe.db.exists("DocType", "Extra Raw Material Transfer"):
+        #         out = create_extra_raw_material_transfer(self.name)
+        #         print(f"🔍 DEBUG: Auto-created Extra Raw Material Transfer: {out}")
+        # except Exception as e:
+        #     print(f"⚠️ WARNING: Could not auto-create Extra Raw Material Transfer on submit: {e}")
         
         print(f"🔍 DEBUG: Document submitted successfully")
 
@@ -1918,49 +1989,63 @@ def create_from_production_plan(pp_name: str, sales_order: str, source_warehouse
         company = company or frappe.defaults.get_global_default("company")
         posting_date = posting_date or str(frappe.utils.today())
 
-        # Create the WOTM doc
-        doc = frappe.new_doc("Work Order Transfer Manager")
-        doc.company = company
-        doc.posting_date = posting_date
-        doc.sales_order = sales_order
-        
-        # Fetch and set customer from Sales Order (required)
+        # Create the WOTM doc with proper transaction handling
         try:
-            customer = frappe.db.get_value("Sales Order", sales_order, "customer")
-            if not customer:
-                frappe.throw(f"Sales Order {sales_order} does not have a customer. Please set a customer for the Sales Order first.")
-            doc.customer = customer
+            # Start a new transaction
+            frappe.db.begin()
+            
+            doc = frappe.new_doc("Work Order Transfer Manager")
+            doc.company = company
+            doc.posting_date = posting_date
+            doc.sales_order = sales_order
+            
+            # Fetch and set customer from Sales Order (required)
+            try:
+                customer = frappe.db.get_value("Sales Order", sales_order, "customer")
+                if not customer:
+                    frappe.throw(f"Sales Order {sales_order} does not have a customer. Please set a customer for the Sales Order first.")
+                doc.customer = customer
+            except Exception as e:
+                frappe.throw(f"Error fetching customer from Sales Order {sales_order}: {str(e)}")
+            
+            # Set defaults for required fields
+            doc.stock_entry_type = "Material Transfer for Manufacture"
+
+            # Set warehouses if provided; otherwise pick the first two real warehouses from the company
+            if source_warehouse:
+                doc.source_warehouse = source_warehouse
+            if target_warehouse:
+                doc.target_warehouse = target_warehouse
+
+            if not getattr(doc, "source_warehouse", None) or not getattr(doc, "target_warehouse", None):
+                if company:
+                    warehouses = frappe.db.sql(
+                        """
+                        SELECT name FROM `tabWarehouse`
+                        WHERE company = %s AND is_group = 0
+                        ORDER BY name ASC LIMIT 2
+                        """,
+                        (company,),
+                        as_dict=True,
+                    )
+                    if warehouses:
+                        doc.source_warehouse = doc.source_warehouse or warehouses[0].name
+                        if len(warehouses) > 1:
+                            doc.target_warehouse = doc.target_warehouse or warehouses[1].name
+                        else:
+                            doc.target_warehouse = doc.target_warehouse or warehouses[0].name
+
+            # Insert with timeout handling
+            doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+            
+        except frappe.exceptions.QueryTimeoutError as e:
+            frappe.db.rollback()
+            return {"success": False, "message": f"Database timeout error. Please try again. Error: {str(e)}"}
         except Exception as e:
-            frappe.throw(f"Error fetching customer from Sales Order {sales_order}: {str(e)}")
-        
-        # Set defaults for required fields
-        doc.stock_entry_type = "Material Transfer for Manufacture"
-
-        # Set warehouses if provided; otherwise pick the first two real warehouses from the company
-        if source_warehouse:
-            doc.source_warehouse = source_warehouse
-        if target_warehouse:
-            doc.target_warehouse = target_warehouse
-
-        if not getattr(doc, "source_warehouse", None) or not getattr(doc, "target_warehouse", None):
-            if company:
-                warehouses = frappe.db.sql(
-                    """
-                    SELECT name FROM `tabWarehouse`
-                    WHERE company = %s AND is_group = 0
-                    ORDER BY name ASC LIMIT 2
-                    """,
-                    (company,),
-                    as_dict=True,
-                )
-                if warehouses:
-                    doc.source_warehouse = doc.source_warehouse or warehouses[0].name
-                    if len(warehouses) > 1:
-                        doc.target_warehouse = doc.target_warehouse or warehouses[1].name
-                    else:
-                        doc.target_warehouse = doc.target_warehouse or warehouses[0].name
-
-        doc.insert(ignore_permissions=True)
+            frappe.db.rollback()
+            frappe.log_error(f"Error creating WOTM from Production Plan {pp_name}: {str(e)}")
+            return {"success": False, "message": str(e)}
 
         # Populate tables for the selected Sales Order BEFORE submit
         out = populate_work_order_tables(sales_order, doc.name)
@@ -1979,11 +2064,8 @@ def create_from_production_plan(pp_name: str, sales_order: str, source_warehouse
         if not has_rows:
             return {"success": True, "doc_name": doc.name, "message": "Created as Draft. No work orders/raw materials found to populate."}
 
-        # Submit after successful populate
-        doc.flags.ignore_permissions = True
-        doc.submit()
-
-        return {"success": True, "doc_name": doc.name}
+        # Keep as draft instead of submitting
+        return {"success": True, "doc_name": doc.name, "message": "Work Order Transfer Manager created as Draft. Please review and submit when ready."}
 
     except Exception as e:
         frappe.log_error(f"Error creating WOTM from Production Plan {pp_name}: {str(e)}")

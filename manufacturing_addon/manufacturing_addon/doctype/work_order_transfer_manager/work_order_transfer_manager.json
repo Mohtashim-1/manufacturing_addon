@@ -195,7 +195,8 @@
   },
   {
    "fieldname": "section_break_hosd",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hidden": 1
   },
   {
    "fieldname": "extra_transfer_items",
@@ -207,7 +208,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-23 00:40:39.226101",
+ "modified": "2025-09-27 20:50:45.102324",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Work Order Transfer Manager",

@@ -735,16 +735,17 @@ def populate_work_order_tables(sales_order, doc_name):
         # COMMENTED OUT - No need to add rows to extra_transfer_items child table
         # try:
         #     if hasattr(doc, "extra_transfer_items"):
+        #         # Reset table
         #         doc.extra_transfer_items = []
-        #         for raw_code, data in pp_raw_materials.items():
-        #             extra_qty = flt(data.get("extra_qty", 0))
+        #         for raw_code, pp_data in pp_raw_materials.items():
+        #             extra_qty = flt(pp_data.get("extra_qty", 0))
         #             if extra_qty > 0:
         #                 doc.append("extra_transfer_items", {
         #                     "item_code": raw_code,
-        #                     "item_name": data.get("item_name", raw_code),
-        #                     "uom": data.get("uom"),
-        #                     "base_required_qty": flt(data.get("base_required_qty", 0)),
-        #                     "extra_percentage": flt(data.get("extra_percentage", 0)),
+        #                     "item_name": pp_data.get("item_name", raw_code),
+        #                     "uom": pp_data.get("uom"),
+        #                     "base_required_qty": flt(pp_data.get("base_required_qty", 0)),
+        #                     "extra_percentage": flt(pp_data.get("extra_percentage", 0)),
         #                     "extra_qty": extra_qty,
         #                     "source_warehouse": doc.source_warehouse,
         #                     "target_warehouse": doc.target_warehouse,

@@ -591,42 +591,129 @@ def create_transfer_stock_entry(docname, item_code, qty_to_transfer, item_type="
         frappe.throw(f"Error creating transfer Stock Entry: {str(e)}")
 
 
+def get_remaining_quantity_for_so_item(so_item):
+    """Helper function to calculate remaining quantity for a Sales Order item"""
+    ordered_qty = so_item.qty or 0
+    delivered_qty = so_item.delivered_qty or 0
+    remaining_qty = ordered_qty - delivered_qty
+    
+    # Debug information
+    print(f"DEBUG: Item {so_item.item_code}: Ordered={ordered_qty}, Delivered={delivered_qty}, Remaining={remaining_qty}")
+    
+    return max(0, remaining_qty)  # Ensure non-negative quantity
+
 @frappe.whitelist()
-def get_items_and_raw_materials(sales_order):
+def get_items_and_raw_materials(sales_order, production_qty_type="Under Order Qty", custom_quantities=None):
     items = []
     raw_materials_map = {}
 
-    # Fetch Sales Order Items
-    so_items = frappe.get_all("Sales Order Item", filters={"parent": sales_order}, fields=["item_code", "bom_no", "qty"])
+    print(f"DEBUG: Fetching items for Sales Order: {sales_order}")
+    print(f"DEBUG: Production Qty Type: {production_qty_type}")
+    print(f"DEBUG: Custom Quantities: {custom_quantities}")
+
+    # Parse custom quantities if provided
+    custom_qty_map = {}
+    if custom_quantities:
+        import json
+        try:
+            if isinstance(custom_quantities, str):
+                custom_qty_map = json.loads(custom_quantities)
+            else:
+                custom_qty_map = custom_quantities
+            print(f"DEBUG: Parsed custom quantities: {custom_qty_map}")
+        except Exception as e:
+            print(f"DEBUG: Error parsing custom quantities: {str(e)}")
+            frappe.throw("Invalid custom quantities format")
+
+    # Fetch Sales Order Items with delivered quantities
+    so_items = frappe.get_all("Sales Order Item", 
+        filters={"parent": sales_order}, 
+        fields=["item_code", "bom_no", "qty", "delivered_qty", "name"]
+    )
+    
+    print(f"DEBUG: Found {len(so_items)} Sales Order items")
+    
     for so_item in so_items:
-        bom_no = so_item.bom_no
-        # If bom_no is empty, fetch default BOM for the item
-        if not bom_no:
-            bom_no = frappe.db.get_value("BOM", {"item": so_item.item_code, "is_default": 1, "is_active": 1}, "name")
-        items.append({
-            "item": so_item.item_code,
-            "bom": bom_no,
-            "qty": so_item.qty
-        })
-        # Fetch BOM Raw Materials
-        if bom_no:
-            bom_doc = frappe.get_doc("BOM", bom_no)
-            for rm in bom_doc.items:
-                # Calculate required qty based on SO qty and BOM qty
-                required_qty = (rm.qty / bom_doc.quantity) * so_item.qty
-                key = (rm.item_code, rm.uom)
-                if key in raw_materials_map:
-                    raw_materials_map[key]["qty"] += required_qty
+        # Calculate remaining quantity using helper function
+        remaining_qty = get_remaining_quantity_for_so_item(so_item)
+        ordered_qty = so_item.qty or 0
+        
+        # Determine quantity to use based on production_qty_type
+        if production_qty_type == "Under Order Qty":
+            # Only process items that have remaining quantity
+            if remaining_qty > 0:
+                qty_to_use = remaining_qty
+                print(f"DEBUG: Under Order Qty - Using remaining qty {qty_to_use} for {so_item.item_code}")
+            else:
+                print(f"DEBUG: Skipped item {so_item.item_code} - no remaining quantity (Under Order Qty)")
+                continue
+        elif production_qty_type == "Over Order Qty":
+            # Check if custom quantity is provided for this item
+            if custom_qty_map and so_item.item_code in custom_qty_map:
+                custom_qty = custom_qty_map[so_item.item_code]
+                if custom_qty and custom_qty > 0:
+                    qty_to_use = custom_qty
+                    print(f"DEBUG: Over Order Qty - Using custom qty {qty_to_use} for {so_item.item_code}")
                 else:
-                    raw_materials_map[key] = {
-                        "item": rm.item_code,
-                        "qty": required_qty,
-                        "uom": rm.uom
-                    }
+                    print(f"DEBUG: Skipped item {so_item.item_code} - custom qty is 0 or invalid")
+                    continue
+            else:
+                # Use full ordered quantity if no custom quantity provided
+                qty_to_use = ordered_qty
+                print(f"DEBUG: Over Order Qty - Using full ordered qty {qty_to_use} for {so_item.item_code}")
+        else:
+            # Default to Under Order Qty behavior
+            if remaining_qty > 0:
+                qty_to_use = remaining_qty
+                print(f"DEBUG: Default behavior - Using remaining qty {qty_to_use} for {so_item.item_code}")
+            else:
+                print(f"DEBUG: Skipped item {so_item.item_code} - no remaining quantity (Default)")
+                continue
+        
+        # Only process if we have a valid quantity
+        if qty_to_use > 0:
+            bom_no = so_item.bom_no
+            # If bom_no is empty, fetch default BOM for the item
+            if not bom_no:
+                bom_no = frappe.db.get_value("BOM", {"item": so_item.item_code, "is_default": 1, "is_active": 1}, "name")
+            
+            items.append({
+                "item": so_item.item_code,
+                "bom": bom_no,
+                "qty": qty_to_use,  # Use calculated quantity based on production_qty_type
+                "ordered_qty": ordered_qty,  # Keep original ordered quantity for reference
+                "delivered_qty": so_item.delivered_qty or 0,  # Keep delivered quantity for reference
+                "remaining_qty": remaining_qty,  # Keep remaining quantity for reference
+                "production_qty_type": production_qty_type,  # Keep production type for reference
+                "is_custom_qty": custom_qty_map.get(so_item.item_code) is not None  # Flag for custom quantity
+            })
+            
+            print(f"DEBUG: Added item {so_item.item_code} with qty {qty_to_use}")
+            
+            # Fetch BOM Raw Materials based on calculated quantity
+            if bom_no:
+                bom_doc = frappe.get_doc("BOM", bom_no)
+                for rm in bom_doc.items:
+                    # Calculate required qty based on calculated qty and BOM qty
+                    required_qty = (rm.qty / bom_doc.quantity) * qty_to_use
+                    key = (rm.item_code, rm.uom)
+                    if key in raw_materials_map:
+                        raw_materials_map[key]["qty"] += required_qty
+                    else:
+                        raw_materials_map[key] = {
+                            "item": rm.item_code,
+                            "qty": required_qty,
+                            "uom": rm.uom
+                        }
+
+    print(f"DEBUG: Returning {len(items)} items with {production_qty_type} quantities")
+    print(f"DEBUG: Returning {len(raw_materials_map)} raw material types")
 
     return {
         "items": items,
-        "raw_materials": list(raw_materials_map.values())
+        "raw_materials": list(raw_materials_map.values()),
+        "production_qty_type": production_qty_type,
+        "custom_quantities_used": bool(custom_qty_map)
     }
 
 
@@ -673,6 +760,109 @@ def recalculate_raw_materials(items):
     frappe.logger().debug(f"recalculate_raw_materials returning: {result}")
     return result
 
+
+@frappe.whitelist()
+def get_sales_order_items_for_custom_quantities(sales_order):
+    """Get Sales Order items for custom quantity dialog"""
+    try:
+        print(f"DEBUG: Getting Sales Order items for custom quantities: {sales_order}")
+        
+        # Fetch Sales Order Items with delivered quantities
+        so_items = frappe.get_all("Sales Order Item", 
+            filters={"parent": sales_order}, 
+            fields=["item_code", "item_name", "qty", "delivered_qty", "name"]
+        )
+        
+        items = []
+        for so_item in so_items:
+            remaining_qty = get_remaining_quantity_for_so_item(so_item)
+            ordered_qty = so_item.qty or 0
+            
+            items.append({
+                "item_code": so_item.item_code,
+                "item_name": so_item.item_name,
+                "ordered_qty": ordered_qty,
+                "delivered_qty": so_item.delivered_qty or 0,
+                "remaining_qty": remaining_qty,
+                "will_be_included": ordered_qty > 0  # All items with quantity > 0 can be included
+            })
+        
+        print(f"DEBUG: Found {len(items)} items for custom quantities")
+        
+        return {
+            "success": True,
+            "items": items,
+            "total_items": len(items)
+        }
+        
+    except Exception as e:
+        print(f"DEBUG: Error getting Sales Order items: {str(e)}")
+        frappe.log_error(f"Error getting Sales Order items for custom quantities: {str(e)}", "Sales Order Items Error")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@frappe.whitelist()
+def get_sales_order_remaining_quantities(sales_order, production_qty_type="Under Order Qty"):
+    """Get detailed remaining quantities for all items in a Sales Order"""
+    try:
+        print(f"DEBUG: Getting remaining quantities for Sales Order: {sales_order}")
+        print(f"DEBUG: Production Qty Type: {production_qty_type}")
+        
+        # Fetch Sales Order Items with delivered quantities
+        so_items = frappe.get_all("Sales Order Item", 
+            filters={"parent": sales_order}, 
+            fields=["item_code", "item_name", "qty", "delivered_qty", "name"]
+        )
+        
+        remaining_items = []
+        for so_item in so_items:
+            remaining_qty = get_remaining_quantity_for_so_item(so_item)
+            ordered_qty = so_item.qty or 0
+            
+            # Determine what quantity would be used based on production_qty_type
+            if production_qty_type == "Under Order Qty":
+                qty_to_use = remaining_qty if remaining_qty > 0 else 0
+                will_be_included = remaining_qty > 0
+            elif production_qty_type == "Over Order Qty":
+                qty_to_use = ordered_qty
+                will_be_included = ordered_qty > 0
+            else:
+                qty_to_use = remaining_qty if remaining_qty > 0 else 0
+                will_be_included = remaining_qty > 0
+            
+            remaining_items.append({
+                "item_code": so_item.item_code,
+                "item_name": so_item.item_name,
+                "ordered_qty": ordered_qty,
+                "delivered_qty": so_item.delivered_qty or 0,
+                "remaining_qty": remaining_qty,
+                "qty_to_use": qty_to_use,
+                "has_remaining": remaining_qty > 0,
+                "will_be_included": will_be_included,
+                "production_qty_type": production_qty_type
+            })
+        
+        included_items = len([item for item in remaining_items if item['will_be_included']])
+        print(f"DEBUG: Found {included_items} items that will be included with {production_qty_type}")
+        
+        return {
+            "success": True,
+            "items": remaining_items,
+            "total_items": len(remaining_items),
+            "items_with_remaining": len([item for item in remaining_items if item['has_remaining']]),
+            "items_to_be_included": included_items,
+            "production_qty_type": production_qty_type
+        }
+        
+    except Exception as e:
+        print(f"DEBUG: Error getting remaining quantities: {str(e)}")
+        frappe.log_error(f"Error getting Sales Order remaining quantities: {str(e)}", "Sales Order Remaining Quantities Error")
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 @frappe.whitelist()
 def get_default_expense_account(stock_entry_type):

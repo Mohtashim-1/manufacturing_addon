@@ -132,6 +132,7 @@ doc_events = {
 	},
     "Sales Order": {
 		"validate": "manufacturing_addon.api.validate_sales_order",
+		"on_update": "manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order.close_cost_center_when_sales_order_is_closed",
 	},
     "BOM": {
         "validate": ["manufacturing_addon.manufacturing_addon.doctype.bom.bom.duplicate_item", 

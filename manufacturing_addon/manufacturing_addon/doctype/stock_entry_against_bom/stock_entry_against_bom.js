@@ -229,6 +229,9 @@ function show_transfer_dialog(frm, items) {
 	d.show();
 }
 
+// Global variable to store custom quantities
+let stored_custom_quantities = {};
+
 // Function to show custom quantity dialog for Over Order Qty
 function show_custom_quantity_dialog(frm, production_qty_type) {
 	// First get the sales order items to show in the dialog
@@ -245,6 +248,15 @@ function show_custom_quantity_dialog(frm, production_qty_type) {
 					frappe.msgprint(__('No items found in the Sales Order'));
 					return;
 				}
+				
+				// Pre-fill items with stored custom quantities if available
+				items.forEach(function(item) {
+					if (stored_custom_quantities[item.item_code]) {
+						item.custom_qty = stored_custom_quantities[item.item_code];
+					} else {
+						item.custom_qty = item.ordered_qty;
+					}
+				});
 				
 				// Create custom quantity dialog
 				let d = new frappe.ui.Dialog({
@@ -341,7 +353,7 @@ function create_items_table_html(items) {
 					<input type="number" 
 						   class="form-control custom-qty-input" 
 						   data-item-code="${item.item_code}"
-						   value="${item.ordered_qty}"
+						   value="${item.custom_qty || item.ordered_qty}"
 						   min="0"
 						   step="0.01"
 						   placeholder="Enter custom qty"
@@ -368,17 +380,23 @@ function reset_to_ordered_quantities(button) {
 		// Fallback: find the closest table
 		$(button).closest('.custom-quantities-table').find('.custom-qty-input').each(function() {
 			let $input = $(this);
+			let itemCode = $input.data('item-code');
 			let $row = $input.closest('tr');
 			let orderedQty = parseFloat($row.find('td:nth-child(3)').text());
 			$input.val(orderedQty);
+			// Update stored quantities
+			stored_custom_quantities[itemCode] = orderedQty;
 		});
 	} else {
 		// Use dialog method
 		$(dialog.fields_dict.items_table.$wrapper).find('.custom-qty-input').each(function() {
 			let $input = $(this);
+			let itemCode = $input.data('item-code');
 			let $row = $input.closest('tr');
 			let orderedQty = parseFloat($row.find('td:nth-child(3)').text());
 			$input.val(orderedQty);
+			// Update stored quantities
+			stored_custom_quantities[itemCode] = orderedQty;
 		});
 	}
 	
@@ -401,6 +419,9 @@ function process_custom_quantities(dialog, frm, production_qty_type) {
 		
 		console.log('DEBUG: Item', itemCode, 'Custom Qty:', customQty);
 		
+		// Store the custom quantity (even if 0 or empty)
+		stored_custom_quantities[itemCode] = customQty;
+		
 		if (customQty && customQty > 0) {
 			custom_quantities[itemCode] = customQty;
 			has_custom_qty = true;
@@ -408,6 +429,7 @@ function process_custom_quantities(dialog, frm, production_qty_type) {
 	});
 	
 	console.log('DEBUG: Custom quantities collected:', custom_quantities);
+	console.log('DEBUG: Stored custom quantities:', stored_custom_quantities);
 	
 	// Validate custom quantities
 	let invalid_items = [];
@@ -451,10 +473,42 @@ function fetch_items_with_quantities(frm, production_qty_type, custom_quantities
 				console.log('DEBUG: Setting items:', r.message.items);
 				console.log('DEBUG: Setting raw materials:', r.message.raw_materials);
 				
-				frm.set_value('stock_entry_item_table', r.message.items || []);
-				frm.set_value('stock_entry_required_item_table', r.message.raw_materials || []);
+				// Clear existing items first
+				frm.clear_table('stock_entry_item_table');
+				frm.clear_table('stock_entry_required_item_table');
+				
+				// Add items with custom quantities
+				if (r.message.items && r.message.items.length > 0) {
+					r.message.items.forEach(function(item) {
+						let new_row = frm.add_child('stock_entry_item_table');
+						new_row.item = item.item;
+						new_row.bom = item.bom;
+						new_row.qty = item.qty; // This should be the custom quantity
+						new_row.issued_qty = 0;
+						new_row.remaining_qty = item.qty;
+						new_row.transfer_status = "Pending";
+					});
+				}
+				
+				// Add raw materials
+				if (r.message.raw_materials && r.message.raw_materials.length > 0) {
+					r.message.raw_materials.forEach(function(raw_material) {
+						let new_row = frm.add_child('stock_entry_required_item_table');
+						new_row.item = raw_material.item;
+						new_row.qty = raw_material.qty;
+						new_row.uom = raw_material.uom;
+						new_row.issued_qty = 0;
+						new_row.remaining_qty = raw_material.qty;
+						new_row.transfer_status = "Pending";
+					});
+				}
+				
+				// Refresh fields and recalculate totals
 				frm.refresh_field('stock_entry_item_table');
 				frm.refresh_field('stock_entry_required_item_table');
+				
+				// Trigger validation to recalculate totals
+				frm.trigger('validate');
 				
 				// Show message about production quantity type used
 				let message = __('Items fetched using {0} mode', [production_qty_type]);
@@ -474,6 +528,38 @@ frappe.ui.form.on('Stock Entry Against BOM', {
 	onload: function(frm) {
 		// Initialize form when loaded
 		console.log("Stock Entry Against BOM form loaded");
+	},
+	
+	before_save: function(frm) {
+		// Ensure custom quantities are preserved before save
+		console.log('DEBUG: before_save triggered');
+		console.log('DEBUG: Current stock_entry_item_table:', frm.doc.stock_entry_item_table);
+		
+		// If we have stored custom quantities, ensure they are applied
+		if (Object.keys(stored_custom_quantities).length > 0) {
+			console.log('DEBUG: Applying stored custom quantities before save');
+			frm.doc.stock_entry_item_table.forEach(function(row) {
+				if (stored_custom_quantities[row.item]) {
+					console.log('DEBUG: Updating', row.item, 'from', row.qty, 'to', stored_custom_quantities[row.item]);
+					row.qty = stored_custom_quantities[row.item];
+					row.remaining_qty = stored_custom_quantities[row.item] - (row.issued_qty || 0);
+				}
+			});
+		}
+	},
+	
+	on_submit: function(frm) {
+		// Clear stored custom quantities after successful submit
+		console.log('DEBUG: on_submit triggered - clearing stored custom quantities');
+		stored_custom_quantities = {};
+	},
+	
+	sales_order: function(frm) {
+		// Clear stored custom quantities when sales order changes
+		if (frm.doc.sales_order) {
+			console.log('DEBUG: Sales order changed - clearing stored custom quantities');
+			stored_custom_quantities = {};
+		}
 	}
 });
 

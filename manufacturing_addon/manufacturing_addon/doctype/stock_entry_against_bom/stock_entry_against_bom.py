@@ -273,7 +273,10 @@ class StockEntryAgainstBOM(Document):
     def on_submit(self):
         # Create Stock Entry for each finished item using BOM
         # Before processing, cap by cross-document remaining for the Sales Order (if available)
-        remaining_by_item = self._get_remaining_by_item()
+        # Skip capping for "Over Order Qty" mode
+        remaining_by_item = {}
+        if getattr(self, 'production_qty_type', 'Under Order Qty') != 'Over Order Qty':
+            remaining_by_item = self._get_remaining_by_item()
         
         for row in self.stock_entry_item_table:
             if row.bom and row.qty:
@@ -463,6 +466,13 @@ class StockEntryAgainstBOM(Document):
     def _enforce_cross_document_remaining(self):
         """Cap or remove finished item rows based on remaining quantities across documents for the same Sales Order."""
         print(f"DEBUG: _enforce_cross_document_remaining called")
+        print(f"DEBUG: Production Qty Type: {getattr(self, 'production_qty_type', 'Not set')}")
+        
+        # Skip enforcement for "Over Order Qty" mode - allow excess quantities
+        if getattr(self, 'production_qty_type', 'Under Order Qty') == 'Over Order Qty':
+            print("DEBUG: Over Order Qty mode - skipping cross-document remaining enforcement")
+            return
+            
         if not getattr(self, 'sales_order', None):
             print("DEBUG: No sales_order found, skipping enforcement")
             return
@@ -552,9 +562,14 @@ def show_transfer_dialog(docname):
         remaining_by_item = doc._get_remaining_by_item()
         
         for row in doc.stock_entry_item_table:
-            # Available = min(intra-doc remaining, cross-doc remaining); if no sales order / mapping, use intra-doc only
-            cross_remaining = remaining_by_item.get(row.item, None)
-            available = row.remaining_qty if cross_remaining is None else min(row.remaining_qty, max(0, cross_remaining))
+            # For Over Order Qty mode, use only intra-doc remaining (no cross-doc capping)
+            if getattr(doc, 'production_qty_type', 'Under Order Qty') == 'Over Order Qty':
+                available = row.remaining_qty
+            else:
+                # Available = min(intra-doc remaining, cross-doc remaining); if no sales order / mapping, use intra-doc only
+                cross_remaining = remaining_by_item.get(row.item, None)
+                available = row.remaining_qty if cross_remaining is None else min(row.remaining_qty, max(0, cross_remaining))
+            
             if available > 0:
                 finished_items.append({
                     'item': row.item,

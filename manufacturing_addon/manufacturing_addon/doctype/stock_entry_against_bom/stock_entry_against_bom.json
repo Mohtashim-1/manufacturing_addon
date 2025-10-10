@@ -7,7 +7,6 @@
  "engine": "InnoDB",
  "field_order": [
   "posting_date",
-  "production_qty_type",
   "column_break_jveh",
   "posting_time",
   "section_break_uzvu",
@@ -136,20 +135,13 @@
    "fieldtype": "Link",
    "label": "Cost Center",
    "options": "Cost Center"
-  },
-  {
-   "default": "Under Order Qty",
-   "fieldname": "production_qty_type",
-   "fieldtype": "Select",
-   "label": "Production Qty Type",
-   "options": "Under Order Qty\nOver Order Qty"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-10-04 00:46:20.767558",
+ "modified": "2025-10-07 18:42:58.559931",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stock Entry Against BOM",

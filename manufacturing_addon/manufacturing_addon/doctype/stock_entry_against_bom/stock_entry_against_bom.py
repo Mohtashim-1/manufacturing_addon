@@ -272,26 +272,10 @@ class StockEntryAgainstBOM(Document):
 
     def on_submit(self):
         # Create Stock Entry for each finished item using BOM
-        # Before processing, cap by cross-document remaining for the Sales Order (if available)
-        # Skip capping for "Over Order Qty" mode
-        remaining_by_item = {}
-        if getattr(self, 'production_qty_type', 'Under Order Qty') != 'Over Order Qty':
-            remaining_by_item = self._get_remaining_by_item()
+        # No capping or restrictions - allow any quantities
         
         for row in self.stock_entry_item_table:
             if row.bom and row.qty:
-                # Determine how much is allowed to be created based on remaining
-                allowed_remaining = remaining_by_item.get(row.item, None)
-                if allowed_remaining is not None:
-                    if allowed_remaining <= 0:
-                        # Nothing remaining for this item across documents; skip
-                        continue
-                    if row.qty > allowed_remaining:
-                        frappe.msgprint(f"Capped {row.item} from {row.qty} to {allowed_remaining} based on remaining for Sales Order {self.sales_order}.")
-                        row.qty = allowed_remaining
-                        remaining_by_item[row.item] = 0
-                    else:
-                        remaining_by_item[row.item] = allowed_remaining - row.qty
                 
                 stock_entry = frappe.new_doc("Stock Entry")
                 stock_entry.stock_entry_type = self.stock_entry_type
@@ -380,12 +364,23 @@ class StockEntryAgainstBOM(Document):
                 print(f"Stock Entry name: {stock_entry.name}")
                 print("=== END DEBUG AFTER DB UPDATE ===")
                 
+                # Update issued_qty to reflect that this quantity has been processed
+                row.issued_qty = row.qty
+                row.remaining_qty = 0
+                row.transfer_status = "Fully Transferred"
+                
                 # stock_entry.submit()
                 
                 frappe.msgprint(f"Stock Entry created for {row.item} (Qty: {row.qty}): {stock_entry.name}")
         
         if not self.stock_entry_item_table:
             frappe.throw("No items found in Stock Entry Item Table")
+        
+        # Update raw materials issued_qty as well
+        for row in self.stock_entry_required_item_table:
+            row.issued_qty = row.qty
+            row.remaining_qty = 0
+            row.transfer_status = "Fully Transferred"
         
         # Create Transfer Form after all Stock Entries are created
         self.create_transfer_form()
@@ -464,51 +459,11 @@ class StockEntryAgainstBOM(Document):
         return remaining
     
     def _enforce_cross_document_remaining(self):
-        """Cap or remove finished item rows based on remaining quantities across documents for the same Sales Order."""
-        print(f"DEBUG: _enforce_cross_document_remaining called")
-        print(f"DEBUG: Production Qty Type: {getattr(self, 'production_qty_type', 'Not set')}")
-        
-        # Skip enforcement for "Over Order Qty" mode - allow excess quantities
-        if getattr(self, 'production_qty_type', 'Under Order Qty') == 'Over Order Qty':
-            print("DEBUG: Over Order Qty mode - skipping cross-document remaining enforcement")
-            return
-            
-        if not getattr(self, 'sales_order', None):
-            print("DEBUG: No sales_order found, skipping enforcement")
-            return
-        remaining_by_item = self._get_remaining_by_item()
-        if not remaining_by_item:
-            print("DEBUG: No remaining quantities found, skipping enforcement")
-            return
-        print(f"DEBUG: Processing {len(self.stock_entry_item_table)} finished item rows")
-        rows_to_remove = []
-        for i, row in enumerate(self.stock_entry_item_table):
-            print(f"DEBUG: Row {i}: item={row.item}, current_qty={row.qty}")
-            allowed = remaining_by_item.get(row.item, 0)
-            print(f"DEBUG:   Allowed remaining for {row.item}: {allowed}")
-            if allowed <= 0:
-                if (row.qty or 0) > 0:
-                    print(f"DEBUG:   Removing {row.item} (qty {row.qty}) as Sales Order remaining is 0")
-                    frappe.msgprint(f"Removed {row.item} (qty {row.qty}) as Sales Order remaining is 0.")
-                rows_to_remove.append(row)
-                continue
-            if row.qty > allowed:
-                print(f"DEBUG:   Capping {row.item} from {row.qty} to {allowed}")
-                frappe.msgprint(f"Capped {row.item} from {row.qty} to {allowed} based on Sales Order remaining.")
-                row.qty = allowed
-                remaining_by_item[row.item] = 0
-            else:
-                remaining_by_item[row.item] = allowed - row.qty
-                print(f"DEBUG:   Keeping {row.item} at {row.qty}, remaining becomes {remaining_by_item[row.item]}")
-        # Remove rows with no remaining
-        print(f"DEBUG: Removing {len(rows_to_remove)} rows")
-        for r in rows_to_remove:
-            self.remove(r)
-        # Recalculate totals after adjustments
-        print("DEBUG: Recalculating totals after adjustments")
-        self.calculate_total_qty()
-        self.calculate_total_qty_raw_materials()
-        print(f"DEBUG: Final totals - total_quantity: {self.total_quantity}, total_qty: {self.total_qty}")
+        """Allow any quantities - no capping or restrictions."""
+        print(f"DEBUG: _enforce_cross_document_remaining called - NO RESTRICTIONS")
+        print("DEBUG: Allowing all quantities without any capping or restrictions")
+        # No enforcement - allow any quantities
+        return
 
     def create_transfer_form(self):
         """Create Transfer Form document with items from stock_entry_required_item_table"""
@@ -562,13 +517,8 @@ def show_transfer_dialog(docname):
         remaining_by_item = doc._get_remaining_by_item()
         
         for row in doc.stock_entry_item_table:
-            # For Over Order Qty mode, use only intra-doc remaining (no cross-doc capping)
-            if getattr(doc, 'production_qty_type', 'Under Order Qty') == 'Over Order Qty':
-                available = row.remaining_qty
-            else:
-                # Available = min(intra-doc remaining, cross-doc remaining); if no sales order / mapping, use intra-doc only
-                cross_remaining = remaining_by_item.get(row.item, None)
-                available = row.remaining_qty if cross_remaining is None else min(row.remaining_qty, max(0, cross_remaining))
+            # Use only intra-doc remaining (no cross-doc capping)
+            available = row.remaining_qty
             
             if available > 0:
                 finished_items.append({
@@ -618,92 +568,153 @@ def get_remaining_quantity_for_so_item(so_item):
     return max(0, remaining_qty)  # Ensure non-negative quantity
 
 @frappe.whitelist()
+def get_remaining_quantities_from_stock_entries(sales_order):
+    """Get remaining quantities by checking actual stock entries created from BOM documents"""
+    print(f"DEBUG: Getting remaining quantities from stock entries for Sales Order: {sales_order}")
+    
+    # First, get the ordered quantities from Sales Order
+    so_items = frappe.get_all("Sales Order Item", 
+        filters={"parent": sales_order}, 
+        fields=["item_code", "qty"]
+    )
+    
+    ordered_by_item = {}
+    for so_item in so_items:
+        ordered_by_item[so_item.item_code] = so_item.qty or 0
+    
+    print(f"DEBUG: Ordered quantities from Sales Order: {ordered_by_item}")
+    
+    # Get all submitted Stock Entry Against BOM documents for this Sales Order
+    bom_docs = frappe.get_all("Stock Entry Against BOM", 
+        filters={
+            "sales_order": sales_order,
+            "docstatus": 1  # Only submitted documents
+        },
+        fields=["name"]
+    )
+    
+    print(f"DEBUG: Found {len(bom_docs)} submitted BOM documents")
+    print(f"DEBUG: BOM document names: {[doc.name for doc in bom_docs]}")
+    
+    # Calculate total processed quantities from actual Stock Entry documents
+    processed_by_item = {}
+    
+    # Get all Stock Entry documents that are manufacturing entries
+    stock_entries = frappe.get_all("Stock Entry", 
+        filters={
+            "docstatus": 1,  # Only submitted stock entries
+            "purpose": "Manufacture"  # Only manufacturing stock entries
+        },
+        fields=["name", "from_bom", "bom_no"]
+    )
+    
+    print(f"DEBUG: Found {len(stock_entries)} manufacturing stock entries")
+    
+    for se in stock_entries:
+        # Check if this stock entry is related to our Sales Order
+        is_related = False
+        
+        # Check if BOM is related to our Sales Order
+        if se.bom_no:
+            bom_doc = frappe.get_doc("BOM", se.bom_no)
+            if bom_doc.item in ordered_by_item:
+                is_related = True
+                print(f"DEBUG: Stock Entry {se.name} is related via BOM {se.bom_no} for item {bom_doc.item}")
+        
+        if is_related:
+            # Get the stock entry details
+            se_doc = frappe.get_doc("Stock Entry", se.name)
+            
+            # Look for finished goods in the stock entry
+            for item in se_doc.items:
+                if item.t_warehouse and not item.s_warehouse:  # This is a finished good (target warehouse only)
+                    item_code = item.item_code
+                    qty = item.qty or 0
+                    
+                    if item_code in ordered_by_item:
+                        processed_by_item[item_code] = processed_by_item.get(item_code, 0) + qty
+                        print(f"DEBUG: Found {qty} of {item_code} manufactured in Stock Entry {se.name}")
+    
+    print(f"DEBUG: Total processed quantities from actual Stock Entries: {processed_by_item}")
+    
+    # Calculate remaining quantities: Ordered - Processed (but not less than 0)
+    remaining_by_item = {}
+    excess_by_item = {}
+    
+    for item_code, ordered_qty in ordered_by_item.items():
+        processed_qty = processed_by_item.get(item_code, 0)
+        remaining_qty = max(0, ordered_qty - processed_qty)
+        excess_qty = max(0, processed_qty - ordered_qty)
+        
+        remaining_by_item[item_code] = remaining_qty
+        excess_by_item[item_code] = excess_qty
+        
+        print(f"DEBUG: Item {item_code}: Ordered={ordered_qty}, Processed={processed_qty}, Remaining={remaining_qty}, Excess={excess_qty}")
+        
+        # If processed more than ordered, show excess info
+        if excess_qty > 0:
+            print(f"DEBUG: EXCESS: Item {item_code} has {excess_qty} excess (processed {processed_qty} but ordered only {ordered_qty})")
+    
+    print(f"DEBUG: Final remaining quantities: {remaining_by_item}")
+    print(f"DEBUG: Final excess quantities: {excess_by_item}")
+    return remaining_by_item, excess_by_item
+
+@frappe.whitelist()
 def get_items_and_raw_materials(sales_order, production_qty_type="Under Order Qty", custom_quantities=None):
     items = []
     raw_materials_map = {}
-
+    
     print(f"DEBUG: Fetching items for Sales Order: {sales_order}")
-    print(f"DEBUG: Production Qty Type: {production_qty_type}")
-    print(f"DEBUG: Custom Quantities: {custom_quantities}")
 
-    # Parse custom quantities if provided
-    custom_qty_map = {}
-    if custom_quantities:
-        import json
-        try:
-            if isinstance(custom_quantities, str):
-                custom_qty_map = json.loads(custom_quantities)
-            else:
-                custom_qty_map = custom_quantities
-            print(f"DEBUG: Parsed custom quantities: {custom_qty_map}")
-        except Exception as e:
-            print(f"DEBUG: Error parsing custom quantities: {str(e)}")
-            frappe.throw("Invalid custom quantities format")
-
-    # Fetch Sales Order Items with delivered quantities
+    # Get remaining quantities and excess quantities from actual stock entries
+    remaining_by_item, excess_by_item = get_remaining_quantities_from_stock_entries(sales_order)
+    
+    # Fetch Sales Order Items to get BOM information
     so_items = frappe.get_all("Sales Order Item", 
         filters={"parent": sales_order}, 
         fields=["item_code", "bom_no", "qty", "delivered_qty", "name"]
     )
     
     print(f"DEBUG: Found {len(so_items)} Sales Order items")
+    print(f"DEBUG: Remaining quantities from stock entries: {remaining_by_item}")
+    print(f"DEBUG: Excess quantities from stock entries: {excess_by_item}")
     
     for so_item in so_items:
-        # Calculate remaining quantity using helper function
-        remaining_qty = get_remaining_quantity_for_so_item(so_item)
         ordered_qty = so_item.qty or 0
+        delivered_qty = so_item.delivered_qty or 0
         
-        # Determine quantity to use based on production_qty_type
-        if production_qty_type == "Under Order Qty":
-            # Only process items that have remaining quantity
-            if remaining_qty > 0:
-                qty_to_use = remaining_qty
-                print(f"DEBUG: Under Order Qty - Using remaining qty {qty_to_use} for {so_item.item_code}")
-            else:
-                print(f"DEBUG: Skipped item {so_item.item_code} - no remaining quantity (Under Order Qty)")
-                continue
-        elif production_qty_type == "Over Order Qty":
-            # Check if custom quantity is provided for this item
-            if custom_qty_map and so_item.item_code in custom_qty_map:
-                custom_qty = custom_qty_map[so_item.item_code]
-                if custom_qty and custom_qty > 0:
-                    qty_to_use = custom_qty
-                    print(f"DEBUG: Over Order Qty - Using custom qty {qty_to_use} for {so_item.item_code}")
-                else:
-                    print(f"DEBUG: Skipped item {so_item.item_code} - custom qty is 0 or invalid")
-                    continue
-            else:
-                # Use full ordered quantity if no custom quantity provided
-                qty_to_use = ordered_qty
-                print(f"DEBUG: Over Order Qty - Using full ordered qty {qty_to_use} for {so_item.item_code}")
-        else:
-            # Default to Under Order Qty behavior
-            if remaining_qty > 0:
-                qty_to_use = remaining_qty
-                print(f"DEBUG: Default behavior - Using remaining qty {qty_to_use} for {so_item.item_code}")
-            else:
-                print(f"DEBUG: Skipped item {so_item.item_code} - no remaining quantity (Default)")
-                continue
+        # Get remaining quantity and excess quantity from stock entries
+        remaining_qty = remaining_by_item.get(so_item.item_code, 0)
+        excess_qty = excess_by_item.get(so_item.item_code, 0)
         
-        # Only process if we have a valid quantity
-        if qty_to_use > 0:
+        # Use remaining quantity from stock entries, but show all items
+        qty_to_use = remaining_qty
+        
+        # Show all items, even if fully completed (qty_to_use = 0)
+        if True:  # Always show all items
             bom_no = so_item.bom_no
             # If bom_no is empty, fetch default BOM for the item
             if not bom_no:
                 bom_no = frappe.db.get_value("BOM", {"item": so_item.item_code, "is_default": 1, "is_active": 1}, "name")
             
+            # Calculate issued quantity (ordered - remaining)
+            issued_qty = max(0, ordered_qty - remaining_qty)
+            
+            print(f"DEBUG: Item {so_item.item_code}: Ordered={ordered_qty}, Remaining={remaining_qty}, Issued={issued_qty}")
+            
             items.append({
                 "item": so_item.item_code,
                 "bom": bom_no,
-                "qty": qty_to_use,  # Use calculated quantity based on production_qty_type
-                "ordered_qty": ordered_qty,  # Keep original ordered quantity for reference
-                "delivered_qty": so_item.delivered_qty or 0,  # Keep delivered quantity for reference
-                "remaining_qty": remaining_qty,  # Keep remaining quantity for reference
-                "production_qty_type": production_qty_type,  # Keep production type for reference
-                "is_custom_qty": custom_qty_map.get(so_item.item_code) is not None  # Flag for custom quantity
+                "qty": qty_to_use,
+                "ordered_qty": ordered_qty,  # Original ordered quantity from Sales Order
+                "delivered_qty": delivered_qty,  # Delivered quantity from Sales Order
+                "issued_qty": issued_qty,  # Already issued/transferred quantity
+                "remaining_qty": remaining_qty,  # Remaining quantity to be processed
+                "excess_qty": excess_qty,  # Excess quantity if any
+                "source": "stock_entries"  # Indicate source
             })
             
-            print(f"DEBUG: Added item {so_item.item_code} with qty {qty_to_use}")
+            print(f"DEBUG: Added item {so_item.item_code} with qty {qty_to_use} from stock entries (excess: {excess_qty})")
             
             # Fetch BOM Raw Materials based on calculated quantity
             if bom_no:
@@ -721,14 +732,14 @@ def get_items_and_raw_materials(sales_order, production_qty_type="Under Order Qt
                             "uom": rm.uom
                         }
 
-    print(f"DEBUG: Returning {len(items)} items with {production_qty_type} quantities")
+    print(f"DEBUG: Returning {len(items)} items from stock entries")
     print(f"DEBUG: Returning {len(raw_materials_map)} raw material types")
 
     return {
         "items": items,
         "raw_materials": list(raw_materials_map.values()),
-        "production_qty_type": production_qty_type,
-        "custom_quantities_used": bool(custom_qty_map)
+        "source": "stock_entries",
+        "excess_quantities": excess_by_item
     }
 
 

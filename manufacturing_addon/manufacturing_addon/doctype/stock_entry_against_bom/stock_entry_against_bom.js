@@ -38,6 +38,12 @@ frappe.ui.form.on('Stock Entry Against BOM', {
 				}
 			});
 		}, __('Actions'));
+
+		// Add "Apply Row Colors" button for testing
+		frm.add_custom_button(__('Apply Row Colors'), function() {
+			applyRowStyling(frm);
+			frappe.msgprint(__('Row colors applied! Check console for debug info.'));
+		}, __('Debug'));
 	},
 
 	stock_entry_type: function(frm) {
@@ -268,6 +274,11 @@ function fetch_items_with_quantities(frm) {
 				frm.refresh_field('stock_entry_item_table');
 				frm.refresh_field('stock_entry_required_item_table');
 				
+				// Apply row styling after refresh
+				setTimeout(() => {
+					applyRowStyling(frm);
+				}, 500);
+				
 				// Trigger validation to recalculate totals
 				frm.trigger('validate');
 				
@@ -322,9 +333,161 @@ frappe.ui.form.on('Stock Entry Against BOM', {
 		console.log("Stock Entry Against BOM form loaded");
 		// Initialize quantities for existing items
 		initialize_quantities(frm);
+		// Add CSS styling
+		addRowStylingCSS();
+		// Set up table observer
+		setupTableObserver(frm);
 	},
 	
 });
+
+// Function to set up a MutationObserver to watch for table changes
+function setupTableObserver(frm) {
+	// Wait for the table to be rendered
+	setTimeout(() => {
+		const tableContainer = frm.fields_dict.stock_entry_item_table.wrapper;
+		if (tableContainer) {
+			// Create a MutationObserver to watch for changes in the table
+			const observer = new MutationObserver((mutations) => {
+				mutations.forEach((mutation) => {
+					if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+						// Table has been updated, apply styling
+						setTimeout(() => {
+							applyRowStyling(frm);
+						}, 100);
+					}
+				});
+			});
+			
+			// Start observing
+			observer.observe(tableContainer, {
+				childList: true,
+				subtree: true
+			});
+			
+			console.log('DEBUG: Table observer set up');
+		}
+	}, 1000);
+}
+
+// Function to add CSS styling for row highlighting
+function addRowStylingCSS() {
+	// Check if CSS is already added
+	if (document.getElementById('stock-entry-row-styling')) {
+		return;
+	}
+	
+	const style = document.createElement('style');
+	style.id = 'stock-entry-row-styling';
+	style.textContent = `
+		.fully-transferred-row {
+			background-color: #d4edda !important;
+			border-left: 4px solid #28a745 !important;
+		}
+		.fully-transferred-row:hover {
+			background-color: #c3e6cb !important;
+		}
+		.partially-transferred-row {
+			background-color: #fff3cd !important;
+			border-left: 4px solid #ffc107 !important;
+		}
+		.partially-transferred-row:hover {
+			background-color: #ffeaa7 !important;
+		}
+		.pending-row {
+			background-color: #f8f9fa !important;
+			border-left: 4px solid #6c757d !important;
+		}
+		.pending-row:hover {
+			background-color: #e9ecef !important;
+		}
+		/* Make the styling more prominent */
+		.fully-transferred-row td {
+			font-weight: 500 !important;
+		}
+		.partially-transferred-row td {
+			font-weight: 500 !important;
+		}
+	`;
+	document.head.appendChild(style);
+}
+
+// Function to apply row styling based on transfer status
+function applyRowStyling(frm) {
+	if (!frm.doc.stock_entry_item_table) {
+		console.log('DEBUG: No stock_entry_item_table found');
+		return;
+	}
+	
+	console.log('DEBUG: Applying row styling for', frm.doc.stock_entry_item_table.length, 'items');
+	
+	// Find the table container - try multiple selectors
+	let tableContainer = frm.fields_dict.stock_entry_item_table.wrapper;
+	if (!tableContainer) {
+		tableContainer = document.querySelector('[data-fieldname="stock_entry_item_table"]');
+	}
+	if (!tableContainer) {
+		tableContainer = document.querySelector('.frappe-table[data-fieldname="stock_entry_item_table"]');
+	}
+	
+	if (!tableContainer) {
+		console.log('DEBUG: Table container not found');
+		return;
+	}
+	
+	console.log('DEBUG: Table container found:', tableContainer);
+	
+	// Get all table rows - try multiple selectors
+	let rows = tableContainer.querySelectorAll('tbody tr');
+	if (rows.length === 0) {
+		rows = tableContainer.querySelectorAll('tr[data-idx]');
+	}
+	if (rows.length === 0) {
+		rows = tableContainer.querySelectorAll('.grid-row');
+	}
+	
+	console.log('DEBUG: Found', rows.length, 'rows');
+	
+		rows.forEach((row, index) => {
+		if (index < frm.doc.stock_entry_item_table.length) {
+			const item = frm.doc.stock_entry_item_table[index];
+			console.log('DEBUG: Row', index, 'Item:', item.item);
+			console.log('DEBUG: Row', index, 'Order Qty:', item.ordered_qty, 'Issued Qty:', item.issued_qty, 'Remaining Qty:', item.remaining_qty, 'Excess Qty:', item.excess_qty);
+			console.log('DEBUG: Row', index, 'Status:', item.transfer_status);
+			
+			// Remove existing classes
+			row.classList.remove('fully-transferred-row', 'partially-transferred-row', 'pending-row');
+			
+			// Check if item is fully transferred based on quantities
+			const isFullyTransferred = (item.remaining_qty === 0 && item.issued_qty > 0) || 
+									  (item.issued_qty > 0 && item.remaining_qty === 0);
+			const isPartiallyTransferred = item.issued_qty > 0 && item.remaining_qty > 0;
+			
+			console.log('DEBUG: Row', index, 'isFullyTransferred:', isFullyTransferred, 'isPartiallyTransferred:', isPartiallyTransferred);
+			
+			// Add appropriate class based on transfer status
+			if (isFullyTransferred) {
+				row.classList.add('fully-transferred-row');
+				// Apply inline styles as backup
+				row.style.backgroundColor = '#d4edda';
+				row.style.borderLeft = '4px solid #28a745';
+				row.style.fontWeight = '500';
+				console.log('DEBUG: Applied green styling to row', index);
+			} else if (isPartiallyTransferred) {
+				row.classList.add('partially-transferred-row');
+				row.style.backgroundColor = '#fff3cd';
+				row.style.borderLeft = '4px solid #ffc107';
+				row.style.fontWeight = '500';
+				console.log('DEBUG: Applied yellow styling to row', index);
+			} else {
+				row.classList.add('pending-row');
+				row.style.backgroundColor = '#f8f9fa';
+				row.style.borderLeft = '4px solid #6c757d';
+				console.log('DEBUG: Applied gray styling to row', index);
+			}
+		}
+	});
+}
 
 // Function to initialize quantities for existing items
 function initialize_quantities(frm) {
@@ -361,8 +524,22 @@ frappe.ui.form.on('Stock Entry Item Table', {
 			// Calculate remaining as: order_qty - issued_qty - current_qty
 			// But since qty represents what we want to process, remaining should be order_qty - issued_qty - qty
 			row.remaining_qty = Math.max(0, (row.order_qty || 0) - (row.issued_qty || 0) - (row.qty || 0));
+			
+			// Update transfer status based on new quantities
+			if (row.remaining_qty === 0 && row.issued_qty > 0) {
+				row.transfer_status = "Fully Transferred";
+			} else if (row.issued_qty > 0) {
+				row.transfer_status = "Partially Transferred";
+			} else {
+				row.transfer_status = "Pending";
+			}
 		}
 		frm.refresh_field('stock_entry_item_table');
+		
+		// Apply row styling after refresh
+		setTimeout(() => {
+			applyRowStyling(frm);
+		}, 100);
 		
 		clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(() => {

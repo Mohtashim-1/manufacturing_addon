@@ -23,6 +23,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
         self.initialize_tracking_fields()
         self.handle_extra_quantities_automatically()
         self.distribute_extra_quantities()
+        self.sync_warehouse_information()
 
     def calculate_totals(self):
         total_transfer_qty = 0
@@ -63,7 +64,6 @@ class RawMaterialTransfer(frappe.model.document.Document):
         self.calculate_totals()
 
     def populate_actual_quantities(self):
-        print(f"🔍 DEBUG: populate_actual_quantities() called for Raw Material Transfer: {self.name}")
         if not self.raw_materials:
             return
         try:
@@ -187,13 +187,16 @@ class RawMaterialTransfer(frappe.model.document.Document):
             print(f"DEBUG: Error calculating transferred quantities: {str(e)}")
 
     def before_submit(self):
-        print(f"🔍 DEBUG: before_submit() called for Raw Material Transfer: {self.name}")
         try:
             self.validate_allocation()
             self.create_stock_entries_for_work_orders()
             self.update_work_orders_with_allocation()
         except Exception as e:
-            frappe.log_error(f"Error in before_submit for Raw Material Transfer {self.name}: {str(e)}")
+            error_msg = str(e)
+            # Truncate error message for log title if too long
+            if len(error_msg) > 100:
+                error_msg = error_msg[:97] + "..."
+            frappe.log_error(f"RMT {self.name} before_submit error: {error_msg}")
             frappe.throw(f"Error processing transfer: {str(e)}")
 
     def on_submit(self):
@@ -210,7 +213,6 @@ class RawMaterialTransfer(frappe.model.document.Document):
             frappe.log_error(f"Error updating WOTM after submit for {self.name}: {str(e)}")
 
     def on_cancel(self):
-        print(f"🔍 DEBUG: on_cancel() called for Raw Material Transfer: {self.name}")
         if self.stock_entry:
             try:
                 stock_entry_doc = frappe.get_doc("Stock Entry", self.stock_entry)
@@ -427,32 +429,143 @@ class RawMaterialTransfer(frappe.model.document.Document):
                     self.update_item_transfer_status(item)
                     break
 
+    def sync_warehouse_information(self):
+        """Sync warehouse information from parent to child table rows"""
+        if not self.raw_materials:
+            return
+            
+        updated_count = 0
+        for item in self.raw_materials:
+            item_updated = False
+            
+            # Update source_warehouse if parent has it and child doesn't or it's different
+            if self.source_warehouse and getattr(item, "source_warehouse", None) != self.source_warehouse:
+                item.source_warehouse = self.source_warehouse
+                item_updated = True
+                
+            # Update target_warehouse if parent has it and child doesn't or it's different
+            if self.target_warehouse and getattr(item, "target_warehouse", None) != self.target_warehouse:
+                item.target_warehouse = self.target_warehouse
+                item_updated = True
+                
+            if item_updated:
+                updated_count += 1
+                
+        if updated_count > 0:
+            print(f"🔍 DEBUG: Synced warehouse information for {updated_count} items")
+
     # ---------- allocation / SE creation ----------
 
     def validate_allocation(self):
         if not self.raw_materials:
             return
+            
+        # Get work orders for this sales order
         work_orders = frappe.db.sql("""
             SELECT name, production_item, qty, material_transferred_for_manufacturing, docstatus
             FROM `tabWork Order`
             WHERE sales_order = %s AND docstatus = 1
         """, (self.sales_order,), as_dict=True)
+        
         if not work_orders:
             frappe.throw("No submitted work orders found for this sales order")
 
+        # Track items that cannot be allocated
+        unallocated_items = []
+        
         for raw_item in self.raw_materials:
             if flt(raw_item.transfer_qty) <= 0:
                 continue
+                
             can_allocate = False
+            allocation_details = []
+            
             for wo in work_orders:
-                bom = frappe.db.get_value("BOM", {"item": wo.production_item, "is_active": 1, "is_default": 1})
+                # Get BOM for this work order
+                bom = frappe.db.get_value("BOM", {
+                    "item": wo.production_item, 
+                    "is_active": 1, 
+                    "is_default": 1
+                })
+                
                 if bom:
                     bom_doc = frappe.get_doc("BOM", bom)
-                    if any(item.item_code == raw_item.item_code for item in bom_doc.items):
+                    # Check if this raw material is in the BOM
+                    bom_items = [item.item_code for item in bom_doc.items]
+                    if raw_item.item_code in bom_items:
                         can_allocate = True
-                        break
+                        allocation_details.append(f"Work Order {wo.name} (BOM: {bom})")
+                    else:
+                        allocation_details.append(f"Work Order {wo.name} - Not in BOM")
+                else:
+                    allocation_details.append(f"Work Order {wo.name} - No BOM found")
+            
             if not can_allocate:
-                frappe.throw(f"Raw material {raw_item.item_code} cannot be allocated to any work order. Please check BOM configurations.")
+                unallocated_items.append({
+                    "item_code": raw_item.item_code,
+                    "details": allocation_details
+                })
+        
+        # If there are unallocated items, provide detailed error message
+        if unallocated_items:
+            error_msg = "The following raw materials cannot be allocated to any work order:\n\n"
+            for item in unallocated_items:
+                error_msg += f"• {item['item_code']}:\n"
+                for detail in item['details']:
+                    error_msg += f"  - {detail}\n"
+                error_msg += "\n"
+            
+            error_msg += "Please check BOM configurations or ensure the raw materials are included in the BOMs of the production items."
+            
+            frappe.throw(error_msg)
+
+    def get_bom_allocation_debug_info(self, item_code):
+        """Get detailed BOM allocation debug information for an item"""
+        debug_info = {
+            "item_code": item_code,
+            "work_orders": [],
+            "boms_checked": [],
+            "can_allocate": False
+        }
+        
+        # Get work orders for this sales order
+        work_orders = frappe.db.sql("""
+            SELECT name, production_item, qty, material_transferred_for_manufacturing, docstatus
+            FROM `tabWork Order`
+            WHERE sales_order = %s AND docstatus = 1
+        """, (self.sales_order,), as_dict=True)
+        
+        for wo in work_orders:
+            wo_info = {
+                "work_order": wo.name,
+                "production_item": wo.production_item,
+                "bom_found": False,
+                "bom_name": None,
+                "item_in_bom": False
+            }
+            
+            # Check for BOM
+            bom = frappe.db.get_value("BOM", {
+                "item": wo.production_item, 
+                "is_active": 1, 
+                "is_default": 1
+            })
+            
+            if bom:
+                wo_info["bom_found"] = True
+                wo_info["bom_name"] = bom
+                
+                # Check if item is in BOM
+                bom_doc = frappe.get_doc("BOM", bom)
+                bom_items = [item.item_code for item in bom_doc.items]
+                wo_info["item_in_bom"] = item_code in bom_items
+                
+                if item_code in bom_items:
+                    debug_info["can_allocate"] = True
+            
+            debug_info["work_orders"].append(wo_info)
+        
+        return debug_info
 
     def create_stock_entries_for_work_orders(self):
         print(f"🔍 DEBUG: Creating stock entries for work orders")
@@ -716,7 +829,6 @@ class RawMaterialTransfer(frappe.model.document.Document):
 @frappe.whitelist()
 def get_pending_raw_materials(work_order_transfer_manager):
     """Get raw materials with remaining qty (uses submitted transfers only)"""
-    print(f"🔍 DEBUG: get_pending_raw_materials called for: {work_order_transfer_manager}")
     try:
         wotm_doc = frappe.get_doc("Work Order Transfer Manager", work_order_transfer_manager)
 
@@ -745,7 +857,6 @@ def get_pending_raw_materials(work_order_transfer_manager):
                     "warehouse": wotm_doc.source_warehouse
                 })
 
-        print(f"🔍 DEBUG: Found {len(pending_items)} items with pending quantities")
         return pending_items
 
     except Exception as e:
@@ -1005,12 +1116,50 @@ def get_transfer_summary(doc_name):
 
 
 @frappe.whitelist()
+def debug_bom_allocation(doc_name, item_code=None):
+    """Debug BOM allocation for raw material transfer"""
+    try:
+        doc = frappe.get_doc("Raw Material Transfer", doc_name)
+        
+        if item_code:
+            # Debug specific item
+            debug_info = doc.get_bom_allocation_debug_info(item_code)
+            return {"success": True, "debug_info": debug_info}
+        else:
+            # Debug all items
+            debug_info = {}
+            for item in doc.raw_materials:
+                if item.item_code:
+                    debug_info[item.item_code] = doc.get_bom_allocation_debug_info(item.item_code)
+            
+            return {"success": True, "debug_info": debug_info}
+        
+    except Exception as e:
+        frappe.log_error(f"Error debugging BOM allocation: {str(e)}", "BOM Allocation Debug Error")
+        return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def sync_warehouse_information(doc_name):
+    """Sync warehouse information from parent to child table rows"""
+    try:
+        doc = frappe.get_doc("Raw Material Transfer", doc_name)
+        doc.sync_warehouse_information()
+        doc.save()
+        
+        return {
+            "success": True,
+            "message": "Warehouse information synced successfully"
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error syncing warehouse information: {str(e)}", "Sync Warehouse Information Error")
+        return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
 def create_raw_material_transfer_from_pending(work_order_transfer_manager, selected_items=None):
     """Create a new Raw Material Transfer document with selected pending items"""
-    print(f"🔍 DEBUG: create_raw_material_transfer_from_pending called")
-    print(f"🔍 DEBUG: work_order_transfer_manager: {work_order_transfer_manager}")
-    print(f"🔍 DEBUG: selected_items: {selected_items}")
-
     try:
         wotm_doc = frappe.get_doc("Work Order Transfer Manager", work_order_transfer_manager)
         if wotm_doc.docstatus != 1:

@@ -1,216 +1,198 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "creation": "2025-08-12 14:00:00",
-  "doctype": "DocType",
-  "editable_grid": 1,
-  "engine": "InnoDB",
-  "field_order": [
-    "select_for_delete",
-    "item_code",
-    "item_name",
-    "column_break_1",
-    "total_required_qty",
-    "pending_qty",
-    "transfer_qty",
-    "transferred_qty_so_far",
-    "column_break_2",
-    "uom",
-    "warehouse",
-    "source_warehouse",
-    "target_warehouse",
-    "actual_qty_at_warehouse",
-    "actual_qty_at_company",
-    "allocated_qty",
-    "remaining_qty",
-    "extra_qty",
-    "target_qty",
-    "expected_qty",
-    "transfer_status"
-  ],
-  "fields": [
-    {
-      "fieldname": "select_for_delete",
-      "fieldtype": "Check",
-      "label": "Select for Delete",
-      "in_list_view": 1
-    },
-    {
-      "columns": 2,
-      "fieldname": "item_code",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "label": "Item Code",
-      "options": "Item",
-      "read_only": 1
-    },
-    {
-      "fieldname": "item_name",
-      "fieldtype": "Data",
-      "label": "Item Name",
-      "read_only": 1
-    },
-    {
-      "fieldname": "column_break_1",
-      "fieldtype": "Column Break"
-    },
-    {
-      "columns": 1,
-      "fieldname": "total_required_qty",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "label": "Total Required Qty",
-      "read_only": 1
-    },
-    {
-      "columns": 1,
-      "fieldname": "pending_qty",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "label": "Pending Qty",
-      "read_only": 1
-    },
-    {
-      "columns": 1,
-      "fieldname": "transfer_qty",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "label": "Transfer Qty",
-      "reqd": 1
-    },
-    {
-      "columns": 1,
-      "fieldname": "transferred_qty_so_far",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "label": "Transferred So Far",
-      "read_only": 1
-    },
-    {
-      "fieldname": "column_break_2",
-      "fieldtype": "Column Break"
-    },
-    {
-      "columns": 1,
-      "fieldname": "uom",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "label": "UOM",
-      "options": "UOM",
-      "read_only": 1
-    },
-    {
-      "columns": 1,
-      "fieldname": "warehouse",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "label": "Warehouse",
-      "options": "Warehouse",
-      "read_only": 1
-    },
-    {
-      "columns": 1,
-      "fieldname": "source_warehouse",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Source Warehouse",
-      "options": "Warehouse"
-    },
-    {
-      "columns": 1,
-      "fieldname": "target_warehouse",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Target Warehouse",
-      "options": "Warehouse"
-    },
-    {
-      "columns": 1,
-      "fieldname": "actual_qty_at_warehouse",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "in_preview": 1,
-      "in_standard_filter": 1,
-      "label": "Actual Qty at Warehouse",
-      "read_only": 1
-    },
-    {
-      "columns": 1,
-      "fieldname": "actual_qty_at_company",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "in_preview": 1,
-      "in_standard_filter": 1,
-      "label": "Actual Qty at Company",
-      "read_only": 1
-    },
-    {
-      "fieldname": "allocated_qty",
-      "fieldtype": "Float",
-      "label": "Allocated Qty",
-      "print_hide": 1,
-      "read_only": 1
-    },
-    {
-      "fieldname": "remaining_qty",
-      "fieldtype": "Float",
-      "label": "Remaining Qty",
-      "print_hide": 1,
-      "read_only": 1
-    },
-    {
-      "fieldname": "extra_qty",
-      "fieldtype": "Float",
-      "label": "Extra Qty",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "read_only": 1
-    },
-    {
-      "fieldname": "target_qty",
-      "fieldtype": "Float",
-      "label": "Target Qty",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "read_only": 1
-    },
-    {
-      "fieldname": "expected_qty",
-      "fieldtype": "Float",
-      "label": "Expected Qty",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "read_only": 1
-    },
-    {
-      "fieldname": "transfer_status",
-      "fieldtype": "Select",
-      "label": "Transfer Status",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "options": "Pending\nPartially Transferred\nFully Transferred",
-      "read_only": 1
-    }
-  ],
-  "grid_page_length": 500,
-  "index_web_pages_for_search": 1,
-  "istable": 1,
-  "links": [],
-  "modified": "2025-08-19 19:11:55.239390",
-  "modified_by": "Administrator",
-  "module": "Manufacturing Addon",
-  "name": "Raw Material Transfer Items Table",
-  "owner": "Administrator",
-  "permissions": [],
-  "row_format": "Dynamic",
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-08-12 14:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "uom",
+  "total_required_qty",
+  "pending_qty",
+  "transfer_qty",
+  "transferred_qty_so_far",
+  "column_break_1",
+  "source_warehouse",
+  "target_warehouse",
+  "actual_qty_at_warehouse",
+  "actual_qty_at_company",
+  "column_break_2",
+  "allocated_qty",
+  "remaining_qty",
+  "extra_qty",
+  "target_qty",
+  "expected_qty",
+  "transfer_status"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "total_required_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Total Required Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "pending_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Pending Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "transfer_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Transfer Qty",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "transferred_qty_so_far",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Transferred So Far",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "columns": 1,
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Target Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "columns": 1,
+   "fieldname": "actual_qty_at_warehouse",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Actual Qty at Warehouse",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "actual_qty_at_company",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Actual Qty at Company",
+   "read_only": 1
+  },
+  {
+   "fieldname": "allocated_qty",
+   "fieldtype": "Float",
+   "label": "Allocated Qty",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "remaining_qty",
+   "fieldtype": "Float",
+   "label": "Remaining Qty",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "extra_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Extra Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Target Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "expected_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Expected Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "transfer_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Transfer Status",
+   "options": "Pending\nPartially Transferred\nFully Transferred",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 500,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-19 16:33:12.355154",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Raw Material Transfer Items Table",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

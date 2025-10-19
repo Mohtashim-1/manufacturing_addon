@@ -1,7 +1,5 @@
-// Copyright (c) 2025, Manufacturing Addon and contributors
-// For license information, please see license.txt
-
-frappe.ui.form.on("Work Order Transfer Manager", {
+// Work Order Transfer Manager Client Script
+frappe.ui.form.on('Work Order Transfer Manager', {
     refresh: function(frm) {
         console.log("🔍 DEBUG: refresh() called for Work Order Transfer Manager");
         
@@ -35,8 +33,20 @@ frappe.ui.form.on("Work Order Transfer Manager", {
             }, __('Actions'));
         }
         
+        // Add refresh button for all documents with transfer items
+        if (frm.doc.name && frm.doc.transfer_items && frm.doc.transfer_items.length > 0) {
+            frm.add_custom_button(__('🔄 Refresh Transfer Qty'), function() {
+                frm.trigger("refresh_transferred_quantities");
+            }, __('Actions'));
+        }
+        
         // Add transfer-related buttons for submitted documents
         if (frm.doc.name && !frm.doc.__islocal && frm.doc.docstatus === 1) {
+            // Refresh Transfer Quantities button
+            frm.add_custom_button(__('🔄 Refresh Transfer Qty'), function() {
+                frm.trigger("refresh_transferred_quantities");
+            }, __('Actions'));
+            
             // Create All Pending Transfer button
             frm.add_custom_button(__('🚀 Create All Pending Transfer'), function() {
                 frm.trigger("create_all_pending_transfer");
@@ -563,6 +573,9 @@ frappe.ui.form.on("Work Order Transfer Manager", {
                         // Ensure company is set in child tables after reload
                         setTimeout(function() {
                             frm.trigger("setup_company_in_child_tables");
+                            
+                            // Immediately refresh transferred quantities to show correct transfer_qty
+                            frm.trigger("refresh_transferred_quantities");
                         }, 1000);
                     }
                 } else {
@@ -1193,6 +1206,34 @@ frappe.ui.form.on("Work Order Transfer Items Table", {
             row.transfer_qty = row.pending_qty;
             frm.refresh_field("transfer_items");
         }
+    },
+    
+    refresh_transferred_quantities: function(frm) {
+        console.log("🔍 DEBUG: refresh_transferred_quantities() called");
+        if (!frm.doc.name) {
+            console.log("🔍 DEBUG: Document not saved, skipping refresh");
+            return;
+        }
+        
+        frappe.call({
+            method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.refresh_transferred_quantities_from_stock_entries",
+            args: {
+                doc_name: frm.doc.name
+            },
+            callback: function(r) {
+                console.log("🔍 DEBUG: Refresh transferred quantities callback:", r);
+                if (r.message && r.message.success) {
+                    console.log("🔍 DEBUG: Transferred quantities refreshed successfully");
+                    // Reload the form to show updated quantities
+                    frm.reload_doc();
+                } else {
+                    console.log("🔍 DEBUG: Failed to refresh transferred quantities:", r.message);
+                }
+            },
+            error: function(r) {
+                console.error("❌ DEBUG: Error refreshing transferred quantities:", r);
+            }
+        });
     }
 });
 

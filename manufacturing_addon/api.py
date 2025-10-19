@@ -54,11 +54,14 @@ def create_order_sheet(sales_order):
 
 
 def add_parameter(doc, method):
-    if doc.custom_item_category and not doc.custom_item_parameter:
-        category = frappe.get_doc("Item Category", doc.custom_item_category)
-        for param in category.custom_item_parameter:
-            row = doc.append("custom_item_parameter", {})
-            row.parameter = param.parameter
+    # Get custom_item_category from the Item's Item Group
+    if doc.item_group:
+        item_group = frappe.get_doc("Item Group", doc.item_group)
+        if hasattr(item_group, 'custom_item_category') and item_group.custom_item_category and not doc.custom_item_parameter:
+            category = frappe.get_doc("Item Category", item_group.custom_item_category)
+            for param in category.custom_item_parameter:
+                row = doc.append("custom_item_parameter", {})
+                row.parameter = param.parameter
 
 
 

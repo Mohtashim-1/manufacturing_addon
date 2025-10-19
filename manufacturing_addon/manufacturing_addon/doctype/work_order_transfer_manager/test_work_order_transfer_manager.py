@@ -236,6 +236,84 @@ class TestWorkOrderTransferManager(FrappeTestCase):
 				frappe.db.commit()
 				print(f"✅ Fixed pending quantity to {expected_pending}")
 	
+	def test_cost_center_mandatory_validation(self):
+		"""Test that cost_center field is mandatory"""
+		# Check if cost_center field exists
+		wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.test_wotm)
+		
+		if not hasattr(wotm_doc, 'cost_center'):
+			print("⚠️ Cost center field not yet migrated - skipping validation test")
+			return
+		
+		# Create a new WOTM without sales_order to test validation
+		test_wotm = frappe.get_doc({
+			"doctype": "Work Order Transfer Manager",
+			"posting_date": frappe.utils.today(),
+			"posting_time": frappe.utils.nowtime(),
+			"company": "SAH ENTERPRISE INC",
+			"cost_center": None,  # No cost center set
+			"sales_order": None,  # No sales order to auto-populate from
+		})
+		
+		# This should raise an error because cost_center is required
+		with self.assertRaises(frappe.ValidationError):
+			test_wotm.validate()
+		
+		print("✅ Cost center validation is working - field is mandatory")
+	
+	def test_cost_center_matching_stock_entries(self):
+		"""Test that Stock Entries with matching cost center are included"""
+		wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.test_wotm)
+		
+		if not hasattr(wotm_doc, 'cost_center'):
+			print("⚠️ Cost center field not yet migrated - skipping cost center matching test")
+			return
+			
+		wotm_cost_center = getattr(wotm_doc, 'cost_center', None)
+		
+		if not wotm_cost_center:
+			print("⚠️ WOTM has no cost center set - skipping cost center matching test")
+			return
+		
+		print(f"Testing cost center matching for: {wotm_cost_center}")
+		
+		# Find Stock Entries with matching cost center
+		cost_center_stock_entries = frappe.get_all(
+			"Stock Entry",
+			filters={
+				"custom_cost_center": wotm_cost_center,
+				"docstatus": 1,
+				"purpose": "Material Transfer for Manufacture"
+			},
+			fields=["name", "custom_cost_center", "posting_date"]
+		)
+		
+		print(f"Found {len(cost_center_stock_entries)} Stock Entries with matching cost center")
+		
+		if cost_center_stock_entries:
+			# Check if these Stock Entries are included in transferred quantities
+			refresh_result = frappe.call(
+				'manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.refresh_transferred_quantities_from_stock_entries',
+				self.test_wotm
+			)
+			
+			print(f"Refresh result: {refresh_result}")
+			
+			# Check if any items have transferred quantities
+			wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.test_wotm)
+			items_with_transfers = [item for item in wotm_doc.transfer_items if item.transferred_qty_so_far > 0]
+			
+			print(f"Items with transferred quantities: {len(items_with_transfers)}")
+			for item in items_with_transfers:
+				print(f"  {item.item_code}: {item.transferred_qty_so_far}")
+			
+			if items_with_transfers:
+				print("✅ Cost center matching is working - Stock Entries are included")
+			else:
+				print("❌ Cost center matching may not be working - no transferred quantities found")
+		else:
+			print("ℹ️ No Stock Entries found with matching cost center")
+	
 	def test_final_verification(self):
 		"""Final verification that everything is working"""
 		wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.test_wotm)
@@ -244,6 +322,7 @@ class TestWorkOrderTransferManager(FrappeTestCase):
 		print(f"Document: {wotm_doc.name}")
 		print(f"Status: {wotm_doc.docstatus}")
 		print(f"Company: {wotm_doc.company}")
+		print(f"Cost Center: {getattr(wotm_doc, 'cost_center', 'Not Set')}")
 		print(f"Sales Order: {wotm_doc.sales_order}")
 		
 		print(f"\n📦 TRANSFER ITEMS:")

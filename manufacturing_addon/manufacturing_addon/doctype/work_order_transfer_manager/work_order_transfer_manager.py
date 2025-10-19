@@ -15,13 +15,40 @@ class WorkOrderTransferManager(frappe.model.document.Document):
         # Ensure company is set during initialization
         if not self.company:
             self.company = frappe.defaults.get_global_default("company")
-            print(f"🔍 DEBUG: Set company in __init__: {self.company}")
+
+    def onload(self):
+        """Called when document is loaded in UI"""
+        print(f"🔍 DEBUG: onload() called for document: {self.name}")
+        # Auto-calculate transferred quantities if they are all 0
+        if self.transfer_items and all(flt(item.transferred_qty_so_far) == 0 for item in self.transfer_items):
+            print(f"🔍 DEBUG: All transferred quantities are 0, calculating from Stock Entries")
+            work_orders = [wo.work_order for wo in self.work_order_details] if self.work_order_details else []
+            calculated_quantities = calculate_transferred_quantities_from_all_sources(self.name, work_orders)
+            
+            for item in self.transfer_items:
+                if item.item_code in calculated_quantities:
+                    item.transferred_qty_so_far = calculated_quantities[item.item_code]
+                    # Recalculate pending quantity
+                    item.pending_qty = max(flt(item.total_required_qty) - flt(item.transferred_qty_so_far), 0)
+                    print(f"🔍 DEBUG: Calculated transferred_qty_so_far for {item.item_code}: {item.transferred_qty_so_far}, pending: {item.pending_qty}")
 
     def validate(self):
-        print(f"🔍 DEBUG: validate() called for document: {self.name}")
         if not self._totals_calculated:
             self.calculate_totals()
             self._totals_calculated = True
+        
+        # Auto-fetch cost center from sales order if not set (only if field exists)
+        if hasattr(self, 'cost_center') and not self.cost_center and self.sales_order:
+            try:
+                so_doc = frappe.get_doc("Sales Order", self.sales_order)
+                if so_doc.cost_center:
+                    self.cost_center = so_doc.cost_center
+            except:
+                pass  # Ignore if sales order doesn't exist or has no cost center
+        
+        # Validate cost center is set (only if field exists)
+        if hasattr(self, 'cost_center') and not self.cost_center:
+            frappe.throw("Cost Center is required for Work Order Transfer Manager. Please set it manually or ensure the Sales Order has a cost center.")
         
         # Ensure company is set in all child tables BEFORE validation
         self.ensure_company_in_child_tables()
@@ -180,13 +207,11 @@ class WorkOrderTransferManager(frappe.model.document.Document):
                 item.company = company
 
     def before_save(self):
-        print(f"🔍 DEBUG: before_save() called for document: {self.name}")
         self._totals_calculated = False
         
         # Ensure company is set on parent document
         if not self.company:
             self.company = frappe.defaults.get_global_default("company")
-            print(f"🔍 DEBUG: Set company in before_save: {self.company}")
         
         # Ensure company is set in all child tables before saving
         self.ensure_company_in_child_tables()
@@ -860,7 +885,7 @@ def populate_work_order_tables(sales_order, doc_name):
                 print(f"❌ DEBUG: Raw summary: {raw_summary}")
                 raise e
 
-        # Restore preserved transferred quantities
+        # Restore preserved transferred quantities OR calculate from Stock Entries
         if existing_transferred_quantities:
             print(f"🔍 DEBUG: Restoring preserved transferred quantities")
             for item in doc.transfer_items:
@@ -869,6 +894,18 @@ def populate_work_order_tables(sales_order, doc_name):
                     # Recalculate pending quantity
                     item.pending_qty = max(flt(item.total_required_qty) - flt(item.transferred_qty_so_far), 0)
                     print(f"🔍 DEBUG: Restored transferred_qty_so_far for {item.item_code}: {item.transferred_qty_so_far}, pending: {item.pending_qty}")
+        else:
+            # If no preserved quantities, calculate from Stock Entries
+            print(f"🔍 DEBUG: No preserved quantities found, calculating from Stock Entries")
+            work_orders = [wo.work_order for wo in doc.work_order_details]
+            calculated_quantities = calculate_transferred_quantities_from_all_sources(doc.name, work_orders)
+            
+            for item in doc.transfer_items:
+                if item.item_code in calculated_quantities:
+                    item.transferred_qty_so_far = calculated_quantities[item.item_code]
+                    # Recalculate pending quantity
+                    item.pending_qty = max(flt(item.total_required_qty) - flt(item.transferred_qty_so_far), 0)
+                    print(f"🔍 DEBUG: Calculated transferred_qty_so_far for {item.item_code}: {item.transferred_qty_so_far}, pending: {item.pending_qty}")
         
         # Ensure company is set in all child tables before saving
         doc.ensure_company_in_child_tables()
@@ -1340,8 +1377,13 @@ def calculate_transferred_quantities_from_all_sources(wotm_name, work_orders):
     1. Stock Entries created from Raw Material Transfers
     2. Stock Entries created directly from Work Orders
     3. Any other Stock Entries that transfer materials for these work orders
+    4. Stock Entries with matching cost center (Material Transfer for Manufacture)
     """
     item_total_transferred = {}
+    
+    # Get WOTM cost center for matching (only if field exists)
+    wotm_doc = frappe.get_doc("Work Order Transfer Manager", wotm_name)
+    wotm_cost_center = getattr(wotm_doc, 'cost_center', None) if hasattr(wotm_doc, 'cost_center') else None
     
     # 1. Get Stock Entries from Raw Material Transfers
     existing_transfers = frappe.get_all(
@@ -1369,8 +1411,22 @@ def calculate_transferred_quantities_from_all_sources(wotm_name, work_orders):
         )
         wo_stock_entries = [se.name for se in wo_stock_entries]
     
-    # 3. Get all Stock Entries that transfer materials for these work orders
-    all_stock_entries = list(set(rmt_stock_entries + wo_stock_entries))
+            # 3. Get Stock Entries with matching cost center (Material Transfer for Manufacture)
+        cost_center_stock_entries = []
+        if wotm_cost_center:
+            cost_center_stock_entries = frappe.get_all(
+                "Stock Entry",
+                filters={
+                    "custom_cost_center": wotm_cost_center,
+                    "docstatus": 1,
+                    "purpose": "Material Transfer for Manufacture"
+                },
+                fields=["name"]
+            )
+            cost_center_stock_entries = [se.name for se in cost_center_stock_entries]
+    
+    # 4. Get all Stock Entries that transfer materials for these work orders
+    all_stock_entries = list(set(rmt_stock_entries + wo_stock_entries + cost_center_stock_entries))
     
     if all_stock_entries:
         # Get Stock Entry Items for all related Stock Entries

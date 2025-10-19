@@ -33,6 +33,18 @@ frappe.ui.form.on("Raw Material Transfer", {
             frm.add_custom_button(__("Refresh Transferred Qty"), function() {
                 frm.trigger("refresh_transferred_quantities");
             }, __("Actions"));
+            
+            frm.add_custom_button(__("Sync Warehouse Info"), function() {
+                frm.trigger("update_child_warehouses");
+            }, __("Actions"));
+            
+            frm.add_custom_button(__("Debug Warehouse Sync"), function() {
+                frm.trigger("debug_warehouse_sync");
+            }, __("Actions"));
+            
+            frm.add_custom_button(__("Debug BOM Allocation"), function() {
+                frm.trigger("debug_bom_allocation");
+            }, __("Actions"));
         }
     },
     
@@ -41,6 +53,147 @@ frappe.ui.form.on("Raw Material Transfer", {
         if (frm.doc.stock_entry_type) {
             console.log("🔍 DEBUG: Stock entry type selected:", frm.doc.stock_entry_type);
         }
+    },
+    
+    source_warehouse: function(frm) {
+        console.log("🔍 DEBUG: source_warehouse event triggered");
+        if (frm.doc.source_warehouse) {
+            console.log("🔍 DEBUG: Source warehouse selected:", frm.doc.source_warehouse);
+            frm.trigger("update_child_warehouses_client_side");
+        }
+    },
+    
+    target_warehouse: function(frm) {
+        console.log("🔍 DEBUG: target_warehouse event triggered");
+        if (frm.doc.target_warehouse) {
+            console.log("🔍 DEBUG: Target warehouse selected:", frm.doc.target_warehouse);
+            frm.trigger("update_child_warehouses_client_side");
+        }
+    },
+    
+    update_child_warehouses_client_side: function(frm) {
+        console.log("🔍 DEBUG: update_child_warehouses_client_side() called");
+        console.log("🔍 DEBUG: Parent source_warehouse:", frm.doc.source_warehouse);
+        console.log("🔍 DEBUG: Parent target_warehouse:", frm.doc.target_warehouse);
+        
+        if (!frm.doc.raw_materials || frm.doc.raw_materials.length === 0) {
+            console.log("🔍 DEBUG: No raw materials found, skipping warehouse update");
+            return;
+        }
+        
+        console.log("🔍 DEBUG: Found", frm.doc.raw_materials.length, "raw materials");
+        
+        let updated_count = 0;
+        
+        frm.doc.raw_materials.forEach(function(item, index) {
+            console.log(`🔍 DEBUG: Processing item ${index}: ${item.item_code}`);
+            console.log(`🔍 DEBUG: Current source_warehouse: ${item.source_warehouse}`);
+            console.log(`🔍 DEBUG: Current target_warehouse: ${item.target_warehouse}`);
+            
+            let item_updated = false;
+            
+            // Update source_warehouse if parent has it and child doesn't or it's different
+            if (frm.doc.source_warehouse && item.source_warehouse !== frm.doc.source_warehouse) {
+                console.log(`🔍 DEBUG: Updating source_warehouse from ${item.source_warehouse} to ${frm.doc.source_warehouse}`);
+                item.source_warehouse = frm.doc.source_warehouse;
+                item_updated = true;
+            }
+            
+            // Update target_warehouse if parent has it and child doesn't or it's different
+            if (frm.doc.target_warehouse && item.target_warehouse !== frm.doc.target_warehouse) {
+                console.log(`🔍 DEBUG: Updating target_warehouse from ${item.target_warehouse} to ${frm.doc.target_warehouse}`);
+                item.target_warehouse = frm.doc.target_warehouse;
+                item_updated = true;
+            }
+            
+            if (item_updated) {
+                updated_count++;
+                console.log(`🔍 DEBUG: Item ${item.item_code} was updated`);
+            } else {
+                console.log(`🔍 DEBUG: Item ${item.item_code} was not updated`);
+            }
+        });
+        
+        console.log(`🔍 DEBUG: Total items updated: ${updated_count}`);
+        
+        if (updated_count > 0) {
+            frm.refresh_field("raw_materials");
+            frappe.show_alert(__("Updated warehouse information for {0} items", [updated_count]), 3);
+            console.log(`🔍 DEBUG: Updated warehouse information for ${updated_count} items`);
+        } else {
+            console.log("🔍 DEBUG: No items were updated");
+        }
+    },
+    
+    update_child_warehouses: function(frm) {
+        console.log("🔍 DEBUG: update_child_warehouses() called");
+        
+        if (!frm.doc.raw_materials || frm.doc.raw_materials.length === 0) {
+            console.log("🔍 DEBUG: No raw materials found, skipping warehouse update");
+            frappe.msgprint(__("No raw materials found"));
+            return;
+        }
+        
+        // Call server-side method for comprehensive sync
+        frappe.call({
+            method: "manufacturing_addon.manufacturing_addon.doctype.raw_material_transfer.raw_material_transfer.sync_warehouse_information",
+            args: {
+                doc_name: frm.doc.name
+            },
+            callback: function(r) {
+                if (r.message && r.message.success) {
+                    frappe.show_alert(r.message.message, 3);
+                    frm.reload_doc();
+                } else {
+                    frappe.msgprint(__("Error: {0}", [r.message ? r.message.message : "Unknown error"]));
+                }
+            }
+        });
+    },
+    
+    debug_warehouse_sync: function(frm) {
+        console.log("🔍 DEBUG: debug_warehouse_sync() called");
+        console.log("🔍 DEBUG: Document name:", frm.doc.name);
+        console.log("🔍 DEBUG: Parent source_warehouse:", frm.doc.source_warehouse);
+        console.log("🔍 DEBUG: Parent target_warehouse:", frm.doc.target_warehouse);
+        console.log("🔍 DEBUG: Raw materials count:", frm.doc.raw_materials ? frm.doc.raw_materials.length : 0);
+        
+        if (frm.doc.raw_materials && frm.doc.raw_materials.length > 0) {
+            frm.doc.raw_materials.forEach(function(item, index) {
+                console.log(`🔍 DEBUG: Item ${index}:`);
+                console.log(`  - item_code: ${item.item_code}`);
+                console.log(`  - source_warehouse: ${item.source_warehouse}`);
+                console.log(`  - target_warehouse: ${item.target_warehouse}`);
+                console.log(`  - Should update source: ${frm.doc.source_warehouse && item.source_warehouse !== frm.doc.source_warehouse}`);
+                console.log(`  - Should update target: ${frm.doc.target_warehouse && item.target_warehouse !== frm.doc.target_warehouse}`);
+            });
+        }
+        
+        // Test the sync function
+        frm.trigger("update_child_warehouses_client_side");
+    },
+    
+    debug_bom_allocation: function(frm) {
+        console.log("🔍 DEBUG: debug_bom_allocation() called");
+        
+        if (!frm.doc.name) {
+            frappe.msgprint(__("Please save the document first"));
+            return;
+        }
+        
+        frappe.call({
+            method: "manufacturing_addon.manufacturing_addon.doctype.raw_material_transfer.raw_material_transfer.debug_bom_allocation",
+            args: {
+                doc_name: frm.doc.name
+            },
+            callback: function(r) {
+                if (r.message && r.message.success) {
+                    show_bom_debug_dialog(r.message.debug_info);
+                } else {
+                    frappe.msgprint(__("Error: {0}", [r.message ? r.message.message : "Unknown error"]));
+                }
+            }
+        });
     },
     
     set_all_transfer_qty_to_pending: function(frm) {
@@ -298,6 +451,74 @@ function show_summary_dialog(summary) {
     d.show();
 }
 
+function show_bom_debug_dialog(debug_info) {
+    let items_html = '';
+    
+    for (let item_code in debug_info) {
+        let item_info = debug_info[item_code];
+        let status_color = item_info.can_allocate ? 'color: #28a745; font-weight: bold;' : 'color: #dc3545; font-weight: bold;';
+        let status_text = item_info.can_allocate ? 'CAN ALLOCATE' : 'CANNOT ALLOCATE';
+        
+        items_html += `
+            <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
+                <h4 style="${status_color}">${item_code} - ${status_text}</h4>
+                <div style="margin-left: 20px;">
+        `;
+        
+        for (let wo of item_info.work_orders) {
+            let wo_status = '';
+            if (wo.bom_found && wo.item_in_bom) {
+                wo_status = '<span style="color: #28a745;">✓ In BOM</span>';
+            } else if (wo.bom_found && !wo.item_in_bom) {
+                wo_status = '<span style="color: #ffc107;">⚠ Not in BOM</span>';
+            } else {
+                wo_status = '<span style="color: #dc3545;">✗ No BOM</span>';
+            }
+            
+            items_html += `
+                <div style="margin-bottom: 10px;">
+                    <strong>Work Order:</strong> ${wo.work_order}<br>
+                    <strong>Production Item:</strong> ${wo.production_item}<br>
+                    <strong>BOM:</strong> ${wo.bom_name || 'Not found'}<br>
+                    <strong>Status:</strong> ${wo_status}
+                </div>
+            `;
+        }
+        
+        items_html += `
+                </div>
+            </div>
+        `;
+    }
+    
+    let debug_html = `
+        <div style="max-height: 500px; overflow-y: auto;">
+            <h3>BOM Allocation Debug Information</h3>
+            <p>This shows which raw materials can be allocated to work orders and why.</p>
+            ${items_html}
+        </div>
+    `;
+    
+    let d = new frappe.ui.Dialog({
+        title: __('BOM Allocation Debug'),
+        fields: [
+            {
+                fieldtype: 'HTML',
+                fieldname: 'debug_content',
+                options: debug_html
+            }
+        ],
+        primary_action: {
+            label: __('Close'),
+            action: function() {
+                d.hide();
+            }
+        }
+    });
+    
+    d.show();
+}
+
 // Helper function to distribute extra quantity automatically
 function distribute_extra_quantity_automatically(frm, extra_qty, current_cdt, current_cdn) {
     console.log(`🔍 DEBUG: Distributing extra quantity ${extra_qty} automatically`);
@@ -384,6 +605,50 @@ function update_row_transfer_status(row) {
 
 // Field events for raw materials table
 frappe.ui.form.on("Raw Material Transfer Items Table", {
+    // Event when a new row is added
+    raw_materials_add: function(frm, cdt, cdn) {
+        console.log("🔍 DEBUG: raw_materials_add event triggered");
+        let row = locals[cdt][cdn];
+        
+        // Set warehouse fields from parent if they exist
+        if (frm.doc.source_warehouse && !row.source_warehouse) {
+            row.source_warehouse = frm.doc.source_warehouse;
+            console.log(`🔍 DEBUG: Set source_warehouse for new item ${row.item_code} to ${frm.doc.source_warehouse}`);
+        }
+        
+        if (frm.doc.target_warehouse && !row.target_warehouse) {
+            row.target_warehouse = frm.doc.target_warehouse;
+            console.log(`🔍 DEBUG: Set target_warehouse for new item ${row.item_code} to ${frm.doc.target_warehouse}`);
+        }
+        
+        frm.refresh_field("raw_materials");
+    },
+    
+    // Event when source_warehouse changes in child table
+    source_warehouse: function(frm, cdt, cdn) {
+        console.log("🔍 DEBUG: Child table source_warehouse event triggered");
+        let row = locals[cdt][cdn];
+        
+        // If child row source_warehouse is cleared, sync from parent
+        if (!row.source_warehouse && frm.doc.source_warehouse) {
+            row.source_warehouse = frm.doc.source_warehouse;
+            frm.refresh_field("raw_materials");
+            console.log(`🔍 DEBUG: Synced source_warehouse from parent for item ${row.item_code}`);
+        }
+    },
+    
+    // Event when target_warehouse changes in child table
+    target_warehouse: function(frm, cdt, cdn) {
+        console.log("🔍 DEBUG: Child table target_warehouse event triggered");
+        let row = locals[cdt][cdn];
+        
+        // If child row target_warehouse is cleared, sync from parent
+        if (!row.target_warehouse && frm.doc.target_warehouse) {
+            row.target_warehouse = frm.doc.target_warehouse;
+            frm.refresh_field("raw_materials");
+            console.log(`🔍 DEBUG: Synced target_warehouse from parent for item ${row.item_code}`);
+        }
+    },
     transfer_qty: function(frm, cdt, cdn) {
         console.log("🔍 DEBUG: transfer_qty event triggered");
         let row = locals[cdt][cdn];

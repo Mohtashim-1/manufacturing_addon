@@ -18,6 +18,7 @@
   "section_break_1",
   "customer",
   "sales_order",
+  "cost_center",
   "column_break_sjws",
   "stock_entry_type",
   "column_break_yfxx",
@@ -80,6 +81,13 @@
    "fieldtype": "Link",
    "label": "Company",
    "options": "Company"
+  },
+  {
+   "fetch_from": "sales_order.cost_center",
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "label": "Cost Center",
+   "options": "Cost Center"
   },
   {
    "fieldname": "column_break_status",
@@ -208,7 +216,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-27 20:50:45.102324",
+ "modified": "2025-10-19 16:00:56.770608",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Work Order Transfer Manager",

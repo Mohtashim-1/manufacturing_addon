@@ -131,52 +131,28 @@ class RawMaterialTransfer(frappe.model.document.Document):
 
     def calculate_transferred_quantities(self):
         """Calculate transferred quantities from actual Stock Entries created from Raw Material Transfers"""
-        if not self.work_order_transfer_manager or not self.raw_materials:
+        if not self.raw_materials:
+            return
+            
+        # Initialize all items with 0 transferred quantity first
+        for item in self.raw_materials:
+            if item.item_code and not item.transferred_qty_so_far:
+                item.transferred_qty_so_far = 0
+        
+        # Only calculate from WOTM if linked
+        if not self.work_order_transfer_manager:
             return
             
         try:
-            # Get all submitted Raw Material Transfers for this WOTM
-            existing_transfers = frappe.get_all(
-                "Raw Material Transfer",
-                filters={"work_order_transfer_manager": self.work_order_transfer_manager, "docstatus": 1},
-                fields=["name", "stock_entry"]
-            )
+            # Use the same comprehensive calculation method as WOTM
+            from manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager import calculate_transferred_quantities_from_all_sources
             
-            # Get all Stock Entries created from these transfers
-            stock_entries = []
-            for tr in existing_transfers:
-                if tr.stock_entry:
-                    stock_entries.append(tr.stock_entry)
+            # Get work orders from WOTM
+            wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.work_order_transfer_manager)
+            work_orders = [wo.work_order for wo in wotm_doc.work_order_details] if wotm_doc.work_order_details else []
             
-            # Calculate total transferred for each item from actual Stock Entries
-            item_total_transferred = {}
-            
-            if stock_entries:
-                # Get Stock Entry Items for all related Stock Entries
-                se_items = frappe.get_all(
-                    "Stock Entry Detail",
-                    filters={
-                        "parent": ["in", stock_entries],
-                        "s_warehouse": ["is", "not set"]  # Only target warehouse items (transferred out)
-                    },
-                    fields=["item_code", "qty", "parent"]
-                )
-                
-                for se_item in se_items:
-                    item_code = se_item.item_code
-                    qty = flt(se_item.qty)
-                    item_total_transferred[item_code] = item_total_transferred.get(item_code, 0) + qty
-                    
-                    print(f"DEBUG: Found {qty} of {item_code} transferred in Stock Entry {se_item.parent}")
-            
-            # Also check from Raw Material Transfer documents as fallback
-            for tr in existing_transfers:
-                tr_doc = frappe.get_doc("Raw Material Transfer", tr.name)
-                for ti in tr_doc.raw_materials:
-                    # Only add if not already counted from Stock Entries
-                    if ti.item_code not in item_total_transferred:
-                        item_total_transferred[ti.item_code] = flt(ti.transfer_qty)
-                    print(f"DEBUG: Fallback - Found {ti.transfer_qty} of {ti.item_code} from RMT {tr.name}")
+            # Calculate transferred quantities using the same method as WOTM
+            item_total_transferred = calculate_transferred_quantities_from_all_sources(self.work_order_transfer_manager, work_orders)
             
             # Update transferred_qty_so_far for each item in current document
             for item in self.raw_materials:
@@ -187,6 +163,16 @@ class RawMaterialTransfer(frappe.model.document.Document):
         except Exception as e:
             frappe.log_error(f"Error calculating transferred quantities for {self.name}: {str(e)}")
             print(f"DEBUG: Error calculating transferred quantities: {str(e)}")
+
+    @frappe.whitelist()
+    def calculate_transferred_quantities_server(self):
+        """Server-side method to calculate transferred quantities"""
+        try:
+            self.calculate_transferred_quantities()
+            return {"success": True, "message": "Transferred quantities calculated successfully"}
+        except Exception as e:
+            frappe.log_error(f"Error in calculate_transferred_quantities server method: {str(e)}")
+            return {"success": False, "message": str(e)}
 
     def before_submit(self):
         try:
@@ -234,6 +220,30 @@ class RawMaterialTransfer(frappe.model.document.Document):
 
     # ---------- validations ----------
 
+    def before_save(self):
+        # Refresh transferred quantities from WOTM if this RMT is linked to a WOTM
+        if self.work_order_transfer_manager:
+            self.refresh_transferred_quantities_from_wotm()
+
+    def refresh_transferred_quantities_from_wotm(self):
+        """Refresh transferred_qty_so_far from the linked WOTM"""
+        try:
+            wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.work_order_transfer_manager)
+            
+            # Create a mapping of item_code to transferred_qty_so_far from WOTM
+            wotm_transferred = {}
+            for item in wotm_doc.transfer_items:
+                wotm_transferred[item.item_code] = flt(item.transferred_qty_so_far or 0)
+            
+            # Update the RMT items with the correct transferred_qty_so_far
+            for item in self.raw_materials:
+                if item.item_code in wotm_transferred:
+                    item.transferred_qty_so_far = wotm_transferred[item.item_code]
+                    print(f"🔍 DEBUG: Updated transferred_qty_so_far for {item.item_code} to {item.transferred_qty_so_far}")
+            
+        except Exception as e:
+            print(f"⚠️ WARNING: Could not refresh transferred quantities from WOTM: {e}")
+
     def validate_transfer_quantities(self):
         # Check if at least one item has transfer quantity > 0
         has_transfer_qty = any(flt(item.transfer_qty or 0) > 0 for item in (self.raw_materials or []))
@@ -265,6 +275,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
             extra_qty = flt(item.extra_qty or 0)
             additional_transfer_qty = flt(item.additional_transfer_qty or 0)
             total_available_qty = total_required_qty + extra_qty + additional_transfer_qty
+            item.total_available_qty = total_available_qty
             
             # Check if transfer_qty exceeds what's available in warehouse
             # Allow all transfers - users can transfer any quantity they want
@@ -310,6 +321,8 @@ class RawMaterialTransfer(frappe.model.document.Document):
                 item.expected_qty = 0
             if not item.transfer_status:
                 item.transfer_status = "Pending"
+            if not item.transferred_qty_so_far:
+                item.transferred_qty_so_far = 0
             
             # Calculate target quantity (pending + extra)
             item.target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
@@ -417,17 +430,11 @@ class RawMaterialTransfer(frappe.model.document.Document):
 
     def update_item_transfer_status(self, item):
         """Update transfer status based on quantities"""
-        transfer_qty = flt(item.transfer_qty or 0)
-        pending_qty = flt(item.pending_qty or 0)
-        extra_qty = flt(item.extra_qty or 0)
-        target_qty = flt(item.target_qty or 0)
         transferred_so_far = flt(item.transferred_qty_so_far or 0)
+        total_available = flt(item.total_available_qty or 0)
         
-        # Calculate total required (pending quantity is what needs to be transferred)
-        total_required = pending_qty
-        
-        # Check if fully transferred based on pending quantity
-        if transferred_so_far >= total_required:
+        # Check if fully transferred based on total available quantity
+        if transferred_so_far >= total_available:
             item.transfer_status = "Fully Transferred"
         elif transferred_so_far > 0:
             item.transfer_status = "Partially Transferred"
@@ -1074,22 +1081,6 @@ def set_extra_quantity_for_item(doc_name, item_code, extra_qty):
         return {"success": False, "message": str(e)}
 
 
-@frappe.whitelist()
-def refresh_transferred_quantities(doc_name):
-    """Refresh transferred quantities from actual Stock Entries"""
-    try:
-        doc = frappe.get_doc("Raw Material Transfer", doc_name)
-        doc.calculate_transferred_quantities()
-        doc.save()
-        
-        return {
-            "success": True,
-            "message": "Transferred quantities refreshed successfully"
-        }
-        
-    except Exception as e:
-        frappe.log_error(f"Error refreshing transferred quantities: {str(e)}", "Refresh Transferred Quantities Error")
-        return {"success": False, "message": str(e)}
 
 
 @frappe.whitelist()

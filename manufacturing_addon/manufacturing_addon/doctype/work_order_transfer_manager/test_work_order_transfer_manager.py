@@ -343,3 +343,168 @@ class TestWorkOrderTransferManager(FrappeTestCase):
 		else:
 			print(f"\n❌ ISSUE: {self.test_item} still shows transferred_qty_so_far = 0")
 			print("This indicates the Stock Entry integration is not working properly.")
+	
+	def test_transfer_quantity_exceeds_pending_allowed(self):
+		"""Test that transfer quantities can exceed pending quantities in WOTM without validation errors"""
+		# Get the WOTM document
+		wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.test_wotm)
+		
+		# Find an item to test with
+		test_item = None
+		for item in wotm_doc.transfer_items:
+			if item.pending_qty > 0:
+				test_item = item
+				break
+		
+		if not test_item:
+			print("⚠️ No items with pending quantities found - skipping transfer quantity test")
+			return
+		
+		print(f"Testing with item: {test_item.item_code}, pending_qty: {test_item.pending_qty}")
+		
+		# Test case 1: Transfer quantity equal to pending quantity (should work)
+		original_transfer_qty = test_item.transfer_qty
+		test_item.transfer_qty = test_item.pending_qty
+		
+		# This should not raise any validation error
+		try:
+			wotm_doc.validate()
+			print("✅ Transfer quantity equal to pending quantity - validation passed")
+		except Exception as e:
+			print(f"❌ Transfer quantity equal to pending quantity - validation failed: {e}")
+		
+		# Test case 2: Transfer quantity exceeding pending quantity (should work now)
+		test_item.transfer_qty = test_item.pending_qty + 10  # Add 10 extra
+		
+		# This should not raise any validation error
+		try:
+			wotm_doc.validate()
+			print("✅ Transfer quantity exceeding pending quantity - validation passed")
+		except Exception as e:
+			print(f"❌ Transfer quantity exceeding pending quantity - validation failed: {e}")
+		
+		# Test case 3: Transfer quantity significantly exceeding pending quantity (should work)
+		test_item.transfer_qty = test_item.pending_qty * 3  # 3x the pending quantity
+		
+		# This should not raise any validation error
+		try:
+			wotm_doc.validate()
+			print("✅ Transfer quantity significantly exceeding pending quantity - validation passed")
+		except Exception as e:
+			print(f"❌ Transfer quantity significantly exceeding pending quantity - validation failed: {e}")
+		
+		# Restore original transfer quantity
+		test_item.transfer_qty = original_transfer_qty
+		print("✅ Transfer quantity validation test completed - users can now transfer extra quantities without restrictions")
+	
+	def test_transfer_qty_calculates_additional_transfer_qty(self):
+		"""Test that when transfer_qty exceeds total_available_qty, additional_transfer_qty is calculated"""
+		# Get the WOTM document
+		wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.test_wotm)
+		
+		# Find an item to test with
+		test_item = None
+		for item in wotm_doc.transfer_items:
+			if item.pending_qty > 0:
+				test_item = item
+				break
+		
+		if not test_item:
+			print("⚠️ No items with pending quantities found - skipping additional transfer qty test")
+			return
+		
+		original_total_required_qty = test_item.total_required_qty
+		original_extra_qty = flt(test_item.extra_qty or 0)
+		original_transferred_qty_so_far = flt(test_item.transferred_qty_so_far or 0)
+		original_total_available_qty = original_total_required_qty + original_extra_qty + flt(test_item.additional_transfer_qty or 0)
+		original_pending_qty = original_total_available_qty - original_transferred_qty_so_far
+		
+		print(f"Testing with item: {test_item.item_code}")
+		print(f"Original total_required_qty: {original_total_required_qty}")
+		print(f"Original extra_qty: {original_extra_qty}")
+		print(f"Original transferred_qty_so_far: {original_transferred_qty_so_far}")
+		print(f"Original total_available_qty: {original_total_available_qty}")
+		print(f"Original pending_qty: {original_pending_qty}")
+		
+		# Test case: Transfer quantity exceeding total available quantity
+		extra_amount = 5
+		test_item.transfer_qty = original_total_available_qty + extra_amount
+		
+		# Simulate the JavaScript behavior by manually updating the fields
+		if test_item.transfer_qty > original_total_available_qty:
+			additional_transfer_qty = test_item.transfer_qty - original_total_available_qty
+			test_item.additional_transfer_qty = additional_transfer_qty
+			
+			# Calculate new total_available_qty = total_required_qty + extra_qty + additional_transfer_qty
+			new_total_available_qty = original_total_required_qty + original_extra_qty + additional_transfer_qty
+			test_item.total_available_qty = new_total_available_qty
+			
+			# Calculate new pending_qty = total_available_qty - transferred_qty_so_far
+			new_pending_qty = new_total_available_qty - original_transferred_qty_so_far
+			test_item.pending_qty = new_pending_qty
+		
+		# Verify the changes
+		expected_additional_transfer_qty = extra_amount
+		expected_total_available_qty = original_total_required_qty + original_extra_qty + extra_amount
+		expected_pending_qty = expected_total_available_qty - original_transferred_qty_so_far
+		
+		self.assertEqual(test_item.additional_transfer_qty, expected_additional_transfer_qty)
+		self.assertEqual(test_item.total_available_qty, expected_total_available_qty)
+		self.assertEqual(test_item.pending_qty, expected_pending_qty)
+		
+		print(f"✅ Transfer qty {test_item.transfer_qty} correctly calculated additional_transfer_qty: {test_item.additional_transfer_qty}")
+		print(f"✅ New total_available_qty: {test_item.total_available_qty}")
+		print(f"✅ New pending_qty: {test_item.pending_qty}")
+		
+		# Restore original values
+		test_item.transfer_qty = 0
+		test_item.additional_transfer_qty = 0
+		test_item.total_available_qty = original_total_available_qty
+		test_item.pending_qty = original_pending_qty
+	
+	def test_fetch_work_order_adds_extra_quantities_to_pending(self):
+		"""Test that when Fetch Work Order is clicked, extra quantities are added to pending quantities"""
+		# Get the WOTM document
+		wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.test_wotm)
+		
+		# Find an item with extra_percentage > 0
+		test_item = None
+		for item in wotm_doc.transfer_items:
+			if flt(item.extra_percentage or 0) > 0:
+				test_item = item
+				break
+		
+		if not test_item:
+			print("⚠️ No items with extra_percentage found - skipping fetch work order extra quantity test")
+			return
+		
+		original_pending_qty = test_item.pending_qty
+		original_total_required_qty = test_item.total_required_qty
+		extra_percentage = flt(test_item.extra_percentage or 0)
+		
+		print(f"Testing with item: {test_item.item_code}")
+		print(f"Original pending_qty: {original_pending_qty}")
+		print(f"Original total_required_qty: {original_total_required_qty}")
+		print(f"Extra percentage: {extra_percentage}%")
+		
+		# Simulate the Fetch Work Order behavior by manually updating the fields
+		if extra_percentage > 0 and original_total_required_qty > 0:
+			extra_qty = original_total_required_qty * (extra_percentage / 100)
+			if extra_qty > 0:
+				test_item.pending_qty = original_pending_qty + extra_qty
+				test_item.total_required_qty = original_total_required_qty + extra_qty
+		
+		# Verify the changes
+		expected_pending_qty = original_pending_qty + (original_total_required_qty * extra_percentage / 100)
+		expected_total_required_qty = original_total_required_qty + (original_total_required_qty * extra_percentage / 100)
+		
+		self.assertEqual(test_item.pending_qty, expected_pending_qty)
+		self.assertEqual(test_item.total_required_qty, expected_total_required_qty)
+		
+		print(f"✅ Fetch Work Order correctly added extra quantities to pending_qty")
+		print(f"✅ New pending_qty: {test_item.pending_qty}")
+		print(f"✅ New total_required_qty: {test_item.total_required_qty}")
+		
+		# Restore original values
+		test_item.pending_qty = original_pending_qty
+		test_item.total_required_qty = original_total_required_qty

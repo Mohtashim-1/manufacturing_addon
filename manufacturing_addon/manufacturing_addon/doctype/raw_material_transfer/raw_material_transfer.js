@@ -686,33 +686,66 @@ frappe.ui.form.on("Raw Material Transfer Items Table", {
             return;
         }
         
-        // If transfer quantity is more than pending, handle extra quantity
-        if (transfer_qty > pending_qty) {
-            let extra_qty = transfer_qty - pending_qty;
-            console.log(`🔍 DEBUG: Extra quantity detected: ${extra_qty} for item ${row.item_code}`);
-            
-            // Add extra quantity to this specific item (work-order specific distribution)
-            row.extra_qty = flt(row.extra_qty || 0) + extra_qty;
-            row.target_qty = flt(row.pending_qty || 0) + flt(row.extra_qty || 0);
-            row.expected_qty = flt(row.transfer_qty || 0) + flt(row.extra_qty || 0);
-            
-            // Update transfer status
-            update_row_transfer_status(row);
-            
-            console.log(`🔍 DEBUG: Added ${extra_qty} extra to ${row.item_code}`);
-            frappe.show_alert(__("Extra quantity {0} added to {1}", [extra_qty, row.item_code]), 3);
-        } else {
-            // Normal validation for quantities within pending limit
-            if (transfer_qty < 0) {
-                frappe.msgprint(__("Transfer quantity cannot be negative"));
-                row.transfer_qty = 0;
-                frm.refresh_field("raw_materials");
-                return;
+        // Calculate additional transfer quantity if transfer_qty exceeds total available
+        let total_required_qty = flt(row.total_required_qty || 0);
+        let extra_qty = flt(row.extra_qty || 0);
+        let transferred_qty_so_far = flt(row.transferred_qty_so_far || 0);
+        let actual_qty_at_warehouse = flt(row.actual_qty_at_warehouse || 0);
+        let current_total_available = total_required_qty + extra_qty + flt(row.additional_transfer_qty || 0);
+        let additional_transfer_qty = 0;
+        
+        // Check if transfer_qty exceeds actual stock in warehouse
+        if (transfer_qty > actual_qty_at_warehouse) {
+            // Auto-calculate additional_transfer_qty if not already set
+            if (flt(row.additional_transfer_qty || 0) === 0) {
+                additional_transfer_qty = transfer_qty - actual_qty_at_warehouse;
+                row.additional_transfer_qty = additional_transfer_qty;
+                console.log(`🔍 DEBUG: Auto-calculated additional_transfer_qty: ${additional_transfer_qty} for ${row.item_code}`);
+            } else {
+                additional_transfer_qty = flt(row.additional_transfer_qty || 0);
             }
-            
-            // Update quantities for this row
-            update_row_quantities(row);
         }
+        
+        // Also check if transfer_qty exceeds current total available
+        if (transfer_qty > current_total_available) {
+            additional_transfer_qty = transfer_qty - current_total_available;
+            row.additional_transfer_qty = additional_transfer_qty;
+            console.log(`🔍 DEBUG: Transfer qty ${transfer_qty} exceeds current total available ${current_total_available}, additional transfer: ${additional_transfer_qty}`);
+        }
+        
+        // Update additional_transfer_qty field
+        row.additional_transfer_qty = additional_transfer_qty;
+        
+        // Calculate new total_available_qty = total_required_qty + extra_qty + additional_transfer_qty
+        let new_total_available_qty = total_required_qty + extra_qty + additional_transfer_qty;
+        row.total_available_qty = new_total_available_qty;
+        
+        // Calculate new pending_qty = total_available_qty - transferred_qty_so_far
+        let new_pending_qty = new_total_available_qty - transferred_qty_so_far;
+        row.pending_qty = new_pending_qty;
+        
+        // Update target_qty and expected_qty
+        row.target_qty = new_total_available_qty;
+        row.expected_qty = flt(row.transfer_qty || 0);
+        
+        // Update transfer status
+        update_row_transfer_status(row);
+        
+        if (additional_transfer_qty > 0) {
+            console.log(`🔍 DEBUG: New total_available_qty: ${new_total_available_qty}, new pending_qty: ${new_pending_qty}`);
+            frappe.show_alert(__("Additional transfer quantity {0} added for {1}", [additional_transfer_qty, row.item_code]), 3);
+        }
+        
+        // Normal validation for quantities within limits
+        if (transfer_qty < 0) {
+            frappe.msgprint(__("Transfer quantity cannot be negative"));
+            row.transfer_qty = 0;
+            frm.refresh_field("raw_materials");
+            return;
+        }
+        
+        // Update quantities for this row
+        update_row_quantities(row);
         
         frm.refresh_field("raw_materials");
     },

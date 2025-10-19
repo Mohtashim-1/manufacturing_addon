@@ -5,26 +5,29 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": [
-  "item_code",
-  "item_name",
-  "total_required_qty",
-  "pending_qty",
-  "column_break_twyi",
-  "transfer_qty",
-  "transferred_qty_so_far",
-  "item_transfer_status",
-  "item_transfer_percentage",
-  "column_break_zdim",
-  "actual_qty_at_warehouse",
-  "actual_qty_at_company",
-  "uom",
-  "warehouse",
-  "column_break_lspo",
-  "company",
-  "source",
-  "extra_percentage"
- ],
+  "field_order": [
+    "item_code",
+    "item_name",
+    "total_required_qty",
+    "pending_qty",
+    "extra_qty",
+    "additional_transfer_qty",
+    "total_available_qty",
+    "column_break_twyi",
+    "transfer_qty",
+    "transferred_qty_so_far",
+    "item_transfer_status",
+    "item_transfer_percentage",
+    "column_break_zdim",
+    "actual_qty_at_warehouse",
+    "actual_qty_at_company",
+    "uom",
+    "warehouse",
+    "column_break_lspo",
+    "company",
+    "source",
+    "extra_percentage"
+  ],
  "fields": [
   {
    "columns": 1,
@@ -56,6 +59,29 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Pending Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "extra_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Extra Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "additional_transfer_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Additional Transfer Qty"
+  },
+  {
+   "columns": 1,
+   "fieldname": "total_available_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Total Available Qty",
    "read_only": 1
   },
   {

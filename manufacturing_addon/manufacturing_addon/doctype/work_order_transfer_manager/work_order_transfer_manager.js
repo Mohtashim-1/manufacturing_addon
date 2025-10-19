@@ -3,6 +3,30 @@ frappe.ui.form.on('Work Order Transfer Manager', {
     refresh: function(frm) {
         console.log("🔍 DEBUG: refresh() called for Work Order Transfer Manager");
         
+        // Add custom event handler for transfer_qty changes
+        frm.fields_dict.transfer_items.grid.wrapper.on('change', 'input[data-fieldname="transfer_qty"]', function() {
+            console.log("🔍 DEBUG: transfer_qty input changed");
+            let row = $(this).closest('.grid-row');
+            let row_idx = row.attr('data-idx');
+            let cdt = 'Work Order Transfer Items Table';
+            let cdn = frm.doc.transfer_items[row_idx].name;
+            
+            // Trigger the transfer_qty event
+            frappe.ui.form.trigger(cdt, 'transfer_qty', cdn);
+        });
+        
+        // Add custom event handler for additional_transfer_qty changes
+        frm.fields_dict.transfer_items.grid.wrapper.on('change', 'input[data-fieldname="additional_transfer_qty"]', function() {
+            console.log("🔍 DEBUG: additional_transfer_qty input changed");
+            let row = $(this).closest('.grid-row');
+            let row_idx = row.attr('data-idx');
+            let cdt = 'Work Order Transfer Items Table';
+            let cdn = frm.doc.transfer_items[row_idx].name;
+            
+            // Trigger the additional_transfer_qty event
+            frappe.ui.form.trigger(cdt, 'additional_transfer_qty', cdn);
+        });
+        
         // Set company field if not set
         if (!frm.doc.company) {
             frm.set_value("company", frappe.defaults.get_default("company"));
@@ -1200,12 +1224,82 @@ frappe.ui.form.on("Work Order Transfer Items Table", {
     transfer_qty: function(frm, cdt, cdn) {
         console.log("🔍 DEBUG: transfer_qty event triggered");
         let row = locals[cdt][cdn];
-        // Validate transfer quantity
-        if (flt(row.transfer_qty) > flt(row.pending_qty)) {
-            frappe.msgprint(__("Transfer quantity cannot exceed pending quantity"));
-            row.transfer_qty = row.pending_qty;
-            frm.refresh_field("transfer_items");
+        
+        let transfer_qty = flt(row.transfer_qty || 0);
+        let total_required_qty = flt(row.total_required_qty || 0);
+        let extra_qty = flt(row.extra_qty || 0);
+        let transferred_qty_so_far = flt(row.transferred_qty_so_far || 0);
+        
+        console.log(`🔍 DEBUG: Before calculation - transfer_qty: ${transfer_qty}, total_required_qty: ${total_required_qty}, extra_qty: ${extra_qty}, transferred_qty_so_far: ${transferred_qty_so_far}`);
+        
+        // Calculate additional transfer quantity if transfer_qty exceeds current total available
+        let current_total_available = total_required_qty + extra_qty + flt(row.additional_transfer_qty || 0);
+        let additional_transfer_qty = 0;
+        
+        console.log(`🔍 DEBUG: Current total available: ${current_total_available}`);
+        
+        if (transfer_qty > current_total_available) {
+            additional_transfer_qty = transfer_qty - current_total_available;
+            console.log(`🔍 DEBUG: Transfer qty ${transfer_qty} exceeds current total available ${current_total_available}, additional transfer: ${additional_transfer_qty}`);
         }
+        
+        // Update additional_transfer_qty field
+        row.additional_transfer_qty = additional_transfer_qty;
+        
+        // Calculate new total_available_qty = total_required_qty + extra_qty + additional_transfer_qty
+        let new_total_available_qty = total_required_qty + extra_qty + additional_transfer_qty;
+        row.total_available_qty = new_total_available_qty;
+        
+        // Calculate new pending_qty = total_available_qty - transferred_qty_so_far
+        let new_pending_qty = new_total_available_qty - transferred_qty_so_far;
+        row.pending_qty = new_pending_qty;
+        
+        console.log(`🔍 DEBUG: After calculation - additional_transfer_qty: ${additional_transfer_qty}, new_total_available_qty: ${new_total_available_qty}, new_pending_qty: ${new_pending_qty}`);
+        
+        if (additional_transfer_qty > 0) {
+            frappe.show_alert(__("Additional transfer quantity {0} added for {1}", [additional_transfer_qty, row.item_code]), 3);
+        }
+        
+        // Force refresh the field to ensure changes are visible
+        frm.refresh_field("transfer_items");
+        
+        // Also trigger a custom event to ensure the form knows about the changes
+        frm.trigger("transfer_items");
+    },
+    
+    additional_transfer_qty: function(frm, cdt, cdn) {
+        console.log("🔍 DEBUG: additional_transfer_qty event triggered");
+        let row = locals[cdt][cdn];
+        
+        let additional_transfer_qty = flt(row.additional_transfer_qty || 0);
+        let total_required_qty = flt(row.total_required_qty || 0);
+        let extra_qty = flt(row.extra_qty || 0);
+        let transferred_qty_so_far = flt(row.transferred_qty_so_far || 0);
+        
+        console.log(`🔍 DEBUG: Before calculation - additional_transfer_qty: ${additional_transfer_qty}, total_required_qty: ${total_required_qty}, extra_qty: ${extra_qty}, transferred_qty_so_far: ${transferred_qty_so_far}`);
+        
+        // Calculate new total_available_qty = total_required_qty + extra_qty + additional_transfer_qty
+        let new_total_available_qty = total_required_qty + extra_qty + additional_transfer_qty;
+        row.total_available_qty = new_total_available_qty;
+        
+        // Calculate new pending_qty = total_available_qty - transferred_qty_so_far
+        let new_pending_qty = new_total_available_qty - transferred_qty_so_far;
+        row.pending_qty = new_pending_qty;
+        
+        // Update transfer_qty to match the new total available
+        row.transfer_qty = new_total_available_qty;
+        
+        console.log(`🔍 DEBUG: After calculation - new_total_available_qty: ${new_total_available_qty}, new_pending_qty: ${new_pending_qty}, transfer_qty: ${row.transfer_qty}`);
+        
+        if (additional_transfer_qty > 0) {
+            frappe.show_alert(__("Additional transfer quantity {0} added for {1}", [additional_transfer_qty, row.item_code]), 3);
+        }
+        
+        // Force refresh the field to ensure changes are visible
+        frm.refresh_field("transfer_items");
+        
+        // Also trigger a custom event to ensure the form knows about the changes
+        frm.trigger("transfer_items");
     },
     
     refresh_transferred_quantities: function(frm) {

@@ -145,6 +145,56 @@ class WorkOrderTransferManager(frappe.model.document.Document):
         
         return doc.name
 
+    def add_extra_quantities_to_pending(self):
+        """Add extra quantities directly to pending quantities instead of creating Extra Qty Requests"""
+        print(f"🔍 DEBUG: add_extra_quantities_to_pending() called for document: {self.name}")
+        
+        if not self.transfer_items:
+            print(f"🔍 DEBUG: No transfer items found")
+            return
+        
+        extra_items_added = 0
+        
+        # Process each transfer item
+        for item in self.transfer_items:
+            extra_percentage = flt(item.extra_percentage or 0)
+            total_required_qty = flt(item.total_required_qty or 0)
+            
+            if extra_percentage > 0 and total_required_qty > 0:
+                # Calculate extra quantity based on percentage
+                extra_qty = total_required_qty * (extra_percentage / 100)
+                
+                if extra_qty > 0:
+                    # Add extra quantity to pending quantity
+                    current_pending = flt(item.pending_qty or 0)
+                    new_pending = current_pending + extra_qty
+                    
+                    # Update the pending quantity directly
+                    frappe.db.set_value(
+                        "Work Order Transfer Items Table",
+                        item.name,
+                        "pending_qty",
+                        new_pending
+                    )
+                    
+                    # Also update total_required_qty to include the extra
+                    new_total_required = total_required_qty + extra_qty
+                    frappe.db.set_value(
+                        "Work Order Transfer Items Table",
+                        item.name,
+                        "total_required_qty",
+                        new_total_required
+                    )
+                    
+                    extra_items_added += 1
+                    print(f"🔍 DEBUG: Added {extra_qty} extra to pending for {item.item_code} (was {current_pending}, now {new_pending})")
+        
+        if extra_items_added > 0:
+            frappe.msgprint(f"Added extra quantities to pending quantities for {extra_items_added} items. No separate Extra Qty Request created.")
+            print(f"🔍 DEBUG: Added extra quantities to pending for {extra_items_added} items")
+        else:
+            print(f"🔍 DEBUG: No extra quantities to add to pending")
+
     def create_extra_qty_request_item(self, item, extra_qty=None):
         """Create individual Extra Qty Request item"""
         print(f"🔍 DEBUG: create_extra_qty_request_item() called for document: {self.name}")
@@ -215,6 +265,9 @@ class WorkOrderTransferManager(frappe.model.document.Document):
         
         # Ensure company is set in all child tables before saving
         self.ensure_company_in_child_tables()
+        
+        # Recalculate quantities based on transfer_qty changes
+        self.recalculate_quantities_from_transfer_qty()
 
     def before_submit(self):
         print(f"🔍 DEBUG: before_submit() called for document: {self.name}")
@@ -272,6 +325,37 @@ class WorkOrderTransferManager(frappe.model.document.Document):
 
         print(f"🔍 DEBUG: Totals calculated - Ordered: {total_ordered}, Delivered: {total_delivered}, Pending: {total_pending}")
 
+    def recalculate_quantities_from_transfer_qty(self):
+        """Recalculate quantities based on transfer_qty changes"""
+        print(f"🔍 DEBUG: recalculate_quantities_from_transfer_qty() called")
+        
+        if not self.transfer_items:
+            return
+        
+        for item in self.transfer_items:
+            transfer_qty = flt(item.transfer_qty or 0)
+            total_required_qty = flt(item.total_required_qty or 0)
+            extra_qty = flt(item.extra_qty or 0)
+            transferred_qty_so_far = flt(item.transferred_qty_so_far or 0)
+            additional_transfer_qty = flt(item.additional_transfer_qty or 0)
+            
+            print(f"🔍 DEBUG: Processing {item.item_code} - transfer_qty: {transfer_qty}, total_required_qty: {total_required_qty}, extra_qty: {extra_qty}, transferred_qty_so_far: {transferred_qty_so_far}, additional_transfer_qty: {additional_transfer_qty}")
+            
+            # Calculate total_available_qty = total_required_qty + extra_qty + additional_transfer_qty
+            new_total_available_qty = total_required_qty + extra_qty + additional_transfer_qty
+            item.total_available_qty = new_total_available_qty
+            
+            # Calculate new pending_qty = total_available_qty - transferred_qty_so_far
+            new_pending_qty = new_total_available_qty - transferred_qty_so_far
+            item.pending_qty = new_pending_qty
+            
+            # Update transfer_qty to match the new total available (if user manually changed additional_transfer_qty)
+            if additional_transfer_qty > 0:
+                item.transfer_qty = new_total_available_qty
+                print(f"🔍 DEBUG: Updated transfer_qty to match total_available_qty: {item.transfer_qty}")
+            
+            print(f"🔍 DEBUG: Updated {item.item_code} - additional_transfer_qty: {additional_transfer_qty}, total_available_qty: {new_total_available_qty}, pending_qty: {new_pending_qty}")
+
     def on_submit(self):
         print(f"🔍 DEBUG: on_submit() called for document: {self.name}")
         
@@ -280,11 +364,8 @@ class WorkOrderTransferManager(frappe.model.document.Document):
             self.company = frappe.defaults.get_global_default("company")
             print(f"🔍 DEBUG: Set company in on_submit: {self.company}")
         
-        # Create Extra Qty Request(s) for items with extra_percentage > 0
-        try:
-            self.create_extra_qty_request()
-        except Exception as e:
-            print(f"⚠️ WARNING: Failed to create Extra Qty Request(s): {e}")
+        # Extra quantities are now added during "Fetch Work Order" instead of on submit
+        # No need to add extra quantities here anymore
         
         # COMMENTED OUT: Auto-create Extra Raw Material Transfer based on Production Plan extras
         # This logic is now replaced by user-defined extra_percentage in transfer_items
@@ -946,6 +1027,39 @@ def populate_work_order_tables(sales_order, doc_name):
             print(f"❌ DEBUG: Missing company for items: {missing_company_items}")
             frappe.throw(f"Company is missing for the following items: {', '.join(missing_company_items)}")
         
+        # Calculate extra quantities and populate new fields (when Fetch Work Order is clicked)
+        extra_items_added = 0
+        for item in doc.transfer_items:
+            extra_percentage = flt(item.extra_percentage or 0)
+            total_required_qty = flt(item.total_required_qty or 0)
+            transferred_qty_so_far = flt(item.transferred_qty_so_far or 0)
+            
+            # Calculate extra quantity based on percentage
+            extra_qty = 0
+            if extra_percentage > 0 and total_required_qty > 0:
+                extra_qty = total_required_qty * (extra_percentage / 100)
+            
+            # Set extra_qty field
+            item.extra_qty = extra_qty
+            
+            # Initialize additional_transfer_qty to 0 (will be calculated when user enters transfer_qty)
+            item.additional_transfer_qty = 0
+            
+            # Calculate total_available_qty = total_required_qty + extra_qty + additional_transfer_qty
+            total_available_qty = total_required_qty + extra_qty + item.additional_transfer_qty
+            item.total_available_qty = total_available_qty
+            
+            # Calculate pending_qty = total_available_qty - transferred_qty_so_far
+            pending_qty = total_available_qty - transferred_qty_so_far
+            item.pending_qty = pending_qty
+            
+            if extra_qty > 0:
+                extra_items_added += 1
+                print(f"🔍 DEBUG: Set extra_qty={extra_qty}, total_available_qty={total_available_qty}, pending_qty={pending_qty} for {item.item_code}")
+        
+        if extra_items_added > 0:
+            print(f"🔍 DEBUG: Set extra quantities for {extra_items_added} items during Fetch Work Order")
+        
         # Save the document
         try:
             doc.save()
@@ -1018,9 +1132,8 @@ def create_raw_material_transfer_doc(doc_name):
             # Set transfer_qty to pending_qty by default (what's left to transfer)
             transfer_qty = flt(item.transfer_qty) if flt(item.transfer_qty) > 0 else pending_qty
             
-            # Ensure transfer_qty doesn't exceed pending_qty
-            if transfer_qty > pending_qty:
-                transfer_qty = pending_qty
+            # Allow transfer_qty to exceed pending_qty - users can add extra stock directly
+            # No limit enforcement needed
             
             raw_transfer_doc.append("raw_materials", {
                 "item_code": item.item_code,
@@ -1124,6 +1237,9 @@ def create_all_pending_transfer(doc_name):
                 "pending_qty": pending_qty,  # This is the actual remaining amount (312.3)
                 "transfer_qty": pending_qty,  # Transfer the full remaining amount
                 "transferred_qty_so_far": transferred_so_far,  # Already transferred (400)
+                "extra_qty": flt(item.extra_qty or 0),  # Copy extra qty from WOTM
+                "additional_transfer_qty": flt(item.additional_transfer_qty or 0),  # Copy additional transfer qty from WOTM
+                "total_available_qty": flt(item.total_available_qty or 0),  # Copy total available qty from WOTM
                 "uom": item.uom,
                 "warehouse": doc.source_warehouse,
                 "source_warehouse": doc.source_warehouse,
@@ -1411,19 +1527,19 @@ def calculate_transferred_quantities_from_all_sources(wotm_name, work_orders):
         )
         wo_stock_entries = [se.name for se in wo_stock_entries]
     
-            # 3. Get Stock Entries with matching cost center (Material Transfer for Manufacture)
-        cost_center_stock_entries = []
-        if wotm_cost_center:
-            cost_center_stock_entries = frappe.get_all(
-                "Stock Entry",
-                filters={
-                    "custom_cost_center": wotm_cost_center,
-                    "docstatus": 1,
-                    "purpose": "Material Transfer for Manufacture"
-                },
-                fields=["name"]
-            )
-            cost_center_stock_entries = [se.name for se in cost_center_stock_entries]
+    # 3. Get Stock Entries with matching cost center (Material Transfer for Manufacture)
+    cost_center_stock_entries = []
+    if wotm_cost_center:
+        cost_center_stock_entries = frappe.get_all(
+            "Stock Entry",
+            filters={
+                "custom_cost_center": wotm_cost_center,
+                "docstatus": 1,
+                "purpose": "Material Transfer for Manufacture"
+            },
+            fields=["name"]
+        )
+        cost_center_stock_entries = [se.name for se in cost_center_stock_entries]
     
     # 4. Get all Stock Entries that transfer materials for these work orders
     all_stock_entries = list(set(rmt_stock_entries + wo_stock_entries + cost_center_stock_entries))
@@ -1574,6 +1690,19 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
                     # Also update the total_required_qty field
                     try:
                         frappe.db.set_value("Work Order Transfer Items Table", row.name, "total_required_qty", total_required)
+                    except Exception as e:
+                        pass
+                        # print(f"⚠️ WARNING: Could not update total_required_qty for row {row.name}: {e}")
+                
+                # Handle case where transferred quantity exceeds original required quantity
+                # This happens when users transfer extra quantities directly
+                if total_trans > total_required:
+                    # Update total_required_qty to include the extra amount
+                    new_total_required = total_trans
+                    try:
+                        frappe.db.set_value("Work Order Transfer Items Table", row.name, "total_required_qty", new_total_required)
+                        total_required = new_total_required
+                        print(f"🔍 DEBUG: Updated total_required_qty for {row.item_code} from {getattr(row, 'total_required_qty', 0)} to {new_total_required} due to extra transfer")
                     except Exception as e:
                         pass
                         # print(f"⚠️ WARNING: Could not update total_required_qty for row {row.name}: {e}")
@@ -2074,6 +2203,15 @@ def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
                     total_required = flt(item.pending_qty or 0) + total_trans
                     # Also update the total_required_qty field
                     frappe.db.set_value("Work Order Transfer Items Table", item.name, "total_required_qty", total_required)
+                
+                # Handle case where transferred quantity exceeds original required quantity
+                # This happens when users transfer extra quantities directly
+                if total_trans > total_required:
+                    # Update total_required_qty to include the extra amount
+                    new_total_required = total_trans
+                    frappe.db.set_value("Work Order Transfer Items Table", item.name, "total_required_qty", new_total_required)
+                    total_required = new_total_required
+                    print(f"🔍 DEBUG: Updated total_required_qty for {item.item_code} from {item.total_required_qty} to {new_total_required} due to extra transfer")
                 
                 remaining = max(total_required - total_trans, 0)
                 

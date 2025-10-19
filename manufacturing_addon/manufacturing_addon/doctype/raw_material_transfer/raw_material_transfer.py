@@ -4,6 +4,11 @@ from frappe.utils import flt, now_datetime
 from manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager import update_transfer_quantities
 
 class RawMaterialTransfer(frappe.model.document.Document):
+    def onload(self):
+        """Ensure tracking fields are properly initialized when document is loaded"""
+        self.initialize_tracking_fields()
+        self.calculate_transferred_quantities()
+
     def validate(self):
         self.validate_transfer_quantities()
         self.validate_work_order_manager()
@@ -15,13 +20,27 @@ class RawMaterialTransfer(frappe.model.document.Document):
         self.calculate_totals()
         self.populate_actual_quantities()
         self.calculate_transferred_quantities()
+        self.initialize_tracking_fields()
+        self.handle_extra_quantities_automatically()
+        self.distribute_extra_quantities()
 
     def calculate_totals(self):
         total_transfer_qty = 0
+        total_extra_qty = 0
+        total_target_qty = 0
+        total_expected_qty = 0
         total_items = len(self.raw_materials) if self.raw_materials else 0
+        
         for item in (self.raw_materials or []):
             total_transfer_qty += flt(item.transfer_qty or 0)
+            total_extra_qty += flt(item.extra_qty or 0)
+            total_target_qty += flt(item.target_qty or 0)
+            total_expected_qty += flt(item.expected_qty or 0)
+            
         self.total_transfer_qty = total_transfer_qty
+        self.total_extra_qty = total_extra_qty
+        self.total_target_qty = total_target_qty
+        self.total_expected_qty = total_expected_qty
         self.total_items = total_items
 
     def bulk_delete_rows(self, row_indices):
@@ -109,32 +128,63 @@ class RawMaterialTransfer(frappe.model.document.Document):
             frappe.log_error(f"Error in populate_actual_quantities for {self.name}: {str(e)}")
 
     def calculate_transferred_quantities(self):
-        """Calculate transferred quantities from existing submitted transfers"""
+        """Calculate transferred quantities from actual Stock Entries created from Raw Material Transfers"""
         if not self.work_order_transfer_manager or not self.raw_materials:
             return
             
         try:
-            # Get all submitted transfers for this WOTM
+            # Get all submitted Raw Material Transfers for this WOTM
             existing_transfers = frappe.get_all(
                 "Raw Material Transfer",
                 filters={"work_order_transfer_manager": self.work_order_transfer_manager, "docstatus": 1},
-                fields=["name"]
+                fields=["name", "stock_entry"]
             )
             
-            # Calculate total transferred for each item
+            # Get all Stock Entries created from these transfers
+            stock_entries = []
+            for tr in existing_transfers:
+                if tr.stock_entry:
+                    stock_entries.append(tr.stock_entry)
+            
+            # Calculate total transferred for each item from actual Stock Entries
             item_total_transferred = {}
+            
+            if stock_entries:
+                # Get Stock Entry Items for all related Stock Entries
+                se_items = frappe.get_all(
+                    "Stock Entry Detail",
+                    filters={
+                        "parent": ["in", stock_entries],
+                        "s_warehouse": ["is", "not set"]  # Only target warehouse items (transferred out)
+                    },
+                    fields=["item_code", "qty", "parent"]
+                )
+                
+                for se_item in se_items:
+                    item_code = se_item.item_code
+                    qty = flt(se_item.qty)
+                    item_total_transferred[item_code] = item_total_transferred.get(item_code, 0) + qty
+                    
+                    print(f"DEBUG: Found {qty} of {item_code} transferred in Stock Entry {se_item.parent}")
+            
+            # Also check from Raw Material Transfer documents as fallback
             for tr in existing_transfers:
                 tr_doc = frappe.get_doc("Raw Material Transfer", tr.name)
                 for ti in tr_doc.raw_materials:
-                    item_total_transferred[ti.item_code] = item_total_transferred.get(ti.item_code, 0) + flt(ti.transfer_qty)
+                    # Only add if not already counted from Stock Entries
+                    if ti.item_code not in item_total_transferred:
+                        item_total_transferred[ti.item_code] = flt(ti.transfer_qty)
+                    print(f"DEBUG: Fallback - Found {ti.transfer_qty} of {ti.item_code} from RMT {tr.name}")
             
             # Update transferred_qty_so_far for each item in current document
             for item in self.raw_materials:
                 if item.item_code:
                     item.transferred_qty_so_far = flt(item_total_transferred.get(item.item_code, 0))
+                    print(f"DEBUG: Item {item.item_code} - Transferred So Far: {item.transferred_qty_so_far}")
                     
         except Exception as e:
             frappe.log_error(f"Error calculating transferred quantities for {self.name}: {str(e)}")
+            print(f"DEBUG: Error calculating transferred quantities: {str(e)}")
 
     def before_submit(self):
         print(f"🔍 DEBUG: before_submit() called for Raw Material Transfer: {self.name}")
@@ -181,11 +231,36 @@ class RawMaterialTransfer(frappe.model.document.Document):
     # ---------- validations ----------
 
     def validate_transfer_quantities(self):
+        # Check if at least one item has transfer quantity > 0
+        has_transfer_qty = any(flt(item.transfer_qty or 0) > 0 for item in (self.raw_materials or []))
+        if not has_transfer_qty:
+            frappe.throw("Please enter transfer quantities for at least one item")
+            
         for item in (self.raw_materials or []):
-            if flt(item.transfer_qty) > flt(item.pending_qty):
-                frappe.throw(f"Transfer quantity ({item.transfer_qty}) for {item.item_code} cannot exceed pending quantity ({item.pending_qty})")
-            if flt(item.transfer_qty) <= 0:
-                frappe.throw(f"Transfer quantity for {item.item_code} must be greater than 0")
+            # Skip validation if transfer_qty is 0 (user hasn't entered anything yet)
+            if flt(item.transfer_qty or 0) == 0:
+                continue
+                
+            # Calculate target quantity (pending + extra)
+            target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
+            
+            if flt(item.transfer_qty) > target_qty:
+                frappe.throw(f"Transfer quantity ({item.transfer_qty}) for {item.item_code} cannot exceed target quantity ({target_qty}) which includes pending ({item.pending_qty}) + extra ({item.extra_qty})")
+            
+            # Check stock availability in source warehouse
+            source_warehouse = item.source_warehouse or item.warehouse
+            actual_qty = flt(item.actual_qty_at_warehouse or 0)
+            
+            # If actual_qty_at_warehouse is 0, get stock from source warehouse
+            if actual_qty == 0 and source_warehouse:
+                try:
+                    from erpnext.stock.utils import get_stock_balance
+                    actual_qty = get_stock_balance(item.item_code, source_warehouse, with_valuation_rate=False)
+                except:
+                    actual_qty = 0
+            
+            if flt(item.transfer_qty) > actual_qty:
+                frappe.throw(f"Insufficient stock for {item.item_code}. Available: {actual_qty}, Required: {item.transfer_qty} in source warehouse {source_warehouse}")
 
     def validate_work_order_manager(self):
         if not self.work_order_transfer_manager:
@@ -205,6 +280,152 @@ class RawMaterialTransfer(frappe.model.document.Document):
             source_wh = getattr(item, "source_warehouse", None) or getattr(item, "warehouse", None) or self.warehouse
             if not source_wh:
                 frappe.throw(_(f"Source warehouse is mandatory for row {row_index}"))
+
+    def initialize_tracking_fields(self):
+        """Initialize tracking fields for all items"""
+        for item in (self.raw_materials or []):
+            if not item.extra_qty:
+                item.extra_qty = 0
+            if not item.target_qty:
+                item.target_qty = 0
+            if not item.expected_qty:
+                item.expected_qty = 0
+            if not item.transfer_status:
+                item.transfer_status = "Pending"
+            
+            # Calculate target quantity (pending + extra)
+            item.target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
+            
+            # Calculate expected quantity (transfer + extra)
+            item.expected_qty = flt(item.transfer_qty or 0) + flt(item.extra_qty or 0)
+            
+            # Update transfer status
+            self.update_item_transfer_status(item)
+
+    def handle_extra_quantities_automatically(self):
+        """Handle extra quantities when users enter transfer_qty > pending_qty"""
+        if not self.raw_materials:
+            return
+            
+        # Process each item individually for work-order specific distribution
+        for item in self.raw_materials:
+            pending_qty = flt(item.pending_qty or 0)
+            transfer_qty = flt(item.transfer_qty or 0)
+            
+            if transfer_qty > pending_qty:
+                extra_qty = transfer_qty - pending_qty
+                print(f"DEBUG: Item {item.item_code} has extra quantity: {extra_qty}")
+                
+                # Get work orders that use this specific item
+                work_orders_using_item = self.get_work_orders_using_item(item.item_code)
+                print(f"DEBUG: Work orders using {item.item_code}: {len(work_orders_using_item)}")
+                
+                if work_orders_using_item:
+                    # Distribute extra quantity among work orders using this item
+                    extra_per_wo = extra_qty / len(work_orders_using_item)
+                    print(f"DEBUG: Extra per work order: {extra_per_wo}")
+                    
+                    # Add extra quantity to this item
+                    item.extra_qty = flt(item.extra_qty or 0) + extra_qty
+                    item.target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
+                    item.expected_qty = flt(item.transfer_qty or 0) + flt(item.extra_qty or 0)
+                    
+                    # Update transfer status
+                    self.update_item_transfer_status(item)
+                    
+                    print(f"DEBUG: Added {extra_qty} extra to {item.item_code} (distributed among {len(work_orders_using_item)} work orders)")
+                else:
+                    # If no work orders found, just add to this item
+                    item.extra_qty = flt(item.extra_qty or 0) + extra_qty
+                    item.target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
+                    item.expected_qty = flt(item.transfer_qty or 0) + flt(item.extra_qty or 0)
+                    self.update_item_transfer_status(item)
+                    print(f"DEBUG: No work orders found for {item.item_code}, added {extra_qty} extra to item only")
+
+    def get_work_orders_using_item(self, item_code):
+        """Get work orders that use the specified item"""
+        try:
+            # Get work orders from the Work Order Transfer Manager
+            if not self.work_order_transfer_manager:
+                return []
+                
+            wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.work_order_transfer_manager)
+            work_orders = []
+            
+            for wo in wotm_doc.work_orders:
+                # Check if this work order uses the item
+                wo_doc = frappe.get_doc("Work Order", wo.work_order)
+                for item in wo_doc.required_items:
+                    if item.item_code == item_code:
+                        work_orders.append(wo.work_order)
+                        break
+            
+            return work_orders
+        except Exception as e:
+            print(f"DEBUG: Error getting work orders for item {item_code}: {str(e)}")
+            return []
+
+    def distribute_extra_quantities(self):
+        """Distribute extra quantities evenly across all items"""
+        if not self.raw_materials:
+            return
+            
+        # Calculate total extra quantity to distribute
+        total_extra = sum(flt(item.extra_qty or 0) for item in self.raw_materials)
+        
+        if total_extra <= 0:
+            return
+            
+        # Count items that can receive extra quantity
+        eligible_items = [item for item in self.raw_materials if flt(item.pending_qty or 0) > 0]
+        
+        if not eligible_items:
+            return
+            
+        # Calculate average extra per item
+        avg_extra_per_item = total_extra / len(eligible_items)
+        
+        # Distribute extra quantities
+        for item in eligible_items:
+            # Set extra quantity to average
+            item.extra_qty = avg_extra_per_item
+            
+            # Recalculate target and expected quantities
+            item.target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
+            item.expected_qty = flt(item.transfer_qty or 0) + flt(item.extra_qty or 0)
+            
+            # Update transfer status
+            self.update_item_transfer_status(item)
+
+    def update_item_transfer_status(self, item):
+        """Update transfer status based on quantities"""
+        transfer_qty = flt(item.transfer_qty or 0)
+        pending_qty = flt(item.pending_qty or 0)
+        extra_qty = flt(item.extra_qty or 0)
+        target_qty = flt(item.target_qty or 0)
+        transferred_so_far = flt(item.transferred_qty_so_far or 0)
+        
+        # Calculate total required (original requirement)
+        total_required = transferred_so_far + pending_qty
+        
+        # Check if fully transferred based on total requirement
+        if transferred_so_far >= total_required:
+            item.transfer_status = "Fully Transferred"
+        elif transferred_so_far > 0:
+            item.transfer_status = "Partially Transferred"
+        else:
+            item.transfer_status = "Pending"
+
+    def set_extra_quantity_for_items(self, extra_quantities):
+        """Set extra quantities for specific items"""
+        for item_code, extra_qty in extra_quantities.items():
+            for item in (self.raw_materials or []):
+                if item.item_code == item_code:
+                    item.extra_qty = flt(extra_qty)
+                    item.target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
+                    item.expected_qty = flt(item.transfer_qty or 0) + flt(item.extra_qty or 0)
+                    self.update_item_transfer_status(item)
+                    break
 
     # ---------- allocation / SE creation ----------
 
@@ -250,9 +471,16 @@ class RawMaterialTransfer(frappe.model.document.Document):
                 continue
 
             remaining_qty = flt(raw_item.transfer_qty)
+            print(f"🔍 DEBUG: Allocating {raw_item.item_code} - Transfer Qty: {raw_item.transfer_qty}, Remaining: {remaining_qty}")
+
+            # First, calculate BOM requirements for all work orders
+            bom_allocations = {}
+            total_bom_requirement = 0
+            
             for wo in work_orders:
-                if remaining_qty <= 0:
-                    break
+                wo_pending_qty = flt(wo.qty) - flt(wo.material_transferred_for_manufacturing)
+                if wo_pending_qty <= 0:
+                    continue
 
                 bom = frappe.db.get_value("BOM", {"item": wo.production_item, "is_active": 1, "is_default": 1})
                 if not bom:
@@ -262,12 +490,24 @@ class RawMaterialTransfer(frappe.model.document.Document):
                 if not bom_item:
                     continue
 
+                raw_qty_needed = flt(wo_pending_qty) * flt(bom_item.qty) / flt(bom_doc.quantity)
+                bom_allocations[wo.name] = raw_qty_needed
+                total_bom_requirement += raw_qty_needed
+
+            # Allocate based on BOM requirements first
+            for wo in work_orders:
+                if remaining_qty <= 0:
+                    break
+
                 wo_pending_qty = flt(wo.qty) - flt(wo.material_transferred_for_manufacturing)
                 if wo_pending_qty <= 0:
                     continue
 
-                raw_qty_needed = flt(wo_pending_qty) * flt(bom_item.qty) / flt(bom_doc.quantity)
-                qty_to_allocate = min(remaining_qty, raw_qty_needed)
+                bom_qty_needed = bom_allocations.get(wo.name, 0)
+                if bom_qty_needed <= 0:
+                    continue
+
+                qty_to_allocate = min(remaining_qty, bom_qty_needed)
                 if qty_to_allocate > 0:
                     if wo.name not in work_order_allocation:
                         work_order_allocation[wo.name] = {
@@ -290,6 +530,49 @@ class RawMaterialTransfer(frappe.model.document.Document):
                     })
 
                     remaining_qty -= qty_to_allocate
+
+            # If there's still remaining quantity (extra), distribute it proportionally among work orders
+            if remaining_qty > 0 and total_bom_requirement > 0:
+                print(f"🔍 DEBUG: Distributing extra quantity {remaining_qty} for {raw_item.item_code} among work orders")
+                for wo in work_orders:
+                    if remaining_qty <= 0:
+                        break
+
+                    wo_pending_qty = flt(wo.qty) - flt(wo.material_transferred_for_manufacturing)
+                    if wo_pending_qty <= 0:
+                        continue
+
+                    bom_qty_needed = bom_allocations.get(wo.name, 0)
+                    if bom_qty_needed <= 0:
+                        continue
+
+                    # Calculate proportional extra allocation
+                    extra_proportion = bom_qty_needed / total_bom_requirement
+                    extra_qty_to_allocate = min(remaining_qty, remaining_qty * extra_proportion)
+                    
+                    if extra_qty_to_allocate > 0:
+                        if wo.name not in work_order_allocation:
+                            work_order_allocation[wo.name] = {
+                                "work_order": wo.name,
+                                "production_item": wo.production_item,
+                                "items": []
+                            }
+
+                        item_source_wh = getattr(raw_item, "source_warehouse", None) or getattr(raw_item, "warehouse", None) or self.warehouse
+                        item_target_wh = getattr(raw_item, "target_warehouse", None) or getattr(raw_item, "t_warehouse", None)
+
+                        work_order_allocation[wo.name]["items"].append({
+                            "item_code": raw_item.item_code,
+                            "item_name": raw_item.item_name,
+                            "qty": extra_qty_to_allocate,
+                            "uom": raw_item.uom,
+                            "warehouse": item_source_wh,
+                            "s_warehouse": item_source_wh,
+                            "t_warehouse": item_target_wh
+                        })
+
+                        remaining_qty -= extra_qty_to_allocate
+                        print(f"🔍 DEBUG: Allocated extra {extra_qty_to_allocate} to work order {wo.name}")
 
         # Fallback: if no allocation was created at all, allocate full transfer to the earliest WO with WIP and pending
         if not any(a.get("items") for a in work_order_allocation.values()):
@@ -565,6 +848,163 @@ def bulk_select_and_delete_rows(doc_name, selected_items):
 
 
 @frappe.whitelist()
+def distribute_extra_quantities(doc_name, total_extra_qty):
+    """Distribute extra quantities evenly across all items in the document"""
+    try:
+        doc = frappe.get_doc("Raw Material Transfer", doc_name)
+        
+        if not doc.raw_materials:
+            return {"success": False, "message": "No raw materials found"}
+        
+        # Get eligible items (items with pending quantity > 0)
+        eligible_items = [item for item in doc.raw_materials if flt(item.pending_qty or 0) > 0]
+        
+        if not eligible_items:
+            return {"success": False, "message": "No eligible items found for extra quantity distribution"}
+        
+        # Calculate average extra per item
+        avg_extra_per_item = flt(total_extra_qty) / len(eligible_items)
+        
+        # Distribute extra quantities
+        for item in eligible_items:
+            item.extra_qty = avg_extra_per_item
+            item.target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
+            item.expected_qty = flt(item.transfer_qty or 0) + flt(item.extra_qty or 0)
+            
+            # Update transfer status
+            if flt(item.transfer_qty or 0) >= flt(item.target_qty or 0):
+                item.transfer_status = "Fully Transferred"
+            elif flt(item.transfer_qty or 0) > 0:
+                item.transfer_status = "Partially Transferred"
+            else:
+                item.transfer_status = "Pending"
+        
+        # Save the document
+        doc.save()
+        
+        return {
+            "success": True, 
+            "message": f"Extra quantity {total_extra_qty} distributed evenly across {len(eligible_items)} items",
+            "avg_extra_per_item": avg_extra_per_item
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error distributing extra quantities: {str(e)}", "Extra Quantity Distribution Error")
+        return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def set_extra_quantity_for_item(doc_name, item_code, extra_qty):
+    """Set extra quantity for a specific item"""
+    try:
+        doc = frappe.get_doc("Raw Material Transfer", doc_name)
+        
+        # Find the item
+        item_found = False
+        for item in doc.raw_materials:
+            if item.item_code == item_code:
+                item.extra_qty = flt(extra_qty)
+                item.target_qty = flt(item.pending_qty or 0) + flt(item.extra_qty or 0)
+                item.expected_qty = flt(item.transfer_qty or 0) + flt(item.extra_qty or 0)
+                
+                # Update transfer status
+                if flt(item.transfer_qty or 0) >= flt(item.target_qty or 0):
+                    item.transfer_status = "Fully Transferred"
+                elif flt(item.transfer_qty or 0) > 0:
+                    item.transfer_status = "Partially Transferred"
+                else:
+                    item.transfer_status = "Pending"
+                
+                item_found = True
+                break
+        
+        if not item_found:
+            return {"success": False, "message": f"Item {item_code} not found"}
+        
+        # Save the document
+        doc.save()
+        
+        return {
+            "success": True, 
+            "message": f"Extra quantity {extra_qty} set for item {item_code}"
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error setting extra quantity: {str(e)}", "Set Extra Quantity Error")
+        return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def refresh_transferred_quantities(doc_name):
+    """Refresh transferred quantities from actual Stock Entries"""
+    try:
+        doc = frappe.get_doc("Raw Material Transfer", doc_name)
+        doc.calculate_transferred_quantities()
+        doc.save()
+        
+        return {
+            "success": True,
+            "message": "Transferred quantities refreshed successfully"
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error refreshing transferred quantities: {str(e)}", "Refresh Transferred Quantities Error")
+        return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def get_transfer_summary(doc_name):
+    """Get comprehensive transfer summary with all quantities"""
+    try:
+        doc = frappe.get_doc("Raw Material Transfer", doc_name)
+        
+        summary = {
+            "total_items": len(doc.raw_materials) if doc.raw_materials else 0,
+            "total_pending_qty": 0,
+            "total_transfer_qty": 0,
+            "total_transferred_so_far": 0,
+            "total_extra_qty": 0,
+            "total_target_qty": 0,
+            "total_expected_qty": 0,
+            "items": []
+        }
+        
+        for item in (doc.raw_materials or []):
+            pending_qty = flt(item.pending_qty or 0)
+            transfer_qty = flt(item.transfer_qty or 0)
+            transferred_so_far = flt(item.transferred_qty_so_far or 0)
+            extra_qty = flt(item.extra_qty or 0)
+            target_qty = flt(item.target_qty or 0)
+            expected_qty = flt(item.expected_qty or 0)
+            
+            summary["total_pending_qty"] += pending_qty
+            summary["total_transfer_qty"] += transfer_qty
+            summary["total_transferred_so_far"] += transferred_so_far
+            summary["total_extra_qty"] += extra_qty
+            summary["total_target_qty"] += target_qty
+            summary["total_expected_qty"] += expected_qty
+            
+            summary["items"].append({
+                "item_code": item.item_code,
+                "item_name": item.item_name,
+                "pending_qty": pending_qty,
+                "transfer_qty": transfer_qty,
+                "transferred_so_far": transferred_so_far,
+                "extra_qty": extra_qty,
+                "target_qty": target_qty,
+                "expected_qty": expected_qty,
+                "transfer_status": item.transfer_status,
+                "uom": item.uom
+            })
+        
+        return {"success": True, "summary": summary}
+        
+    except Exception as e:
+        frappe.log_error(f"Error getting transfer summary: {str(e)}", "Transfer Summary Error")
+        return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
 def create_raw_material_transfer_from_pending(work_order_transfer_manager, selected_items=None):
     """Create a new Raw Material Transfer document with selected pending items"""
     print(f"🔍 DEBUG: create_raw_material_transfer_from_pending called")
@@ -584,17 +1024,44 @@ def create_raw_material_transfer_from_pending(work_order_transfer_manager, selec
             else:
                 selected_item_codes = selected_items
 
-        # Build transferred map
+        # Build transferred map from actual Stock Entries
         transferred_map = {}
         rmt_docs = frappe.get_all(
             "Raw Material Transfer",
             filters={"work_order_transfer_manager": work_order_transfer_manager, "docstatus": 1},
-            fields=["name"]
+            fields=["name", "stock_entry"]
         )
+        
+        # Get all Stock Entries created from these transfers
+        stock_entries = []
         for r in rmt_docs:
-            d = frappe.get_doc("Raw Material Transfer", r.name)
-            for it in d.raw_materials:
-                transferred_map[it.item_code] = transferred_map.get(it.item_code, 0) + flt(it.transfer_qty)
+            if r.stock_entry:
+                stock_entries.append(r.stock_entry)
+        
+        if stock_entries:
+            # Get Stock Entry Items for all related Stock Entries
+            se_items = frappe.get_all(
+                "Stock Entry Detail",
+                filters={
+                    "parent": ["in", stock_entries],
+                    "s_warehouse": ["is", "not set"]  # Only target warehouse items (transferred out)
+                },
+                fields=["item_code", "qty"]
+            )
+            
+            for se_item in se_items:
+                item_code = se_item.item_code
+                qty = flt(se_item.qty)
+                transferred_map[item_code] = transferred_map.get(item_code, 0) + qty
+                print(f"DEBUG: Found {qty} of {item_code} transferred in Stock Entry")
+        
+        # Fallback to Raw Material Transfer documents if no Stock Entries found
+        if not stock_entries:
+            for r in rmt_docs:
+                d = frappe.get_doc("Raw Material Transfer", r.name)
+                for it in d.raw_materials:
+                    transferred_map[it.item_code] = transferred_map.get(it.item_code, 0) + flt(it.transfer_qty)
+                    print(f"DEBUG: Fallback - Found {it.transfer_qty} of {it.item_code} from RMT")
 
         pending_items = []
         for item in wotm_doc.transfer_items:

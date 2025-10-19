@@ -22,6 +22,9 @@
   "section_break_3",
   "total_transfer_qty",
   "total_items",
+  "total_extra_qty",
+  "total_target_qty",
+  "total_expected_qty",
   "amended_from"
  ],
  "fields": [
@@ -126,6 +129,27 @@
    "fieldname": "total_items",
    "fieldtype": "Int",
    "label": "Total Items",
+   "read_only": 1,
+   "print_hide": 1
+  },
+  {
+   "fieldname": "total_extra_qty",
+   "fieldtype": "Float",
+   "label": "Total Extra Qty",
+   "read_only": 1,
+   "print_hide": 1
+  },
+  {
+   "fieldname": "total_target_qty",
+   "fieldtype": "Float",
+   "label": "Total Target Qty",
+   "read_only": 1,
+   "print_hide": 1
+  },
+  {
+   "fieldname": "total_expected_qty",
+   "fieldtype": "Float",
+   "label": "Total Expected Qty",
    "read_only": 1,
    "print_hide": 1
   },

@@ -56,6 +56,11 @@ frappe.ui.form.on("Work Order Transfer Manager", {
             frm.add_custom_button(__('❌ Deselect All Items'), function() {
                 frm.trigger("deselect_all_items");
             }, __('Actions'));
+            
+            // Fix Transfer Quantities button
+            frm.add_custom_button(__('🔧 Fix Transfer Quantities'), function() {
+                frm.trigger("fix_transfer_quantities");
+            }, __('Actions'));
         }
     },
     
@@ -1072,6 +1077,48 @@ frappe.ui.form.on("Work Order Transfer Manager", {
             function() {
                 // User cancelled
                 console.log("🔍 DEBUG: User cancelled transfer status update");
+            }
+        );
+    },
+
+    fix_transfer_quantities: function(frm) {
+        console.log("🔍 DEBUG: fix_transfer_quantities() called");
+        if (!frm.doc.name) {
+            frappe.msgprint(__("Please save the document first"));
+            return;
+        }
+        
+        // Show confirmation dialog
+        frappe.confirm(
+            __("This will fix transfer quantities that may be incorrect due to previous transfers. This will reset transfer_qty to 0 and recalculate pending quantities. Continue?"),
+            function() {
+                // User confirmed
+                frappe.show_alert(__("Fixing transfer quantities..."), 3);
+                
+                frappe.call({
+                    method: "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.fix_transfer_quantities",
+                    args: {
+                        doc_name: frm.doc.name
+                    },
+                    callback: function(r) {
+                        console.log("🔍 DEBUG: Fix transfer quantities callback:", r);
+                        if (r.message && r.message.success) {
+                            frappe.show_alert(__("Transfer quantities fixed successfully!"), 3);
+                            // Reload the form to show updated data
+                            frm.reload_doc();
+                        } else {
+                            frappe.show_alert(__("Error fixing transfer quantities: ") + (r.message ? r.message.message : "Unknown error"), 5);
+                        }
+                    },
+                    error: function(r) {
+                        console.error("❌ DEBUG: Error fixing transfer quantities:", r);
+                        frappe.show_alert(__("Error fixing transfer quantities. Please try again."), 5);
+                    }
+                });
+            },
+            function() {
+                // User cancelled
+                console.log("🔍 DEBUG: User cancelled fix transfer quantities");
             }
         );
     },

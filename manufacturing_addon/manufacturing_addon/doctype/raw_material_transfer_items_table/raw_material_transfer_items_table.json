@@ -22,7 +22,11 @@
     "actual_qty_at_warehouse",
     "actual_qty_at_company",
     "allocated_qty",
-    "remaining_qty"
+    "remaining_qty",
+    "extra_qty",
+    "target_qty",
+    "expected_qty",
+    "transfer_status"
   ],
   "fields": [
     {
@@ -159,6 +163,39 @@
       "fieldtype": "Float",
       "label": "Remaining Qty",
       "print_hide": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "extra_qty",
+      "fieldtype": "Float",
+      "label": "Extra Qty",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "target_qty",
+      "fieldtype": "Float",
+      "label": "Target Qty",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "expected_qty",
+      "fieldtype": "Float",
+      "label": "Expected Qty",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "transfer_status",
+      "fieldtype": "Select",
+      "label": "Transfer Status",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "options": "Pending\nPartially Transferred\nFully Transferred",
       "read_only": 1
     }
   ],

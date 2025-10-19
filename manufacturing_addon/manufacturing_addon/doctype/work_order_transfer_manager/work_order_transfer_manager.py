@@ -1,3 +1,4 @@
+import pstats
 import frappe
 from frappe import _
 from frappe.utils import flt
@@ -524,8 +525,14 @@ def populate_work_order_tables(sales_order, doc_name):
             doc.company = frappe.defaults.get_global_default("company")
             print(f"🔍 DEBUG: Set company to: {doc.company}")
         
+        # Preserve existing transferred quantities before clearing
+        existing_transferred_quantities = {}
+        if doc.transfer_items:
+            for item in doc.transfer_items:
+                if item.transferred_qty_so_far > 0:
+                    existing_transferred_quantities[item.item_code] = item.transferred_qty_so_far
+        
         # Clear tables
-        print(f"🔍 DEBUG: Clearing existing tables")
         
         # Clear tables by setting them to empty lists
         # This will remove all existing child table rows
@@ -853,6 +860,16 @@ def populate_work_order_tables(sales_order, doc_name):
                 print(f"❌ DEBUG: Raw summary: {raw_summary}")
                 raise e
 
+        # Restore preserved transferred quantities
+        if existing_transferred_quantities:
+            print(f"🔍 DEBUG: Restoring preserved transferred quantities")
+            for item in doc.transfer_items:
+                if item.item_code in existing_transferred_quantities:
+                    item.transferred_qty_so_far = existing_transferred_quantities[item.item_code]
+                    # Recalculate pending quantity
+                    item.pending_qty = max(flt(item.total_required_qty) - flt(item.transferred_qty_so_far), 0)
+                    print(f"🔍 DEBUG: Restored transferred_qty_so_far for {item.item_code}: {item.transferred_qty_so_far}, pending: {item.pending_qty}")
+        
         # Ensure company is set in all child tables before saving
         doc.ensure_company_in_child_tables()
         
@@ -1160,7 +1177,7 @@ def create_all_pending_transfer_direct(doc_name):
 @frappe.whitelist()
 def get_remaining_pending_items(doc_name):
     """Accurate remaining items using submitted transfers only"""
-    print(f"🔍 DEBUG: get_remaining_pending_items called for: {doc_name}")
+    # print(f"🔍 DEBUG: get_remaining_pending_items called for: {doc_name}")
     try:
         doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
         
@@ -1168,7 +1185,7 @@ def get_remaining_pending_items(doc_name):
         if not doc.company:
             doc.company = frappe.defaults.get_global_default("company")
             doc.save()
-            print(f"🔍 DEBUG: Set company in get_remaining_pending_items: {doc.company}")
+            # print(f"🔍 DEBUG: Set company in get_remaining_pending_items: {doc.company}")
 
         existing_transfers = frappe.get_all(
             "Raw Material Transfer",
@@ -1196,7 +1213,7 @@ def get_remaining_pending_items(doc_name):
                     "warehouse": doc.source_warehouse
                 })
 
-        print(f"🔍 DEBUG: Found {len(remaining_items)} items with remaining pending quantities")
+        # print(f"🔍 DEBUG: Found {len(remaining_items)} items with remaining pending quantities")
         return remaining_items
 
     except Exception as e:
@@ -1206,7 +1223,7 @@ def get_remaining_pending_items(doc_name):
         full_message = f"Error getting remaining pending items: {error_msg}"
         if len(full_message) > 140:
             full_message = f"Error getting remaining pending items: {error_msg[:50]}..."
-        frappe.log_error(full_message)
+        # frappe.log_error(full_message)
         return {"success": False, "message": str(e)}
 
 
@@ -1221,7 +1238,7 @@ def create_selective_transfer(doc_name):
         if not doc.company:
             doc.company = frappe.defaults.get_global_default("company")
             doc.save()
-            print(f"🔍 DEBUG: Set company in create_selective_transfer: {doc.company}")
+            # print(f"🔍 DEBUG: Set company in create_selective_transfer: {doc.company}")
         selected_items = [i for i in doc.transfer_items if i.select_for_transfer and flt(i.transfer_qty) > 0]
         if not selected_items:
             frappe.throw("Please select items and enter transfer quantities")
@@ -1247,7 +1264,7 @@ def create_selective_transfer(doc_name):
         stock_entry.insert(ignore_permissions=True)
         stock_entry.submit(ignore_permissions=True)
 
-        frappe.msgprint(f"Stock Entry {stock_entry.name} created successfully")
+        # frappe.msgprint(f"Stock Entry {stock_entry.name} created successfully")
         return {"success": True, "stock_entry": stock_entry.name}
 
     except Exception as e:
@@ -1257,7 +1274,7 @@ def create_selective_transfer(doc_name):
         full_message = f"Error creating selective transfer: {error_msg}"
         if len(full_message) > 140:
             full_message = f"Error creating selective transfer: {error_msg[:50]}..."
-        frappe.log_error(full_message)
+        # frappe.log_error(full_message)
         return {"success": False, "message": str(e)}
 
 
@@ -1317,13 +1334,126 @@ def calculate_overall_wotm_status(doc):
         return "Pending", 0
 
 
+def calculate_transferred_quantities_from_all_sources(wotm_name, work_orders):
+    """
+    Calculate transferred quantities from all sources:
+    1. Stock Entries created from Raw Material Transfers
+    2. Stock Entries created directly from Work Orders
+    3. Any other Stock Entries that transfer materials for these work orders
+    """
+    item_total_transferred = {}
+    
+    # 1. Get Stock Entries from Raw Material Transfers
+    existing_transfers = frappe.get_all(
+        "Raw Material Transfer",
+        filters={"work_order_transfer_manager": wotm_name, "docstatus": 1},
+        fields=["name", "stock_entry"],
+    )
+    
+    rmt_stock_entries = []
+    for tr in existing_transfers:
+        if tr.stock_entry:
+            rmt_stock_entries.append(tr.stock_entry)
+    
+    # 2. Get Stock Entries created directly from Work Orders
+    wo_stock_entries = []
+    if work_orders:
+        wo_stock_entries = frappe.get_all(
+            "Stock Entry",
+            filters={
+                "work_order": ["in", work_orders],
+                "docstatus": 1,
+                "purpose": "Material Transfer for Manufacture"
+            },
+            fields=["name"]
+        )
+        wo_stock_entries = [se.name for se in wo_stock_entries]
+    
+    # 3. Get all Stock Entries that transfer materials for these work orders
+    all_stock_entries = list(set(rmt_stock_entries + wo_stock_entries))
+    
+    if all_stock_entries:
+        # Get Stock Entry Items for all related Stock Entries
+        # We want items that are transferred out (either s_warehouse IS NULL OR have both s_warehouse and t_warehouse)
+        se_items = frappe.get_all(
+            "Stock Entry Detail",
+            filters={
+                "parent": ["in", all_stock_entries],
+                "s_warehouse": ["is", "not set"]  # Only target warehouse items (transferred out)
+            },
+            fields=["item_code", "qty", "parent", "s_warehouse", "t_warehouse"]
+        )
+        
+        # Also get items that have both source and target warehouses (transferred from source to target)
+        se_items_both_warehouses = frappe.get_all(
+            "Stock Entry Detail",
+            filters={
+                "parent": ["in", all_stock_entries],
+                "s_warehouse": ["is", "set"],
+                "t_warehouse": ["is", "set"]
+            },
+            fields=["item_code", "qty", "parent", "s_warehouse", "t_warehouse"]
+        )
+        
+        # Combine both results
+        se_items.extend(se_items_both_warehouses)
+        
+        for se_item in se_items:
+            item_code = se_item.item_code
+            qty = flt(se_item.qty)
+            item_total_transferred[item_code] = item_total_transferred.get(item_code, 0) + qty
+            warehouse_info = f"from {se_item.s_warehouse or 'N/A'} to {se_item.t_warehouse or 'N/A'}"
+            # print(f"DEBUG: Found {qty} of {item_code} transferred in Stock Entry {se_item.parent} ({warehouse_info})")
+    
+    # 4. Fallback to Raw Material Transfer documents if no Stock Entries found
+    if not all_stock_entries:
+        for tr in existing_transfers:
+            tr_doc = frappe.get_doc("Raw Material Transfer", tr.name)
+            for ti in tr_doc.raw_materials:
+                item_total_transferred[ti.item_code] = item_total_transferred.get(ti.item_code, 0) + flt(ti.transfer_qty)
+                # print(f"DEBUG: Fallback - Found {ti.transfer_qty} of {ti.item_code} from RMT {tr.name}")
+    
+    return item_total_transferred
+
+@frappe.whitelist()
+def refresh_transferred_quantities_from_stock_entries(doc_name):
+    """
+    Refresh transferred_qty_so_far for all items in WOTM by checking actual Stock Entries
+    """
+    try:
+        # Get the WOTM document
+        wotm_doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+        work_orders = [wo.work_order for wo in wotm_doc.work_order_details]
+        
+        # Calculate transferred quantities from all sources
+        item_total_transferred = calculate_transferred_quantities_from_all_sources(doc_name, work_orders)
+        
+        # Update each transfer item
+        for item in wotm_doc.transfer_items:
+            if item.item_code in item_total_transferred:
+                item.transferred_qty_so_far = item_total_transferred[item.item_code]
+                # print(f"DEBUG: Updated {item.item_code} transferred_qty_so_far to {item.transferred_qty_so_far}")
+        
+        # Save the document
+        wotm_doc.save()
+        
+        return {
+            "success": True,
+            "message": f"Transferred quantities refreshed for {len(item_total_transferred)} items",
+            "updated_items": list(item_total_transferred.keys())
+        }
+        
+    except Exception as e:
+        # frappe.log_error(f"Error refreshing transferred quantities: {str(e)}")
+        return {"success": False, "message": str(e)}
+
 @frappe.whitelist()
 def update_transfer_quantities(doc_name, transfer_doc_name=None):
     """
     Recompute transferred & remaining for WOTM from ALL submitted Raw Material Transfers.
     Also refresh stock snapshots. Works for submitted parents via direct child updates.
     """
-    print(f"🔍 DEBUG: Starting update_transfer_quantities for doc_name: {doc_name}, transfer_doc_name: {transfer_doc_name}")
+    # print(f"🔍 DEBUG: Starting update_transfer_quantities for doc_name: {doc_name}, transfer_doc_name: {transfer_doc_name}")
     try:
         doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
 
@@ -1335,24 +1465,18 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
         if not doc.company:
             doc.company = frappe.defaults.get_global_default("company")
             doc.save()
-            print(f"🔍 DEBUG: Set company in update_transfer_quantities: {doc.company}")
+            # print(f"🔍 DEBUG: Set company in update_transfer_quantities: {doc.company}")
 
         # Check if document is submitted - if so, use direct database approach
         if doc.docstatus == 1:
-            print(f"🔍 DEBUG: Document is submitted, using direct database approach")
+            # print(f"🔍 DEBUG: Document is submitted, using direct database approach")
             return update_transfer_quantities_submitted(doc_name, transfer_doc_name)
 
-        # Aggregate transfers from all SUBMITTED Raw Material Transfers
-        item_total_transferred = {}
-        existing_transfers = frappe.get_all(
-            "Raw Material Transfer",
-            filters={"work_order_transfer_manager": doc_name, "docstatus": 1},
-            fields=["name"],
-        )
-        for tr in existing_transfers:
-            tr_doc = frappe.get_doc("Raw Material Transfer", tr.name)
-            for ti in tr_doc.raw_materials:
-                item_total_transferred[ti.item_code] = item_total_transferred.get(ti.item_code, 0) + flt(ti.transfer_qty)
+        # Get all work orders for this WOTM
+        work_orders = [wo.work_order for wo in doc.work_orders]
+        
+        # Calculate transferred quantities from all sources
+        item_total_transferred = calculate_transferred_quantities_from_all_sources(doc_name, work_orders)
 
         # Update each child row with proper error handling
         for row in doc.transfer_items:
@@ -1361,7 +1485,7 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
                 
                 # Validate that the row exists in the database before updating
                 if not row.name or not frappe.db.exists("Work Order Transfer Items Table", row.name):
-                    print(f"⚠️ WARNING: Row {row.name} for item {row.item_code} does not exist, skipping...")
+                    # print(f"⚠️ WARNING: Row {row.name} for item {row.item_code} does not exist, skipping...")
                     continue
                 
                 # Ensure company is set before updating
@@ -1369,19 +1493,22 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
                     try:
                         frappe.db.set_value("Work Order Transfer Items Table", row.name, "company", doc.company)
                     except Exception as e:
-                        print(f"⚠️ WARNING: Could not set company for row {row.name}: {e}")
+                        pass
+                        # print(f"⚠️ WARNING: Could not set company for row {row.name}: {e}")
                 
                 # Update transferred_qty_so_far
                 try:
                     frappe.db.set_value("Work Order Transfer Items Table", row.name, "transferred_qty_so_far", total_trans)
                 except Exception as e:
-                    print(f"⚠️ WARNING: Could not update transferred_qty_so_far for row {row.name}: {e}")
+                    pass
+                    # print(f"⚠️ WARNING: Could not update transferred_qty_so_far for row {row.name}: {e}")
                 
                 # Also update transfer_qty with the same value as transferred_qty_so_far
                 try:
                     frappe.db.set_value("Work Order Transfer Items Table", row.name, "transfer_qty", total_trans)
                 except Exception as e:
-                    print(f"⚠️ WARNING: Could not update transfer_qty for row {row.name}: {e}")
+                    pass
+                    # print(f"⚠️ WARNING: Could not update transfer_qty for row {row.name}: {e}")
 
                 # Use total_required_qty to compute remaining; if missing, infer (backward compatible)
                 total_required = flt(getattr(row, "total_required_qty", 0))
@@ -1392,13 +1519,15 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
                     try:
                         frappe.db.set_value("Work Order Transfer Items Table", row.name, "total_required_qty", total_required)
                     except Exception as e:
-                        print(f"⚠️ WARNING: Could not update total_required_qty for row {row.name}: {e}")
+                        pass
+                        # print(f"⚠️ WARNING: Could not update total_required_qty for row {row.name}: {e}")
                 
                 remaining = max(total_required - total_trans, 0)
                 try:
                     frappe.db.set_value("Work Order Transfer Items Table", row.name, "pending_qty", remaining)
                 except Exception as e:
-                    print(f"⚠️ WARNING: Could not update pending_qty for row {row.name}: {e}")
+                    pass
+                    # print(f"⚠️ WARNING: Could not update pending_qty for row {row.name}: {e}")
                 
                 # Calculate and update item transfer status and percentage
                 item_status, item_percentage = calculate_transfer_status_and_percentage(total_trans, total_required)
@@ -1406,7 +1535,8 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
                     frappe.db.set_value("Work Order Transfer Items Table", row.name, "item_transfer_status", item_status)
                     frappe.db.set_value("Work Order Transfer Items Table", row.name, "item_transfer_percentage", item_percentage)
                 except Exception as e:
-                    print(f"⚠️ WARNING: Could not update status/percentage for row {row.name}: {e}")
+                    pass
+                    # print(f"⚠️ WARNING: Could not update status/percentage for row {row.name}: {e}")
 
                 # Refresh stock snapshots
                 if getattr(doc, 'source_warehouse', None):
@@ -1421,7 +1551,8 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
                             flt(bin_qty[0].actual_qty) if bin_qty else 0,
                         )
                     except Exception as e:
-                        print(f"⚠️ WARNING: Could not update warehouse stock for row {row.name}: {e}")
+                        pass
+                        # print(f"⚠️ WARNING: Could not update warehouse stock for row {row.name}: {e}")
 
                 if getattr(doc, 'company', None):
                     try:
@@ -1438,10 +1569,12 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
                             flt(company_bins[0].qty) if company_bins and company_bins[0].qty is not None else 0,
                         )
                     except Exception as e:
-                        print(f"⚠️ WARNING: Could not update company stock for row {row.name}: {e}")
+                        pass
+                        # print(f"⚠️ WARNING: Could not update company stock for row {row.name}: {e}")
                         
             except Exception as row_error:
-                print(f"❌ ERROR processing row for item {row.item_code}: {row_error}")
+                pass
+                # print(f"❌ ERROR processing row for item {row.item_code}: {row_error}")
                 continue
 
         # Calculate overall WOTM status and percentage
@@ -1449,11 +1582,11 @@ def update_transfer_quantities(doc_name, transfer_doc_name=None):
         frappe.db.set_value("Work Order Transfer Manager", doc.name, "transfer_status", overall_status)
         frappe.db.set_value("Work Order Transfer Manager", doc.name, "transfer_percentage", overall_percentage)
 
-        print("🔍 DEBUG: Quantities updated on child rows (no parent save needed)")
+        # print("🔍 DEBUG: Quantities updated on child rows (no parent save needed)")
         return {"success": True}
 
     except Exception as e:
-        print(f"❌ DEBUG: Error updating transfer quantities: {e}")
+        # print(f"❌ DEBUG: Error updating transfer quantities: {e}")
         return {"success": False, "message": str(e)}
 
 
@@ -1469,7 +1602,7 @@ def get_existing_wotm_for_sales_order(sales_order):
             if not doc.company:
                 doc.company = frappe.defaults.get_global_default("company")
                 doc.save()
-                print(f"🔍 DEBUG: Set company in get_existing_wotm_for_sales_order: {doc.company}")
+                # print(f"🔍 DEBUG: Set company in get_existing_wotm_for_sales_order: {doc.company}")
         if existing_wotm:
             return {
                 "success": True,
@@ -1490,7 +1623,7 @@ def get_existing_wotm_for_sales_order(sales_order):
 def fix_missing_company_fields():
     """Utility function to fix missing company fields in existing WOTM documents"""
     try:
-        print(f"🔍 DEBUG: Starting fix_missing_company_fields")
+        # print(f"🔍 DEBUG: Starting fix_missing_company_fields")
         
         # Get all WOTM documents
         wotm_docs = frappe.get_all("Work Order Transfer Manager", fields=["name"])
@@ -1504,36 +1637,37 @@ def fix_missing_company_fields():
                 # Fix parent document company
                 if not doc.company:
                     doc.company = company
-                    print(f"🔍 DEBUG: Fixed company for parent document: {doc.name}")
+                    # print(f"🔍 DEBUG: Fixed company for parent document: {doc.name}")
                 
                 # Fix transfer items
                 if doc.transfer_items:
                     for item in doc.transfer_items:
                         if not item.company:
                             item.company = company
-                            print(f"🔍 DEBUG: Fixed company for transfer item {item.item_code} in {doc.name}")
+                            # print(f"🔍 DEBUG: Fixed company for transfer item {item.item_code} in {doc.name}")
                 
                 # Fix work order details
                 if doc.work_order_details:
                     for item in doc.work_order_details:
                         if hasattr(item, "company") and not item.company:
                             item.company = company
-                            print(f"🔍 DEBUG: Fixed company for work order detail {item.work_order} in {doc.name}")
+                            # print(f"🔍 DEBUG: Fixed company for work order detail {item.work_order} in {doc.name}")
                 
                 # Fix work order summary
                 if doc.work_order_summary:
                     for item in doc.work_order_summary:
                         if hasattr(item, "company") and not item.company:
                             item.company = company
-                            print(f"🔍 DEBUG: Fixed company for work order summary {item.item_code} in {doc.name}")
+                            # print(f"🔍 DEBUG: Fixed company for work order summary {item.item_code} in {doc.name}")
                 
                 # Save the document
                 doc.save()
                 fixed_count += 1
-                print(f"🔍 DEBUG: Fixed document: {doc.name}")
+                # print(f"🔍 DEBUG: Fixed document: {doc.name}")
                 
             except Exception as doc_error:
-                print(f"❌ DEBUG: Error fixing document {wotm.name}: {doc_error}")
+                pass
+                # print(f"❌ DEBUG: Error fixing document {wotm.name}: {doc_error}")
                 # Try direct database fix
                 try:
                     company = frappe.defaults.get_global_default("company")
@@ -1547,7 +1681,7 @@ def fix_missing_company_fields():
                     
                     # Note: Work Order Details and Summary tables don't have company column
                     # Skip direct database updates for these tables
-                    print(f"🔍 DEBUG: Skipping direct database updates for work order details/summary (no company column)")
+                    # print(f"🔍 DEBUG: Skipping direct database updates for work order details/summary (no company column)")
                     
                     # Fix parent document
                     frappe.db.sql("""
@@ -1558,22 +1692,24 @@ def fix_missing_company_fields():
                     
                     frappe.db.commit()
                     fixed_count += 1
-                    print(f"🔍 DEBUG: Fixed document directly in database: {wotm.name}")
+                    # print(f"🔍 DEBUG: Fixed document directly in database: {wotm.name}")
                     
                 except Exception as db_error:
-                    print(f"❌ DEBUG: Error fixing document in database {wotm.name}: {db_error}")
+                    pass
+                    # print(f"❌ DEBUG: Error fixing document in database {wotm.name}: {db_error}")
         
-        print(f"🔍 DEBUG: Fixed {fixed_count} documents")
+        # print(f"🔍 DEBUG: Fixed {fixed_count} documents")
         return {"success": True, "message": f"Fixed {fixed_count} documents"}
         
     except Exception as e:
-        print(f"❌ DEBUG: Error in fix_missing_company_fields: {e}")
+        pass
+        # print(f"❌ DEBUG: Error in fix_missing_company_fields: {e}")
         return {"success": False, "message": str(e)}
 
 
 @frappe.whitelist()
 def populate_work_order_tables_background(sales_order, doc_name):
-    print(f"🔍 DEBUG: Starting populate_work_order_tables_background for sales_order: {sales_order}, doc_name: {doc_name}")
+    # print(f"🔍 DEBUG: Starting populate_work_order_tables_background for sales_order: {sales_order}, doc_name: {doc_name}")
     try:
         job = frappe.enqueue(
             "manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.populate_work_order_tables_job",
@@ -1597,10 +1733,10 @@ def populate_work_order_tables_background(sales_order, doc_name):
 
 
 def populate_work_order_tables_job(sales_order, doc_name):
-    print(f"🔍 DEBUG: Background job started for populate_work_order_tables: sales_order={sales_order}, doc_name={doc_name}")
+    # print(f"🔍 DEBUG: Background job started for populate_work_order_tables: sales_order={sales_order}, doc_name={doc_name}")
     try:
         out = populate_work_order_tables(sales_order, doc_name)
-        print(f"🔍 DEBUG: Background job result for populate_work_order_tables: {out}")
+        # print(f"🔍 DEBUG: Background job result for populate_work_order_tables: {out}")
     except Exception as e:
         error_msg = str(e)
         if len(error_msg) > 60:
@@ -1657,16 +1793,16 @@ def cancel_background_job(job_id: str):
 @frappe.whitelist()
 def get_wotm_dashboard_data(doc_name):
     """Get dashboard data for Work Order Transfer Manager"""
-    print(f"🔍 DEBUG: get_wotm_dashboard_data called with doc_name: {doc_name}")
+    # print(f"🔍 DEBUG: get_wotm_dashboard_data called with doc_name: {doc_name}")
     try:
         doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
-        print(f"🔍 DEBUG: Successfully loaded WOTM document: {doc.name}")
+        # print(f"🔍 DEBUG: Successfully loaded WOTM document: {doc.name}")
         
         # Get customer name
         customer_name = ""
         if doc.customer:
             customer_name = frappe.db.get_value("Customer", doc.customer, "customer_name") or doc.customer
-            print(f"🔍 DEBUG: Customer name: {customer_name}")
+            # print(f"🔍 DEBUG: Customer name: {customer_name}")
         
         # Calculate totals from work order summary
         total_work_orders = len(doc.work_order_details) if doc.work_order_details else 0
@@ -1674,9 +1810,9 @@ def get_wotm_dashboard_data(doc_name):
         total_pending = 0
         completed_work_orders = 0
         
-        print(f"🔍 DEBUG: Total work orders: {total_work_orders}")
-        print(f"🔍 DEBUG: Work order summary count: {len(doc.work_order_summary) if doc.work_order_summary else 0}")
-        print(f"🔍 DEBUG: Transfer items count: {len(doc.transfer_items) if doc.transfer_items else 0}")
+        # print(f"🔍 DEBUG: Total work orders: {total_work_orders}")
+        # print(f"🔍 DEBUG: Work order summary count: {len(doc.work_order_summary) if doc.work_order_summary else 0}")
+        # print(f"🔍 DEBUG: Transfer items count: {len(doc.transfer_items) if doc.transfer_items else 0}")
         
         work_order_summary_data = []
         if doc.work_order_summary:
@@ -1765,13 +1901,14 @@ def get_wotm_dashboard_data(doc_name):
             "raw_materials": raw_materials_data
         }
         
-        print(f"🔍 DEBUG: Returning dashboard data: {result_data}")
+        # print(f"🔍 DEBUG: Returning dashboard data: {result_data}")
         return result_data
         
     except Exception as e:
-        print(f"❌ DEBUG: Error in get_wotm_dashboard_data: {str(e)}")
+        pass
+        # print(f"❌ DEBUG: Error in get_wotm_dashboard_data: {str(e)}")
         import traceback
-        print(f"❌ DEBUG: Full traceback: {traceback.format_exc()}")
+        # print(f"❌ DEBUG: Full traceback: {traceback.format_exc()}")
         frappe.log_error(f"Error getting WOTM dashboard data: {str(e)}")
         return None
 
@@ -1819,7 +1956,7 @@ def get_stock_snapshots_only(doc_name):
         }
         
     except Exception as e:
-        print(f"❌ DEBUG: Error getting stock snapshots: {e}")
+        # print(f"❌ DEBUG: Error getting stock snapshots: {e}")
         return {"success": False, "message": str(e)}
 
 def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
@@ -1827,14 +1964,14 @@ def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
     Update transfer quantities for submitted WOTM documents using direct database queries.
     This avoids issues with child table access in submitted documents.
     """
-    print(f"🔍 DEBUG: Starting update_transfer_quantities_submitted for doc_name: {doc_name}")
+    # print(f"🔍 DEBUG: Starting update_transfer_quantities_submitted for doc_name: {doc_name}")
     try:
         # Get document info
         doc_info = frappe.db.get_value("Work Order Transfer Manager", doc_name, 
                                       ["company", "source_warehouse", "docstatus"], as_dict=True)
         
         if not doc_info:
-            print(f"❌ ERROR: Document {doc_name} not found")
+            # print(f"❌ ERROR: Document {doc_name} not found")
             return {"success": False, "message": "Document not found"}
         
         # Ensure company is set
@@ -1842,20 +1979,14 @@ def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
             company = frappe.defaults.get_global_default("company")
             frappe.db.set_value("Work Order Transfer Manager", doc_name, "company", company)
             doc_info.company = company
-            print(f"🔍 DEBUG: Set company in update_transfer_quantities_submitted: {company}")
+            # print(f"🔍 DEBUG: Set company in update_transfer_quantities_submitted: {company}")
 
-        # Aggregate transfers from all SUBMITTED Raw Material Transfers
-        item_total_transferred = {}
-        existing_transfers = frappe.get_all(
-            "Raw Material Transfer",
-            filters={"work_order_transfer_manager": doc_name, "docstatus": 1},
-            fields=["name"],
-        )
+        # Get all work orders for this WOTM
+        wotm_doc = frappe.get_doc("Work Order Transfer Manager", doc_name)
+        work_orders = [wo.work_order for wo in wotm_doc.work_orders]
         
-        for tr in existing_transfers:
-            tr_doc = frappe.get_doc("Raw Material Transfer", tr.name)
-            for ti in tr_doc.raw_materials:
-                item_total_transferred[ti.item_code] = item_total_transferred.get(ti.item_code, 0) + flt(ti.transfer_qty)
+        # Calculate transferred quantities from all sources
+        item_total_transferred = calculate_transferred_quantities_from_all_sources(doc_name, work_orders)
 
         # Get all transfer items from database
         transfer_items = frappe.db.get_all(
@@ -1864,10 +1995,10 @@ def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
             fields=["name", "item_code", "total_required_qty", "pending_qty", "transferred_qty_so_far"]
         )
         
-        print(f"🔍 DEBUG: Found {len(transfer_items)} transfer items to update")
+        print(f"🔍 DEBUG: Fou   nd {len(transfer_items)} transfer items to update")
         
         if not transfer_items:
-            print(f"⚠️ WARNING: No transfer items found for document {doc_name}")
+            # print(f"⚠️ WARNING: No transfer items found for document {doc_name}")
             return {"success": False, "message": "No transfer items found"}
         
         # Update each transfer item
@@ -1875,7 +2006,7 @@ def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
             try:
                 # Verify the item still exists in the database
                 if not frappe.db.exists("Work Order Transfer Items Table", item.name):
-                    print(f"⚠️ WARNING: Transfer item {item.name} for {item.item_code} no longer exists, skipping...")
+                    # print(f"⚠️ WARNING: Transfer item {item.name} for {item.item_code} no longer exists, skipping...")
                     continue
                     
                 total_trans = flt(item_total_transferred.get(item.item_code, 0))
@@ -1924,7 +2055,8 @@ def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
                 frappe.db.set_value("Work Order Transfer Items Table", item.name, update_data)
                 
             except Exception as item_error:
-                print(f"❌ ERROR processing item {item.item_code}: {item_error}")
+                pass
+                # print(f"❌ ERROR processing item {item.item_code}: {item_error}")
                 continue
 
         # Calculate overall WOTM status and percentage
@@ -1945,11 +2077,12 @@ def update_transfer_quantities_submitted(doc_name, transfer_doc_name=None):
             "transfer_percentage": overall_percentage
         })
 
-        print("🔍 DEBUG: Quantities updated successfully for submitted document")
+        # print("🔍 DEBUG: Quantities updated successfully for submitted document")
         return {"success": True}
 
     except Exception as e:
-        print(f"❌ DEBUG: Error updating transfer quantities for submitted document: {e}")
+        pass
+        # print(f"❌ DEBUG: Error updating transfer quantities for submitted document: {e}")
         return {"success": False, "message": str(e)}
 
 
@@ -2075,7 +2208,7 @@ def create_from_production_plan(pp_name: str, sales_order: str, source_warehouse
 @frappe.whitelist()
 def get_production_plan_raw_materials(sales_order, company):
     """Fetch raw materials from Production Plans linked to the sales order with custom extra percentage"""
-    print(f"🔍 DEBUG: Fetching Production Plan raw materials for sales_order: {sales_order}")
+    # pint(f"🔍 DEBUG: Fetching Production Plan raw materials for sales_order: {sales_order}") pass
     
     # Get the latest submitted Production Plan linked to this sales order (avoid double counting across multiple PPs)
     production_plans = frappe.db.sql("""
@@ -2087,12 +2220,12 @@ def get_production_plan_raw_materials(sales_order, company):
         LIMIT 1
     """, (sales_order,), as_dict=True)
     
-    print(f"🔍 DEBUG: Found {len(production_plans)} Production Plans (using latest only)")
+    # print(f"🔍 DEBUG: Found {len(production_plans)} Production Plans (using latest only)")
     
     raw_materials = {}
     
     for pp in production_plans:
-        print(f"🔍 DEBUG: Processing Production Plan (selected): {pp.name}")
+        # print(f"🔍 DEBUG: Processing Production Plan (selected): {pp.name}") pass
         
         # Get raw materials from Production Plan mr_items table
         pp_items = frappe.db.sql("""
@@ -2109,7 +2242,7 @@ def get_production_plan_raw_materials(sales_order, company):
             WHERE parent = %s AND parenttype = 'Production Plan'
         """, (pp.name,), as_dict=True)
         
-        print(f"🔍 DEBUG: Found {len(pp_items)} raw materials in Production Plan {pp.name}")
+        # print(f"🔍 DEBUG: Found {len(pp_items)} raw materials in Production Plan {pp.name}")
         
         for item in pp_items:
             item_code = item.item_code
@@ -2130,7 +2263,7 @@ def get_production_plan_raw_materials(sales_order, company):
                 final_qty = flt(item.quantity or 0)
                 extra_qty = 0
             
-            print(f"🔍 DEBUG: {item_code}: base={base_qty}, extra_pct={extra_pct}%, extra={extra_qty}, final={final_qty}")
+            # print(f"🔍 DEBUG: {item_code}: base={base_qty}, extra_pct={extra_pct}%, extra={extra_qty}, final={final_qty}")
             
             if item_code not in raw_materials:
                 raw_materials[item_code] = {
@@ -2160,7 +2293,7 @@ def get_production_plan_raw_materials(sales_order, company):
                 "extra_percentage": extra_pct
             })
     
-    print(f"🔍 DEBUG: Processed {len(raw_materials)} unique raw materials from Production Plans")
+    # print(f"🔍 DEBUG: Processed {len(raw_materials)} unique raw materials from Production Plans")
     return raw_materials
 
 @frappe.whitelist()

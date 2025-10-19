@@ -18,6 +18,7 @@
  ],
  "fields": [
   {
+   "columns": 2,
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -28,8 +29,12 @@
    "read_only": 1
   },
   {
+   "columns": 1,
    "fieldname": "item_name",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Item Name",
    "read_only": 1
   },
@@ -38,6 +43,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "columns": 1,
    "fieldname": "total_ordered_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -47,6 +53,7 @@
    "read_only": 1
   },
   {
+   "columns": 1,
    "fieldname": "total_transferred_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -56,6 +63,7 @@
    "read_only": 1
   },
   {
+   "columns": 1,
    "fieldname": "total_pending_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -69,12 +77,16 @@
    "fieldtype": "Column Break"
   },
   {
+   "columns": 1,
    "fieldname": "work_order_count",
    "fieldtype": "Int",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Work Order Count",
    "read_only": 1
   },
   {
+   "columns": 1,
    "fieldname": "transfer_status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -88,7 +100,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-08-12 12:50:28.118499",
+ "modified": "2025-10-19 14:44:12.994772",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Work Order Transfer Summary Table",

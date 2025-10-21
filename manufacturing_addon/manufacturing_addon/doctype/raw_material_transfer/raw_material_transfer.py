@@ -653,7 +653,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
                             "items": []
                         }
 
-                    item_source_wh = getattr(raw_item, "source_warehouse", None) or getattr(raw_item, "warehouse", None) or self.warehouse
+                    item_source_wh = getattr(raw_item, "source_warehouse", None) or getattr(raw_item, "warehouse", None) or self.source_warehouse
                     item_target_wh = getattr(raw_item, "target_warehouse", None) or getattr(raw_item, "t_warehouse", None)
 
                     work_order_allocation[wo.name]["items"].append({
@@ -695,7 +695,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
                                 "items": []
                             }
 
-                        item_source_wh = getattr(raw_item, "source_warehouse", None) or getattr(raw_item, "warehouse", None) or self.warehouse
+                        item_source_wh = getattr(raw_item, "source_warehouse", None) or getattr(raw_item, "warehouse", None) or self.source_warehouse
                         item_target_wh = getattr(raw_item, "target_warehouse", None) or getattr(raw_item, "t_warehouse", None)
 
                         work_order_allocation[wo.name]["items"].append({
@@ -727,7 +727,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
                 for raw_item in self.raw_materials:
                     if flt(raw_item.transfer_qty) <= 0:
                         continue
-                    item_source_wh = getattr(raw_item, "source_warehouse", None) or getattr(raw_item, "warehouse", None) or self.warehouse
+                    item_source_wh = getattr(raw_item, "source_warehouse", None) or getattr(raw_item, "warehouse", None) or self.source_warehouse
                     item_target_wh = getattr(raw_item, "target_warehouse", None) or getattr(raw_item, "t_warehouse", None)
                     alloc["items"].append({
                         "item_code": raw_item.item_code,
@@ -777,12 +777,12 @@ class RawMaterialTransfer(frappe.model.document.Document):
         stock_entry.posting_date = self.posting_date
         stock_entry.posting_time = self.posting_time
         stock_entry.company = self.company
-        stock_entry.from_warehouse = self.warehouse
+        stock_entry.from_warehouse = self.source_warehouse
         stock_entry.to_warehouse = wip_warehouse
         stock_entry.work_order = work_order_name
 
         for item in allocation["items"]:
-            s_wh = item.get("s_warehouse") or self.warehouse
+            s_wh = item.get("s_warehouse") or self.source_warehouse
             t_wh = item.get("t_warehouse") or wip_warehouse
             stock_entry.append("items", {
                 "item_code": item["item_code"],

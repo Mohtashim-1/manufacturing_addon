@@ -705,7 +705,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
                             "uom": raw_item.uom,
                             "warehouse": item_source_wh,
                             "s_warehouse": item_source_wh,
-                            "t_warehouse": item_target_wh
+                            "t_warehouse": item_target_wh,
                         })
 
                         remaining_qty -= extra_qty_to_allocate
@@ -791,6 +791,8 @@ class RawMaterialTransfer(frappe.model.document.Document):
                 "s_warehouse": s_wh,
                 "t_warehouse": t_wh,
                 "is_finished_item": 0,
+                "custom_raw_material_transfer": self.name,
+                "custom_work_order_transfer_manager": self.work_order_transfer_manager,
                 # "allow_zero_valuation_rate": 1
             })
 

@@ -1,0 +1,70 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2025-01-30 00:00:00",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [
+  {
+   "fieldname": "raw_material_transfer",
+   "fieldtype": "Link",
+   "label": "Raw Material Transfer",
+   "mandatory": 0,
+   "options": "Raw Material Transfer",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "label": "From Date",
+   "mandatory": 0,
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "label": "To Date",
+   "mandatory": 0,
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "mandatory": 0,
+   "options": "Item",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "mandatory": 0,
+   "options": "Work Order",
+   "wildcard_filter": 0
+  }
+ ],
+ "idx": 0,
+ "is_standard": "Yes",
+ "letterhead": null,
+ "modified": "2025-10-26 19:10:06.262334",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Raw Material Transfer Ledger",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Raw Material Transfer",
+ "report_name": "Raw Material Transfer Ledger",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Manufacturing User"
+  }
+ ],
+ "timeout": 0
+}

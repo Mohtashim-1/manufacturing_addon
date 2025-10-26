@@ -1,0 +1,59 @@
+{
+ "allow_rename": 1,
+ "creation": "2025-01-25 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "stock_entry",
+  "work_order",
+  "column_break_1",
+  "status",
+  "posting_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Stock Entry",
+   "options": "Stock Entry",
+   "reqd": 1
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Work Order",
+   "options": "Work Order"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Submitted\nCancelled\nDraft"
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Posting Date"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "modified": "2025-01-25 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "RMT Stock Entry",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}
+

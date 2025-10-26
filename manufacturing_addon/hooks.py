@@ -138,6 +138,7 @@ doc_events = {
         "validate": ["manufacturing_addon.manufacturing_addon.doctype.bom.bom.duplicate_item", 
                     # "manufacturing_addon.manufacturing_addon.doctype.bom.bom.get_bom_items_from_bom_template"
                     ],
+        "before_save": "manufacturing_addon.manufacturing_addon.doctype.bom.bom.update_bom_stock_qty",
     }
 }
 

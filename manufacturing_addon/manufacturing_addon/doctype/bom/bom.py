@@ -1,5 +1,7 @@
 import frappe
 from frappe import _
+from erpnext.stock.get_item_details import get_conversion_factor
+from frappe.utils import flt
 
 def duplicate_item(doc, method):
     item_codes = {}
@@ -50,3 +52,29 @@ def get_bom_items_from_template_api(bom_name):
     
     bom_doc.save()
     return "Items fetched from BOM Template successfully"
+
+def update_bom_stock_qty(doc, method):
+    """Custom method to fix conversion_factor calculation bug
+    Fixes the issue where conversion_factor is incorrectly set to 1.0
+    when UOM doesn't match stock UOM
+    """
+    for m in doc.get("items"):
+        # If UOM doesn't match stock UOM and conversion_factor is 1.0, recalculate
+        # This fixes cases where conversion_factor was incorrectly defaulted to 1.0
+        if m.uom and m.stock_uom and m.uom != m.stock_uom:
+            if not m.conversion_factor or m.conversion_factor == 1.0:
+                calculated_factor = flt(get_conversion_factor(m.item_code, m.uom)["conversion_factor"])
+                # Only update if the calculated factor is different from 1.0
+                if calculated_factor and calculated_factor != 1.0:
+                    m.conversion_factor = calculated_factor
+                elif not m.conversion_factor:
+                    m.conversion_factor = calculated_factor or 1
+        elif not m.conversion_factor:
+            m.conversion_factor = flt(get_conversion_factor(m.item_code, m.uom)["conversion_factor"])
+        
+        # Calculate stock qty
+        if m.uom and m.qty:
+            m.stock_qty = flt(m.conversion_factor) * flt(m.qty)
+        if not m.uom and m.stock_uom:
+            m.uom = m.stock_uom
+            m.qty = m.stock_qty

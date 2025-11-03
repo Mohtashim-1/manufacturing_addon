@@ -15,43 +15,24 @@ frappe.ui.form.on('Raw Material Issuance', {
 			});
 			
 			frm.add_custom_button('Get Items → Transfer Planning (Pending)', () => {
-				console.log('=== Get Items from Planning - START ===');
-				console.log('Planning document:', frm.doc.planning);
-				console.log('Full form doc:', frm.doc);
-				
 				if (!frm.doc.planning) {
-					console.log('ERROR: No planning document selected');
 					frappe.msgprint({
-						title: __('Validation'),
+						title: __('Validation'),	
 						message: __('Please select a Planning document first.'),
 						indicator: 'orange'
 					});
 					return;
 				}
 				
-				console.log('Calling get_from_planning method...');
 				frm.call('get_from_planning').then((r) => {
-					console.log('=== Response from get_from_planning ===');
-					console.log('Response:', r);
-					console.log('Message:', r.message);
-					console.log('Items before refresh:', frm.doc.items);
-					
 					if (r.message) {
 						frappe.show_alert({
 							message: r.message,
 							indicator: 'green'
 						}, 3);
 					}
-					
 					frm.refresh_field('items');
-					console.log('Items after refresh:', frm.doc.items);
-					console.log('=== Get Items from Planning - END ===');
 				}).catch((err) => {
-					console.error('=== ERROR in get_from_planning ===');
-					console.error('Error object:', err);
-					console.error('Error message:', err.message);
-					console.error('Full error:', JSON.stringify(err, null, 2));
-					
 					let error_msg = err.message || 'Error loading items from planning';
 					frappe.msgprint({
 						title: __('Error'),

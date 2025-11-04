@@ -120,19 +120,9 @@ frappe.ui.form.on('RMTI Item', {
 	},
 	
 	qty(frm, cdt, cdn) {
-		// Validate qty against pending if linked to planning
-		const row = locals[cdt][cdn];
-		if (row.planning_row && row.qty) {
-			frappe.db.get_value('RMTP Raw Material', row.planning_row, 'pending_qty', (r) => {
-				if (r && row.qty > r.pending_qty) {
-					frappe.msgprint({
-						title: __('Warning'),
-						indicator: 'orange',
-						message: __('Quantity exceeds pending quantity in planning row')
-					});
-				}
-			});
-		}
+		// Note: Allowing quantities to exceed pending on planning rows
+		// This allows flexibility for additional material requirements
+		// No validation needed - user can issue more than planned
 	}
 });
 

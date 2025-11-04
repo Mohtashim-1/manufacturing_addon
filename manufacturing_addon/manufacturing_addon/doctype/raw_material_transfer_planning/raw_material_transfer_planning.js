@@ -22,6 +22,36 @@ frappe.ui.form.on('Raw Material Transfer Planning', {
 					frm.refresh_field('rmtp_raw_material');
 				});
 			});
+			
+			frm.add_custom_button('Refresh Issued Qty', () => {
+				frm.call('refresh_issued_qty').then(() => {
+					frm.refresh_fields(['rmtp_raw_material', 'total_issued_qty', 'total_pending_qty', 'status']);
+				});
+			});
+		}
+		
+		// Add Create button group (standard ERPNext pattern)
+		if (frm.doc.docstatus === 1 && frm.doc.status !== 'Cancelled') {
+			// Check if there are pending items
+			const has_pending = frm.doc.rmtp_raw_material && frm.doc.rmtp_raw_material.some(
+				row => (row.pending_qty || 0) > 0
+			);
+			
+			if (has_pending && frappe.model.can_create("Raw Material Issuance")) {
+				frm.add_custom_button(
+					__('Raw Material Issuance'),
+					() => {
+						frappe.model.open_mapped_doc({
+							method: "manufacturing_addon.manufacturing_addon.doctype.raw_material_transfer_planning.raw_material_transfer_planning.make_raw_material_issuance",
+							frm: frm,
+							freeze: true,
+							freeze_message: __("Creating Raw Material Issuance...")
+						});
+					},
+					__('Create')
+				);
+				frm.page.set_inner_btn_group_as_primary(__('Create'));
+			}
 		}
 	},
 	

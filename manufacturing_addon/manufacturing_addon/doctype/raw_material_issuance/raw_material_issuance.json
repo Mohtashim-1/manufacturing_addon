@@ -27,6 +27,7 @@
   {
    "fieldname": "naming_series",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Series",
    "options": "RMTISS-.YYYY.-.#####",
    "reqd": 1,
@@ -35,6 +36,7 @@
   {
    "fieldname": "company",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Company",
    "options": "Company",
    "reqd": 1
@@ -64,6 +66,7 @@
   {
    "fieldname": "from_warehouse",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "From Warehouse",
    "options": "Warehouse",
    "reqd": 1
@@ -71,6 +74,7 @@
   {
    "fieldname": "to_warehouse",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "To Warehouse",
    "options": "Warehouse",
    "reqd": 1
@@ -131,8 +135,13 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
- "links": [],
- "modified": "2025-11-03 15:58:20.635347",
+ "links": [
+  {
+   "link_doctype": "Stock Entry",
+   "link_fieldname": "custom_raw_material_transfer_issuance"
+  }
+ ],
+ "modified": "2025-11-05 01:29:00.558514",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Raw Material Issuance",

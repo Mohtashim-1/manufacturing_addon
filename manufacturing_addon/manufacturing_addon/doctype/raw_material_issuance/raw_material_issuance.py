@@ -10,12 +10,8 @@ class RawMaterialIssuance(Document):
 		if not self.from_warehouse or not self.to_warehouse:
 			frappe.throw("From Warehouse and To Warehouse are required.")
 		
-		# Basic safety: do not exceed pending on linked planning rows
-		for it in self.items:
-			if it.planning and it.planning_row:
-				pending = frappe.db.get_value("RMTP Raw Material", it.planning_row, "pending_qty") or 0
-				if (it.qty or 0) > pending + 1e-9:
-					frappe.throw(f"{it.item_code}: Qty {it.qty} exceeds pending {pending} on planning.")
+		# Note: Allowing quantities to exceed pending on planning rows
+		# This allows flexibility for additional material requirements
 
 	@frappe.whitelist()
 	def get_from_sales_order(self):
@@ -35,6 +31,40 @@ class RawMaterialIssuance(Document):
 			frappe.log_error("[RMTI] ERROR: No planning selected", "RMTI Debug")
 			frappe.throw("Select a Raw Material Transfer Planning.")
 		
+		# Refresh issued_qty from stock entries before reading planning data
+		planning_doc = frappe.get_doc("Raw Material Transfer Planning", self.planning)
+		if planning_doc.sales_order:
+			planning_doc._update_issued_qty_from_stock_entries()
+			planning_doc._refresh_availability_rows()
+			planning_doc.set_status_and_totals()
+			
+			# Update child table rows directly using db_set to bypass submit restrictions
+			for rm_row in planning_doc.rmtp_raw_material:
+				frappe.db.set_value(
+					"RMTP Raw Material",
+					rm_row.name,
+					{
+						"issued_qty": rm_row.issued_qty,
+						"pending_qty": rm_row.pending_qty,
+						"available_in_from_wh": rm_row.available_in_from_wh,
+						"available_in_company": rm_row.available_in_company
+					},
+					update_modified=False
+				)
+			
+			# Update parent totals using db_set
+			frappe.db.set_value(
+				"Raw Material Transfer Planning",
+				self.planning,
+				{
+					"total_planned_qty": planning_doc.total_planned_qty,
+					"total_issued_qty": planning_doc.total_issued_qty,
+					"total_pending_qty": planning_doc.total_pending_qty,
+					"status": planning_doc.status
+				},
+				update_modified=False
+			)
+		
 		frappe.log_error(f"[RMTI] Querying RMTP Raw Material for parent: {self.planning}", "RMTI Debug")
 		
 		# Try to get child table rows directly from database first
@@ -53,7 +83,11 @@ class RawMaterialIssuance(Document):
 		
 		# Log first few rows for debugging
 		if len(raw_material_rows) > 0:
-			frappe.log_error(f"[RMTI] First row sample: {raw_material_rows[0]}", "RMTI Debug")
+			first_row = raw_material_rows[0]
+			frappe.log_error(
+				f"[RMTI] First row: {first_row.get('item_code', 'N/A')} - qty:{first_row.get('qty', 0)} pending:{first_row.get('pending_qty', 0)}",
+				"RMTI Debug"
+			)
 		
 		# Calculate pending_qty if not already set
 		total_rows = len(raw_material_rows)
@@ -65,8 +99,11 @@ class RawMaterialIssuance(Document):
 			issued_qty = d.get("issued_qty") or 0
 			pending = max(float(qty) - float(issued_qty), 0)
 			
+			# Log only essential info (truncate item_code if too long)
+			item_code = str(d.get('item_code', 'N/A'))[:20] if d.get('item_code') else 'N/A'
+			row_name = str(d.get('name', 'N/A'))[:15] if d.get('name') else 'N/A'
 			frappe.log_error(
-				f"[RMTI] Row {d.get('name')}: item_code={d.get('item_code')}, qty={qty}, issued_qty={issued_qty}, pending={pending}",
+				f"[RMTI] {row_name}: {item_code} q:{qty} i:{issued_qty} p:{pending}",
 				"RMTI Debug"
 			)
 			
@@ -115,7 +152,10 @@ class RawMaterialIssuance(Document):
 				"qty": d.get("pending_qty")
 			}
 			
-			frappe.log_error(f"[RMTI] Appending item: {item_dict}", "RMTI Debug")
+			# Log only essential info (truncate item_code if too long)
+			item_code = str(d.get("item_code", "N/A"))[:25] if d.get("item_code") else "N/A"
+			pending_qty = d.get('pending_qty', 0)
+			frappe.log_error(f"[RMTI] Append: {item_code} q:{pending_qty}", "RMTI Debug")
 			self.append("items", item_dict)
 		
 		frappe.log_error(f"[RMTI] Created {len(self.items)} items", "RMTI Debug")
@@ -147,33 +187,29 @@ class RawMaterialIssuance(Document):
 		se = make_stock_entry_from_issuance(self)
 		self.db_set("status", "Submitted")
 		
-		# Update planning issued/pending - use db_set to bypass submit restrictions
-		for it in self.items:
-			if it.planning and it.planning_row:
-				# Get current values directly from database
-				current_issued = frappe.db.get_value("RMTP Raw Material", it.planning_row, "issued_qty") or 0
-				current_qty = frappe.db.get_value("RMTP Raw Material", it.planning_row, "qty") or 0
-				
-				# Calculate new values
-				new_issued_qty = float(current_issued) + float(it.qty or 0)
-				new_pending_qty = max(float(current_qty) - float(new_issued_qty), 0)
-				
-				# Update directly using db_set (bypasses submit restrictions)
+		# Update planning issued/pending by recalculating from all sources
+		if self.planning:
+			plan = frappe.get_doc("Raw Material Transfer Planning", self.planning)
+			# Recalculate issued_qty from all sources (Raw Material Issuance + Stock Entries)
+			plan._update_issued_qty_from_stock_entries()
+			plan._refresh_availability_rows()
+			plan.set_status_and_totals()
+			
+			# Update child table rows directly using db_set
+			for rm_row in plan.rmtp_raw_material:
 				frappe.db.set_value(
 					"RMTP Raw Material",
-					it.planning_row,
+					rm_row.name,
 					{
-						"issued_qty": new_issued_qty,
-						"pending_qty": new_pending_qty
+						"issued_qty": rm_row.issued_qty,
+						"pending_qty": rm_row.pending_qty,
+						"available_in_from_wh": rm_row.available_in_from_wh,
+						"available_in_company": rm_row.available_in_company
 					},
 					update_modified=False
 				)
-		
-		# Update planning header status & totals
-		if self.planning:
-			plan = frappe.get_doc("Raw Material Transfer Planning", self.planning)
-			plan.set_status_and_totals()
-			# Use db_set for status update if planning is submitted
+			
+			# Update parent totals using db_set
 			if plan.docstatus == 1:
 				frappe.db.set_value(
 					"Raw Material Transfer Planning",
@@ -282,14 +318,22 @@ def make_stock_entry_from_issuance(iss_doc):
 		if not it.qty:
 			continue
 		
-		se.append("items", {
+		item_dict = {
 			"item_code": it.item_code,
 			"qty": it.qty,
 			"s_warehouse": iss_doc.from_warehouse,
 			"t_warehouse": iss_doc.to_warehouse,
 			"uom": it.stock_uom,
 			"conversion_factor": 1
-		})
+		}
+		
+		# Add custom fields for tracking
+		if iss_doc.planning:
+			item_dict["custom_raw_material_transfer_planning"] = iss_doc.planning
+		if iss_doc.name:
+			item_dict["custom_raw_material_transfer_issuance"] = iss_doc.name
+		
+		se.append("items", item_dict)
 	
 	se.insert(ignore_permissions=True)
 	se.submit()

@@ -19,6 +19,9 @@
   "available_in_from_wh",
   "available_in_company",
   "column_break_3",
+  "required_percentage",
+  "transfer_percentage",
+  "column_break_4",
   "conversion_factor",
   "allow_substitute",
   "remark"
@@ -106,6 +109,26 @@
   },
   {
    "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "100",
+   "fieldname": "required_percentage",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Required %",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "transfer_percentage",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Transfer %",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_4",
    "fieldtype": "Column Break"
   },
   {

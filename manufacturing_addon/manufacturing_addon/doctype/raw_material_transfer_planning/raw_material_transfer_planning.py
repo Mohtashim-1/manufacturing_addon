@@ -23,6 +23,16 @@ class RawMaterialTransferPlanning(Document):
 		self.total_issued_qty = total_issued
 		self.total_pending_qty = total_pending
 		
+		# Calculate percentages
+		# Required percentage is always 100% (full qty is required)
+		self.total_required_percentage = 100.0
+		
+		# Transfer percentage: (total_issued / total_planned) * 100
+		if total_planned > 0:
+			self.total_transfer_percentage = min((total_issued / total_planned) * 100, 100.0)
+		else:
+			self.total_transfer_percentage = 0.0
+		
 		if total_pending <= 0 and total_planned > 0:
 			self.status = "Completed"
 		elif total_issued > 0:
@@ -33,15 +43,42 @@ class RawMaterialTransferPlanning(Document):
 	@frappe.whitelist()
 	def get_finished_from_sales_order(self):
 		"""Fetch finished items from Sales Order"""
+		frappe.logger().info(f"[RMT Planning] get_finished_from_sales_order called for {self.name}, Sales Order: {self.sales_order}")
+		
 		self.finished_items = []
 		if not self.sales_order:
+			frappe.logger().error("[RMT Planning] Sales Order not set")
 			frappe.throw("Please set Sales Order.")
+		
+		# Use the sales_order value as-is (it might be a single Sales Order with a name like "-6616,6658,6715")
+		sales_order_value = str(self.sales_order).strip()
+		frappe.logger().info(f"[RMT Planning] Using Sales Order value as-is: '{sales_order_value}'")
+		
+		frappe.logger().info(f"[RMT Planning] Fetching Sales Order Items for: {sales_order_value} (type: {type(sales_order_value).__name__})")
+		
+		# Check if Sales Order exists
+		so_exists = frappe.db.exists("Sales Order", sales_order_value)
+		frappe.logger().info(f"[RMT Planning] Sales Order exists: {so_exists}")
+		
+		if not so_exists:
+			frappe.logger().error(f"[RMT Planning] Sales Order '{sales_order_value}' does not exist!")
+			frappe.throw(f"Sales Order '{sales_order_value}' does not exist. Please check the Sales Order field.")
+		
+		# Get Sales Order details for debugging
+		so_doc = frappe.get_doc("Sales Order", sales_order_value)
+		frappe.logger().info(f"[RMT Planning] Sales Order details - Name: {so_doc.name}, Status: {so_doc.status}, Company: {so_doc.company}, Total Items: {len(so_doc.items) if hasattr(so_doc, 'items') else 0}")
 		
 		soi = frappe.get_all(
 			"Sales Order Item",
 			fields=["name", "item_code", "item_name", "uom", "qty", "parent"],
-			filters={"parent": self.sales_order}
+			filters={"parent": sales_order_value}
 		)
+		
+		frappe.logger().info(f"[RMT Planning] Found {len(soi)} Sales Order Items")
+		if len(soi) > 0:
+			frappe.logger().info(f"[RMT Planning] First item sample: {soi[0]}")
+		else:
+			frappe.logger().warning(f"[RMT Planning] No items found in Sales Order '{sales_order_value}'. Check if Sales Order has items.")
 		
 		for row in soi:
 			self.append("finished_items", {
@@ -52,44 +89,79 @@ class RawMaterialTransferPlanning(Document):
 				"qty": row.qty
 			})
 		
-		return {"message": f"Fetched {len(soi)} finished items."}
+		# Return the document data so form can be updated
+		finished_items_data = []
+		for item in self.finished_items:
+			finished_items_data.append({
+				"sales_order_item": item.sales_order_item,
+				"item_code": item.item_code,
+				"item_name": item.item_name,
+				"uom": item.uom,
+				"qty": item.qty,
+				"bom": item.bom if hasattr(item, 'bom') else None
+			})
+		
+		frappe.logger().info(f"[RMT Planning] Returning {len(finished_items_data)} finished items")
+		result = {
+			"finished_items": finished_items_data,
+			"message": f"Fetched {len(soi)} finished items."
+		}
+		frappe.logger().debug(f"[RMT Planning] Return data: {result}")
+		return result
 
 	@frappe.whitelist()
 	def explode_boms(self):
 		"""Explode BOMs for all finished items and aggregate raw materials"""
+		frappe.logger().info(f"[RMT Planning] explode_boms called for {self.name}")
+		frappe.logger().info(f"[RMT Planning] Finished items count: {len(self.finished_items) if self.finished_items else 0}")
+		
 		if not self.finished_items:
+			frappe.logger().error("[RMT Planning] No finished items found")
 			frappe.throw("No finished items. Use 'Get Finished from Sales Order' first.")
 		
 		self.rmtp_raw_material = []
 		aggregate = {}  # item_code -> dict
 		
-		for fi in self.finished_items:
+		for idx, fi in enumerate(self.finished_items):
+			frappe.logger().info(f"[RMT Planning] Processing finished item {idx + 1}: {fi.item_code}, qty: {fi.qty}")
+			
 			bom_no = fi.bom or frappe.db.get_value(
 				"BOM",
 				{"item": fi.item_code, "is_default": 1, "is_active": 1},
 				"name"
 			)
+			frappe.logger().info(f"[RMT Planning] BOM for {fi.item_code}: {bom_no}")
+			
 			if not bom_no:
+				frappe.logger().error(f"[RMT Planning] No active/default BOM found for {fi.item_code}")
 				frappe.throw(f"No active/default BOM found for {fi.item_code}")
 			
-			# Get BOM items as dict: { item_code: { 'qty': x, 'stock_uom': uom, ... }, ... }
-			bom_items = get_bom_items_as_dict(
-				bom_no,
-				company=self.company,
-				qty=fi.qty,
-				fetch_exploded=True
-			)
-			
-			for ic, meta in bom_items.items():
-				key = ic
-				if key not in aggregate:
-					aggregate[key] = {
-						"item_code": ic,
-						"item_name": frappe.db.get_value("Item", ic, "item_name"),
-						"stock_uom": meta.get("stock_uom"),
-						"qty": 0.0
-					}
-				aggregate[key]["qty"] += float(meta.get("qty", 0) or 0)
+			try:
+				# Get BOM items as dict: { item_code: { 'qty': x, 'stock_uom': uom, ... }, ... }
+				frappe.logger().info(f"[RMT Planning] Exploding BOM {bom_no} for company {self.company}, qty {fi.qty}")
+				bom_items = get_bom_items_as_dict(
+					bom_no,
+					company=self.company,
+					qty=fi.qty,
+					fetch_exploded=True
+				)
+				frappe.logger().info(f"[RMT Planning] BOM {bom_no} returned {len(bom_items)} items")
+				
+				for ic, meta in bom_items.items():
+					key = ic
+					if key not in aggregate:
+						aggregate[key] = {
+							"item_code": ic,
+							"item_name": frappe.db.get_value("Item", ic, "item_name"),
+							"stock_uom": meta.get("stock_uom"),
+							"qty": 0.0
+						}
+					aggregate[key]["qty"] += float(meta.get("qty", 0) or 0)
+			except Exception as e:
+				frappe.logger().error(f"[RMT Planning] Error exploding BOM {bom_no} for {fi.item_code}: {str(e)}")
+				frappe.throw(f"Error exploding BOM for {fi.item_code}: {str(e)}")
+		
+		frappe.logger().info(f"[RMT Planning] Aggregated {len(aggregate)} unique raw materials")
 
 		# Fetch items from Material Requests linked to this Sales Order
 		if self.sales_order:
@@ -106,14 +178,17 @@ class RawMaterialTransferPlanning(Document):
 
 		# Push to child table
 		for _, row in sorted(aggregate.items()):
+			qty = row["qty"]
 			self.append("rmtp_raw_material", {
 				"rmtp_finished_row": None,  # Not set during aggregation since materials can come from multiple finished items
 				"item_code": row["item_code"],
 				"item_name": row["item_name"],
 				"stock_uom": row["stock_uom"],
-				"qty": row["qty"],
+				"qty": qty,
 				"issued_qty": 0.0,
-				"pending_qty": row["qty"]
+				"pending_qty": qty,
+				"required_percentage": 100.0,  # Always 100% required
+				"transfer_percentage": 0.0  # Initially 0% transferred
 			})
 		
 		# Update issued_qty from stock entries against sales order cost center
@@ -146,6 +221,19 @@ class RawMaterialTransferPlanning(Document):
 			d.available_in_from_wh = self._bin_qty(d.item_code, self.from_warehouse)
 			d.available_in_company = sum(self._bin_qty(d.item_code, wh) for wh in wh_list)
 			d.pending_qty = max((d.qty or 0) - (d.issued_qty or 0), 0)
+			
+			# Calculate percentages
+			qty = d.qty or 0
+			issued_qty = d.issued_qty or 0
+			
+			# Required percentage is always 100% (full qty is required)
+			d.required_percentage = 100.0
+			
+			# Transfer percentage: (issued_qty / qty) * 100
+			if qty > 0:
+				d.transfer_percentage = min((issued_qty / qty) * 100, 100.0)
+			else:
+				d.transfer_percentage = 0.0
 
 	def _bin_qty(self, item_code, warehouse):
 		"""Get bin quantity for item and warehouse"""
@@ -224,55 +312,86 @@ class RawMaterialTransferPlanning(Document):
 						item_issued_from_rmi[key] = 0.0
 					item_issued_from_rmi[key] += float(rmi_item.qty or 0)
 		
-		# Second, get additional stock entries against sales order cost center
+		# Second, get additional stock entries against sales order cost center OR linked to same sales order
 		item_issued_from_se = {}
 		if self.sales_order:
 			# Get sales order cost center
 			so_cost_center = frappe.db.get_value("Sales Order", self.sales_order, "cost_center")
-			if so_cost_center:
-				# Get stock entries from Raw Material Issuance to exclude them
-				rmi_stock_entries = []
-				if rmi_list:
-					rmi_stock_entries = frappe.get_all(
-						"Raw Material Issuance",
-						filters={"planning": self.name, "docstatus": 1, "stock_entry": ["is", "set"]},
-						fields=["stock_entry"]
-					)
-					rmi_stock_entries = [se.stock_entry for se in rmi_stock_entries if se.stock_entry]
+			
+			# Get stock entries from Raw Material Issuance to exclude them
+			rmi_stock_entries = []
+			if rmi_list:
+				rmi_stock_entries = frappe.get_all(
+					"Raw Material Issuance",
+					filters={"planning": self.name, "docstatus": 1, "stock_entry": ["is", "set"]},
+					fields=["stock_entry"]
+				)
+				rmi_stock_entries = [se.stock_entry for se in rmi_stock_entries if se.stock_entry]
+			
+			# Build filters for stock entries:
+			# 1. Stock entries linked to same Sales Order (via custom_sales_order or standard field if exists)
+			# 2. OR Stock entries with cost_center matching sales order cost center
+			# Exclude those already from Raw Material Issuance
+			
+			# Check if custom_sales_order field exists in Stock Entry
+			has_custom_sales_order = frappe.db.exists("Custom Field", {"dt": "Stock Entry", "fieldname": "custom_sales_order"})
+			
+			stock_entries = []
+			
+			# Get stock entries linked to same Sales Order
+			if has_custom_sales_order:
+				so_filters = {
+					"custom_sales_order": self.sales_order,
+					"docstatus": 1,
+					"purpose": ["in", ["Material Transfer", "Material Transfer for Manufacture"]]
+				}
+				if rmi_stock_entries:
+					so_filters["name"] = ["not in", rmi_stock_entries]
 				
-				# Get all stock entries with custom_cost_center matching sales order cost center
-				# Exclude those already from Raw Material Issuance
-				filters = {
+				so_stock_entries = frappe.get_all(
+					"Stock Entry",
+					filters=so_filters,
+					fields=["name"]
+				)
+				stock_entries.extend(so_stock_entries)
+			
+			# Get stock entries with cost center matching sales order cost center
+			if so_cost_center:
+				cc_filters = {
 					"custom_cost_center": so_cost_center,
 					"docstatus": 1,
 					"purpose": ["in", ["Material Transfer", "Material Transfer for Manufacture"]]
 				}
-				
-				# Only add "not in" filter if we have stock entries to exclude
 				if rmi_stock_entries:
-					filters["name"] = ["not in", rmi_stock_entries]
+					cc_filters["name"] = ["not in", rmi_stock_entries]
 				
-				stock_entries = frappe.get_all(
+				cc_stock_entries = frappe.get_all(
 					"Stock Entry",
-					filters=filters,
+					filters=cc_filters,
 					fields=["name"]
 				)
 				
-				if stock_entries:
-					se_names = [se.name for se in stock_entries]
-					se_items = frappe.get_all(
-						"Stock Entry Detail",
-						filters={"parent": ["in", se_names]},
-						fields=["item_code", "qty", "t_warehouse"]
-					)
-					
-					# Aggregate by item_code only (we don't have planning_row for these)
-					for se_item in se_items:
-						ic = se_item.item_code
-						if se_item.t_warehouse and ic:
-							if ic not in item_issued_from_se:
-								item_issued_from_se[ic] = 0.0
-							item_issued_from_se[ic] += float(se_item.qty or 0)
+				# Add only those not already in stock_entries list
+				existing_names = {se.name for se in stock_entries}
+				for se in cc_stock_entries:
+					if se.name not in existing_names:
+						stock_entries.append(se)
+			
+			if stock_entries:
+				se_names = [se.name for se in stock_entries]
+				se_items = frappe.get_all(
+					"Stock Entry Detail",
+					filters={"parent": ["in", se_names]},
+					fields=["item_code", "qty", "t_warehouse"]
+				)
+				
+				# Aggregate by item_code only (we don't have planning_row for these)
+				for se_item in se_items:
+					ic = se_item.item_code
+					if se_item.t_warehouse and ic:
+						if ic not in item_issued_from_se:
+							item_issued_from_se[ic] = 0.0
+						item_issued_from_se[ic] += float(se_item.qty or 0)
 		
 		# Update issued_qty in rmtp_raw_material rows
 		for rm_row in self.rmtp_raw_material:
@@ -291,6 +410,16 @@ class RawMaterialTransferPlanning(Document):
 			
 			rm_row.issued_qty = issued_qty
 			rm_row.pending_qty = max((rm_row.qty or 0) - (rm_row.issued_qty or 0), 0)
+			
+			# Calculate percentages
+			qty = rm_row.qty or 0
+			# Required percentage is always 100% (full qty is required)
+			rm_row.required_percentage = 100.0
+			# Transfer percentage: (issued_qty / qty) * 100
+			if qty > 0:
+				rm_row.transfer_percentage = min((issued_qty / qty) * 100, 100.0)
+			else:
+				rm_row.transfer_percentage = 0.0
 
 	def on_trash(self):
 		"""Safety: cannot delete if any materials already issued"""

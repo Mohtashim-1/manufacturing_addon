@@ -20,9 +20,13 @@
   "total_issued_qty",
   "column_break_totals",
   "total_pending_qty",
+  "total_required_percentage",
+  "total_transfer_percentage",
   "finished_item_section",
+  "get_finished_from_sales_order",
   "finished_items",
   "raw_material_section",
+  "explode_bom",
   "rmtp_raw_material",
   "more_info_section",
   "remarks",
@@ -120,6 +124,20 @@
    "read_only": 1
   },
   {
+   "default": "100",
+   "fieldname": "total_required_percentage",
+   "fieldtype": "Percent",
+   "label": "Total Required %",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_transfer_percentage",
+   "fieldtype": "Percent",
+   "label": "Total Transfer %",
+   "read_only": 1
+  },
+  {
    "fieldname": "finished_item_section",
    "fieldtype": "Section Break",
    "label": "Finished Items"
@@ -160,6 +178,16 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "get_finished_from_sales_order",
+   "fieldtype": "Button",
+   "label": "Get Finished from Sales Order"
+  },
+  {
+   "fieldname": "explode_bom",
+   "fieldtype": "Button",
+   "label": "Explode BOM"
   }
  ],
  "grid_page_length": 50,
@@ -175,7 +203,7 @@
    "link_fieldname": "planning"
   }
  ],
- "modified": "2025-11-05 01:32:34.766042",
+ "modified": "2025-11-05 19:27:03.768097",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Raw Material Transfer Planning",

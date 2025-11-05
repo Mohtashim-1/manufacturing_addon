@@ -32,8 +32,12 @@ class RawMaterialIssuance(Document):
 			frappe.throw("Select a Raw Material Transfer Planning.")
 		
 		# Refresh issued_qty from stock entries before reading planning data
+		# This ensures we get the latest pending_qty when creating a new issuance
 		planning_doc = frappe.get_doc("Raw Material Transfer Planning", self.planning)
 		if planning_doc.sales_order:
+			# Reload from database to get latest data
+			planning_doc.reload()
+			# Refresh issued_qty from stock entries
 			planning_doc._update_issued_qty_from_stock_entries()
 			planning_doc._refresh_availability_rows()
 			planning_doc.set_status_and_totals()
@@ -64,10 +68,14 @@ class RawMaterialIssuance(Document):
 				},
 				update_modified=False
 			)
+			
+			# Reload again to ensure we have the latest data from database
+			planning_doc.reload()
 		
 		frappe.log_error(f"[RMTI] Querying RMTP Raw Material for parent: {self.planning}", "RMTI Debug")
 		
-		# Try to get child table rows directly from database first
+		# Query directly from database to get the latest pending_qty (after refresh above)
+		# This ensures we get the most up-to-date values even if document cache is stale
 		raw_material_rows = frappe.get_all(
 			"RMTP Raw Material",
 			filters={"parent": self.planning, "parenttype": "Raw Material Transfer Planning"},
@@ -312,6 +320,14 @@ def make_stock_entry_from_issuance(iss_doc):
 	se.from_warehouse = iss_doc.from_warehouse
 	se.to_warehouse = iss_doc.to_warehouse
 	
+	# Get cost center from Sales Order
+	cost_center = None
+	if iss_doc.sales_order:
+		cost_center = frappe.db.get_value("Sales Order", iss_doc.sales_order, "cost_center")
+		if cost_center:
+			# Set cost center in Stock Entry (custom_cost_center field)
+			se.custom_cost_center = cost_center
+	
 	# Add items
 	for it in iss_doc.items:
 		# Skip zero qty lines
@@ -326,6 +342,10 @@ def make_stock_entry_from_issuance(iss_doc):
 			"uom": it.stock_uom,
 			"conversion_factor": 1
 		}
+		
+		# Set cost center in Stock Entry Detail item
+		if cost_center:
+			item_dict["cost_center"] = cost_center
 		
 		# Add custom fields for tracking
 		if iss_doc.planning:

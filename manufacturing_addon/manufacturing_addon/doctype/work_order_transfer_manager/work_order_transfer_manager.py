@@ -2400,6 +2400,100 @@ def create_from_production_plan(pp_name: str, sales_order: str, source_warehouse
         return {"success": False, "message": str(e)}
 
 @frappe.whitelist()
+def create_from_raw_material_transfer_planning(rmtp_name: str):
+    """Create a Work Order Transfer Manager from a Raw Material Transfer Planning.
+    Returns { success: bool, doc_name?: str, message?: str }
+    """
+    try:
+        if not rmtp_name:
+            return {"success": False, "message": "Raw Material Transfer Planning name is required"}
+
+        # Get Raw Material Transfer Planning document
+        try:
+            rmtp = frappe.get_doc("Raw Material Transfer Planning", rmtp_name)
+        except Exception as e:
+            return {"success": False, "message": f"Raw Material Transfer Planning '{rmtp_name}' not found: {str(e)}"}
+
+        if not rmtp.sales_order:
+            return {"success": False, "message": "Sales Order is required in Raw Material Transfer Planning"}
+
+        company = rmtp.company or frappe.defaults.get_global_default("company")
+        posting_date = rmtp.posting_date or str(frappe.utils.today())
+
+        # Create the WOTM doc with proper transaction handling
+        try:
+            # Start a new transaction
+            frappe.db.begin()
+            
+            doc = frappe.new_doc("Work Order Transfer Manager")
+            doc.company = company
+            doc.posting_date = posting_date
+            doc.sales_order = rmtp.sales_order
+            
+            # Fetch and set customer from Sales Order (required)
+            try:
+                customer = frappe.db.get_value("Sales Order", rmtp.sales_order, "customer")
+                if not customer:
+                    frappe.throw(f"Sales Order {rmtp.sales_order} does not have a customer. Please set a customer for the Sales Order first.")
+                doc.customer = customer
+            except Exception as e:
+                frappe.throw(f"Error fetching customer from Sales Order {rmtp.sales_order}: {str(e)}")
+            
+            # Set defaults for required fields
+            doc.stock_entry_type = "Material Transfer for Manufacture"
+
+            # Set warehouses from Raw Material Transfer Planning
+            if rmtp.from_warehouse:
+                doc.source_warehouse = rmtp.from_warehouse
+            if rmtp.to_warehouse:
+                doc.target_warehouse = rmtp.to_warehouse
+
+            # If warehouses not set, pick defaults from company
+            if not getattr(doc, "source_warehouse", None) or not getattr(doc, "target_warehouse", None):
+                if company:
+                    warehouses = frappe.get_all(
+                        "Warehouse",
+                        filters={"company": company, "is_group": 0},
+                        fields=["name"],
+                        limit=2,
+                        order_by="name"
+                    )
+                    if len(warehouses) >= 2:
+                        if not getattr(doc, "source_warehouse", None):
+                            doc.source_warehouse = warehouses[0].name
+                        if not getattr(doc, "target_warehouse", None):
+                            doc.target_warehouse = warehouses[1].name
+
+            # Save the document first
+            doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+            
+            # Populate work order tables
+            try:
+                populate_work_order_tables(rmtp.sales_order, doc.name)
+                frappe.db.commit()
+            except Exception as e:
+                frappe.log_error(f"Error populating work order tables for WOTM {doc.name}: {str(e)}")
+                # Continue even if population fails
+
+        except Exception as e:
+            frappe.db.rollback()
+            frappe.log_error(f"Error creating WOTM from Raw Material Transfer Planning {rmtp_name}: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+        # If nothing populated, keep as draft and inform
+        has_rows = bool(getattr(doc, "transfer_items", None)) or bool(getattr(doc, "work_order_details", None))
+        if not has_rows:
+            return {"success": True, "doc_name": doc.name, "message": "Created as Draft. No work orders/raw materials found to populate."}
+
+        # Keep as draft instead of submitting
+        return {"success": True, "doc_name": doc.name, "message": "Work Order Transfer Manager created as Draft. Please review and submit when ready."}
+
+    except Exception as e:
+        frappe.log_error(f"Error creating WOTM from Raw Material Transfer Planning {rmtp_name}: {str(e)}")
+        return {"success": False, "message": str(e)}
+
+@frappe.whitelist()
 def get_production_plan_raw_materials(sales_order, company):
     """Fetch raw materials from Production Plans linked to the sales order with custom extra percentage"""
     # pint(f"🔍 DEBUG: Fetching Production Plan raw materials for sales_order: {sales_order}") pass

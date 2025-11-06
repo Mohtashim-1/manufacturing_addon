@@ -281,6 +281,74 @@ frappe.ui.form.on('Raw Material Transfer Planning', {
 				frm.page.set_inner_btn_group_as_primary(__('Create'));
 			}
 		}
+		
+		// Add Create Work Order Transfer Manager button
+		// Remove any existing "Create Work Order Transfer Manager" button first
+		// Then add new button that creates WOTM using doc.name
+		if (frm.doc.docstatus >= 0 && frm.doc.name && frm.doc.status !== 'Cancelled') {
+			// Remove existing button if any (by finding and removing it)
+			setTimeout(() => {
+				const existingBtn = $(document).find('.btn:contains("Create Work Order Transfer Manager")');
+				if (existingBtn.length > 0) {
+					console.log('[RMT Planning] Removing existing "Create Work Order Transfer Manager" button');
+					existingBtn.remove();
+				}
+			}, 100);
+			
+			// Add new button
+			// frm.add_custom_button(
+			// 	__('Work Order Transfer Manager'),
+			// 	() => {
+			// 		console.log('[RMT Planning] Create Work Order Transfer Manager button clicked', {
+			// 			doc_name: frm.doc.name,
+			// 			sales_order: frm.doc.sales_order
+			// 		});
+					
+			// 		if (!frm.doc.name) {
+			// 			frappe.msgprint(__('Please save the document first.'));
+			// 			return;
+			// 		}
+					
+			// 		if (!frm.doc.sales_order) {
+			// 			frappe.msgprint(__('Sales Order is required in Raw Material Transfer Planning.'));
+			// 			return;
+			// 		}
+					
+			// 		frappe.call({
+			// 			method: 'manufacturing_addon.manufacturing_addon.doctype.work_order_transfer_manager.work_order_transfer_manager.create_from_raw_material_transfer_planning',
+			// 			args: {
+			// 				rmtp_name: frm.doc.name
+			// 			},
+			// 			freeze: true,
+			// 			freeze_message: __('Creating Work Order Transfer Manager...'),
+			// 			callback: function(r) {
+			// 				if (r.message && r.message.success) {
+			// 					frappe.show_alert({
+			// 						message: __('WOTM created: ') + r.message.doc_name,
+			// 						indicator: 'green'
+			// 					}, 5);
+			// 					frappe.set_route('Form', 'Work Order Transfer Manager', r.message.doc_name);
+			// 				} else {
+			// 					frappe.msgprint({
+			// 						title: __('Error'),
+			// 						message: __('Error creating WOTM: ') + (r.message && r.message.message ? r.message.message : __('Unknown error')),
+			// 						indicator: 'red'
+			// 					});
+			// 				}
+			// 			},
+			// 			error: function(err) {
+			// 				console.error('[RMT Planning] Error creating WOTM:', err);
+			// 				frappe.msgprint({
+			// 					title: __('Error'),
+			// 					message: __('Server error while creating WOTM: ') + (err.message || err),
+			// 					indicator: 'red'
+			// 				});
+			// 			}
+			// 		});
+			// 	},
+			// 	__('Create')
+			// );
+		}
 	},
 	
 	company(frm) {

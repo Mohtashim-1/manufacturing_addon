@@ -190,6 +190,7 @@ override_doctype_dashboards = {
 	"Stock Entry": "manufacturing_addon.manufacturing_addon.doctype.stock_entry.stock_entry_dashboard.get_data",
 	"Raw Material Issuance": "manufacturing_addon.manufacturing_addon.doctype.raw_material_issuance.raw_material_issuance_dashboard.get_data",
 	"Raw Material Transfer Planning": "manufacturing_addon.manufacturing_addon.doctype.raw_material_transfer_planning.raw_material_transfer_planning_dashboard.get_data",
+	"Production Plan": "manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan_dashboard.get_data",
 	}
 
 # exempt linked doctypes from being automatically cancelled

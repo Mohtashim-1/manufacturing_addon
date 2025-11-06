@@ -175,6 +175,24 @@ class RawMaterialTransferPlanning(Document):
 						"qty": 0.0
 					}
 				aggregate[ic]["qty"] += float(mr_data.get("qty", 0) or 0)
+		
+		# Fetch items from Production Plan mr_items table (includes extra quantities and percentages)
+		# Production Plan quantities take priority as they include extra percentages requested by user
+		if hasattr(self, 'custom_production_plan') and self.custom_production_plan:
+			pp_items = self._get_items_from_production_plan()
+			for ic, pp_data in pp_items.items():
+				# If item exists in aggregate (from BOM or MR), use Production Plan quantity (includes extra)
+				# Otherwise, add new item from Production Plan
+				if ic in aggregate:
+					# Replace with Production Plan quantity which includes extra percentage
+					aggregate[ic]["qty"] = float(pp_data.get("qty", 0) or 0)
+				else:
+					aggregate[ic] = {
+						"item_code": ic,
+						"item_name": pp_data.get("item_name"),
+						"stock_uom": pp_data.get("stock_uom"),
+						"qty": float(pp_data.get("qty", 0) or 0)
+					}
 
 		# Push to child table
 		for _, row in sorted(aggregate.items()):
@@ -282,6 +300,62 @@ class RawMaterialTransferPlanning(Document):
 				mr_items[ic]["qty"] += float(item_row.qty or 0)
 		
 		return mr_items
+
+	def _get_items_from_production_plan(self):
+		"""Fetch items from Production Plan mr_items table (includes extra quantities and percentages)"""
+		if not hasattr(self, 'custom_production_plan') or not self.custom_production_plan:
+			return {}
+		
+		# Check if Production Plan exists
+		if not frappe.db.exists("Production Plan", self.custom_production_plan):
+			frappe.logger().warning(f"[RMT Planning] Production Plan {self.custom_production_plan} does not exist")
+			return {}
+		
+		# Get items from Production Plan mr_items table
+		# The quantity field already includes extra percentage calculation
+		pp_items = frappe.db.sql("""
+			SELECT 
+				item_code,
+				item_name,
+				quantity,
+				custom_extra_,
+				required_bom_qty,
+				actual_qty,
+				warehouse,
+				uom
+			FROM `tabMaterial Request Plan Item`
+			WHERE parent = %s AND parenttype = 'Production Plan'
+		""", (self.custom_production_plan,), as_dict=True)
+		
+		if not pp_items:
+			return {}
+		
+		items_dict = {}
+		for item_row in pp_items:
+			ic = item_row.item_code
+			if not ic:
+				continue
+			
+			if ic not in items_dict:
+				# Get item details if not present
+				item_name = item_row.item_name or frappe.db.get_value("Item", ic, "item_name")
+				# Get stock_uom from Item master (Material Request Plan Item doesn't have stock_uom field)
+				stock_uom = frappe.db.get_value("Item", ic, "stock_uom") or item_row.uom
+				
+				items_dict[ic] = {
+					"item_code": ic,
+					"item_name": item_name,
+					"stock_uom": stock_uom,
+					"qty": 0.0
+				}
+			
+			# Use quantity from Production Plan which already includes extra percentage
+			# The quantity field is calculated as: base + (base * custom_extra_ / 100)
+			# where base = required_bom_qty - actual_qty (or required_bom_qty if ignore_existing_ordered_qty)
+			items_dict[ic]["qty"] += float(item_row.quantity or 0)
+		
+		frappe.logger().info(f"[RMT Planning] Found {len(items_dict)} items from Production Plan {self.custom_production_plan}")
+		return items_dict
 
 	def _update_issued_qty_from_stock_entries(self):
 		"""Update issued_qty in rmtp_raw_material from stock entries and Raw Material Issuance submissions"""

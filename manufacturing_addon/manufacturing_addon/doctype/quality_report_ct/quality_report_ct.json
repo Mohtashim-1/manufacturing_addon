@@ -1,0 +1,221 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-01-20 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "customer",
+  "so_item",
+  "combo_item",
+  "colour",
+  "column_break_rthv",
+  "article",
+  "ean",
+  "design",
+  "finished_size",
+  "column_break_gplg",
+  "qty",
+  "plan_copy",
+  "qty_ctn",
+  "column_break_kihr",
+  "finished_stitched_qty",
+  "finished_quality_qty",
+  "column_break_gxpx",
+  "quality_qty",
+  "column_break_mbly",
+  "total_copy1",
+  "percentage_copy"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "design",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Design",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "colour",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Colour",
+   "read_only": 1
+  },
+  {
+   "fieldname": "finished_size",
+   "fieldtype": "Data",
+   "label": "Finished Size",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "article",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Article",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ean",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "label": "EAN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qty_ctn",
+   "fieldtype": "Data",
+   "label": "Qty/ Ctn",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_rthv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_kihr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_mbly",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "total_copy1",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "quality_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Quality Qty"
+  },
+  {
+   "fieldname": "plan_copy",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Plan Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "so_item",
+   "fieldtype": "Link",
+   "label": "SO Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "combo_item",
+   "fieldtype": "Link",
+   "label": "Combo Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "finished_stitched_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Finished Stitched Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "finished_quality_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Finished Quality Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_gxpx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_gplg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "percentage_copy",
+   "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Percentage",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-01-20 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Quality Report CT",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
+

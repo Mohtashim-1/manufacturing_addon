@@ -1,7 +1,7 @@
 // Copyright (c) 2025, Manufacturing Addon and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on("Stitching Report", {
+frappe.ui.form.on("Packing Report", {
     get_data(frm){
         frm.call({
             method:"get_data1",
@@ -15,3 +15,4 @@ frappe.ui.form.on("Stitching Report", {
         })
     }
 });
+

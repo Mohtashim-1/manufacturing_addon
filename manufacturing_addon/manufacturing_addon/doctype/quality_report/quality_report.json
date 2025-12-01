@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:SR-{YY}-{MM}-{DD}-{####}",
+ "autoname": "format:QR-{YY}-{MM}-{DD}-{####}",
  "creation": "2025-01-20 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -12,8 +12,8 @@
   "time",
   "column_break_qnok",
   "order_sheet",
-  "stitching_report_data_section",
-  "stitching_report_ct",
+  "quality_report_data_section",
+  "quality_report_ct",
   "section_break_yedn",
   "ordered_qty",
   "column_break_lyzi",
@@ -56,15 +56,15 @@
    "options": "Order Sheet"
   },
   {
-   "fieldname": "stitching_report_data_section",
+   "fieldname": "quality_report_data_section",
    "fieldtype": "Section Break",
-   "label": "Stitching Report Data"
+   "label": "Quality Report Data"
   },
   {
-   "fieldname": "stitching_report_ct",
+   "fieldname": "quality_report_ct",
    "fieldtype": "Table",
-   "label": "Stitching Report CT",
-   "options": "Stitching Report CT"
+   "label": "Quality Report CT",
+   "options": "Quality Report CT"
   },
   {
    "fieldname": "section_break_yedn",
@@ -108,7 +108,7 @@
    "fieldtype": "Link",
    "label": "Amended From",
    "no_copy": 1,
-   "options": "Stitching Report",
+   "options": "Quality Report",
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
@@ -120,7 +120,7 @@
  "modified": "2025-01-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
- "name": "Stitching Report",
+ "name": "Quality Report",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
@@ -145,3 +145,4 @@
  "track_seen": 1,
  "track_views": 1
 }
+

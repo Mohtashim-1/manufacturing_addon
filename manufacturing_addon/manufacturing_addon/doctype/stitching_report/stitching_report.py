@@ -45,7 +45,7 @@ class StitchingReport(Document):
         self.total_qty()
         self.total_percentage()
         self.total()
-    
+
     def before_save(self):
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
@@ -184,7 +184,7 @@ class StitchingReport(Document):
             self.percentage = (self.ready_qty / self.ordered_qty) * 100
         else:
             self.percentage = 0
-	
+
         for i in self.stitching_report_ct:
             total_qty += i.qty or 0
             self.ordered_qty = total_qty

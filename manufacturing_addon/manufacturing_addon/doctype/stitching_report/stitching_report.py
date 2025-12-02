@@ -38,7 +38,7 @@ class StitchingReport(Document):
                     })
                     self.save()
 
-	def validate(self):
+    def validate(self):
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
         self.stitching_condition()

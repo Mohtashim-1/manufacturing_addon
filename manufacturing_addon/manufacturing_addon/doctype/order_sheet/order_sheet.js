@@ -13,6 +13,17 @@ frappe.ui.form.on("Order Sheet", {
 				__("Get Items From")
 			);
 		}
+
+		// Add button to create Production Plan
+		if (frm.doc.docstatus === 1 && frm.doc.order_sheet_ct && frm.doc.order_sheet_ct.length > 0) {
+			frm.add_custom_button(
+				__("Create Production Plan"),
+				function() {
+					frm.events.create_production_plan(frm);
+				},
+				__("Create")
+			);
+		}
 	},
 
 	get_items_from_sales_order: function(frm) {
@@ -115,7 +126,9 @@ frappe.ui.form.on("Order Sheet", {
 			items.forEach(function(item) {
 				let row = frm.add_child("order_sheet_ct");
 				row.so_item = item.item_code;
-				row.quantity = item.qty;
+				row.order_qty = item.qty;
+				// Set planned_qty to same as order_qty initially
+				row.planned_qty = item.qty;
 				
 				// Map variant attributes to Order Sheet CT fields
 				if (item.design) {
@@ -143,5 +156,41 @@ frappe.ui.form.on("Order Sheet", {
 				indicator: "green"
 			}, 3);
 		}
+	},
+
+	create_production_plan: function(frm) {
+		if (!frm.doc.order_sheet_ct || frm.doc.order_sheet_ct.length === 0) {
+			frappe.msgprint({
+				message: __("Please add items to Order Sheet first"),
+				indicator: "orange",
+				title: __("No Items")
+			});
+			return;
+		}
+
+		frappe.call({
+			method: "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.create_production_plan_from_order_sheet",
+			args: {
+				order_sheet: frm.doc.name
+			},
+			freeze: true,
+			freeze_message: __("Creating Production Plan..."),
+			callback: function(r) {
+				if (r.message) {
+					frappe.show_alert({
+						message: __("Production Plan {0} created successfully", [r.message.name]),
+						indicator: "green"
+					}, 5);
+					frappe.set_route("Form", "Production Plan", r.message.name);
+				}
+			},
+			error: function(r) {
+				frappe.msgprint({
+					message: __("Error creating Production Plan"),
+					indicator: "red",
+					title: __("Error")
+				});
+			}
+		});
 	}
 });

@@ -32,7 +32,7 @@ class PackingReport(Document):
                         "qty_ctn": r.get("qty_ctn"),
                         "article": r.get("stitching_article_no"),
                         "ean": r.get("ean"),
-                        "qty": r.get("quantity"),
+                        "qty": r.get("planned_qty") or 0,
                         "so_item": r.get("so_item"),
                         "combo_item": r.get("combo_item"),
                     })

@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import today, now_datetime
 
 
 class OrderSheet(Document):
@@ -14,40 +15,41 @@ class OrderSheet(Document):
 	
 	def qty_per_cartoon(self):
 		for row in self.order_sheet_ct:
-			# total_cartoons = row.total_cartoons or 0  
-			quantity = row.quantity or 0  # Ensure it's not None
+			# Use planned_qty for calculations, fallback to order_qty if planned_qty is not set
+			planned_qty = row.planned_qty if row.planned_qty else (row.order_qty or 0)
 			qty_ctn = row.qty_ctn or 0 
 
 			if qty_ctn > 0:  # Prevent division by zero
-				row.total_cartoons = quantity / qty_ctn  # 230 / 22 = 10 
-				# frappe.msgprint(f"Total Cartoons: {row.total_cartoons}")
-				# frappe.errprint(f"Total Cartoons: {row.total_cartoons}")
+				row.total_cartoons = planned_qty / qty_ctn
 			else:
 				row.total_cartoons = 0  # Set to 0 if total_cartoons is invalid
-			# 	frappe.msgprint('Total Cartoons set to 0')
 
 
 
 
 	def total(self):
-		quantity = 0
+		order_quantity = 0
+		planned_quantity = 0
 		total_cartoons = 0
 		total_quantity_per_cartoon = 0
 		for i in self.order_sheet_ct:
-			quantity += i.quantity or 0
+			order_quantity += i.order_qty or 0
+			planned_quantity += i.planned_qty or 0
 			total_cartoons += i.total_cartoons or 0
 			total_quantity_per_cartoon += i.qty_ctn or 0
-		self.total_quantity = quantity
+		# Use planned_qty for total if available, otherwise use order_qty
+		self.total_quantity = planned_quantity if planned_quantity > 0 else order_quantity
 		self.total_cartoon = total_cartoons
 		self.total_quantity_per_cartoon = total_quantity_per_cartoon
 
 	def consumption(self):
 		total_consumption = 0
 		for i in self.order_sheet_ct:
-			# total_consumption += i.total_consumption
+			# Use planned_qty for consumption calculation, fallback to order_qty
+			qty_for_calc = i.planned_qty if i.planned_qty else (i.order_qty or 0)
+			if i.consumption and qty_for_calc:
+				i.total_consumption = i.consumption * qty_for_calc
 			total_consumption += i.total_consumption if i.total_consumption else 0
-			if i.consumption and i.quantity:
-				i.total_consumption = i.consumption * i.quantity
 		self.total_consumption = total_consumption
 
 
@@ -328,5 +330,170 @@ def get_items_from_sales_order(sales_order):
 		items.append(item_data)
 	
 	return items
+
+
+@frappe.whitelist()
+def create_production_plan_from_order_sheet(order_sheet):
+	"""
+	Create a Production Plan from Order Sheet
+	"""
+	if not order_sheet:
+		frappe.throw("Order Sheet is required")
+
+	# Get Order Sheet document
+	os_doc = frappe.get_doc("Order Sheet", order_sheet)
 	
+	if not os_doc.order_sheet_ct or len(os_doc.order_sheet_ct) == 0:
+		frappe.throw("Order Sheet must have items to create Production Plan")
+
+	# Get company from Order Sheet or default company
+	company = frappe.defaults.get_user_default("Company")
+	if not company:
+		frappe.throw("Please set default Company in User Settings")
+
+	# Create Production Plan
+	production_plan = frappe.get_doc({
+		"doctype": "Production Plan",
+		"company": company,
+		"customer": os_doc.customer,
+		"posting_date": os_doc.posting_date_and_time.date() if os_doc.posting_date_and_time else today(),
+		"get_items_from": "Sales Order" if os_doc.sales_order else "",
+		"for_warehouse": "Stores - SAH",
+		"po_items": []
+	})
+
+	# Add Sales Order reference if available
+	if os_doc.sales_order:
+		production_plan.append("sales_orders", {
+			"sales_order": os_doc.sales_order
+		})
+
+	# Add items from Order Sheet CT
+	for row in os_doc.order_sheet_ct:
+		if not row.so_item:
+			continue
+
+		# Get item details
+		item_doc = frappe.get_doc("Item", row.so_item)
+		
+		# Get default BOM for the item
+		bom_no = None
+		if item_doc.default_bom:
+			bom_no = item_doc.default_bom
+		else:
+			# Try to find active BOM
+			bom_list = frappe.get_all(
+				"BOM",
+				filters={
+					"item": row.so_item,
+					"is_active": 1,
+					"is_default": 1
+				},
+				limit=1
+			)
+			if bom_list:
+				bom_no = bom_list[0].name
+			else:
+				# Get any active BOM
+				bom_list = frappe.get_all(
+					"BOM",
+					filters={
+						"item": row.so_item,
+						"is_active": 1
+					},
+					limit=1
+				)
+				if bom_list:
+					bom_no = bom_list[0].name
+
+		if not bom_no:
+			frappe.msgprint(
+				f"No BOM found for item {row.so_item}. Skipping this item.",
+				indicator="orange",
+				title="BOM Not Found"
+			)
+			continue
+
+		# Get warehouse from item defaults or company defaults
+		warehouse = None
+		
+		# Try to get warehouse from item defaults (per company)
+		item_defaults = frappe.db.get_value(
+			"Item Default",
+			{"parent": row.so_item, "company": company},
+			"default_warehouse"
+		)
+		if item_defaults:
+			warehouse = item_defaults
+		else:
+			# Get default finished goods warehouse from company
+			warehouse = frappe.db.get_value("Company", company, "default_warehouse")
+			if not warehouse:
+				# Get any warehouse for the company
+				warehouse_list = frappe.get_all(
+					"Warehouse",
+					filters={"company": company},
+					limit=1
+				)
+				if warehouse_list:
+					warehouse = warehouse_list[0].name
+
+		# Use planned_qty if available, otherwise use order_qty
+		planned_qty = row.planned_qty if row.planned_qty else (row.order_qty or 0)
+
+		if planned_qty <= 0:
+			continue
+
+		# Get stock UOM from item
+		stock_uom = item_doc.stock_uom
+		if not stock_uom:
+			stock_uom = item_doc.stock_uom or "Nos"  # Default to Nos if not set
+
+		# Add item to Production Plan
+		production_plan.append("po_items", {
+			"item_code": row.so_item,
+			"bom_no": bom_no,
+			"planned_qty": planned_qty,
+			"stock_uom": stock_uom,
+			"warehouse": warehouse,
+			"planned_start_date": os_doc.posting_date_and_time if os_doc.posting_date_and_time else now_datetime(),
+			"sales_order": os_doc.sales_order if os_doc.sales_order else None,
+			"description": item_doc.description or item_doc.item_name
+		})
+
+	if not production_plan.po_items or len(production_plan.po_items) == 0:
+		frappe.throw("No valid items found to create Production Plan. Please ensure items have BOMs.")
+
+	# Save Production Plan
+	production_plan.insert(ignore_permissions=True)
+	
+	# Get items for Material Request
+	from erpnext.manufacturing.doctype.production_plan.production_plan import get_items_for_material_requests
+	
+	try:
+		# Reload to get fresh document
+		production_plan.reload()
+		
+		# Call get_items_for_material_requests to populate MR items
+		mr_items = get_items_for_material_requests(
+			production_plan.as_dict(),
+			warehouses=[{"warehouse": "Stores - SAH"}]
+		)
+		
+		# Update Production Plan with MR items
+		if mr_items and len(mr_items) > 0:
+			production_plan.reload()
+			production_plan.set("mr_items", [])
+			for item in mr_items:
+				# Convert dict to proper format for append
+				production_plan.append("mr_items", item)
+			production_plan.save(ignore_permissions=True)
+	except Exception as e:
+		frappe.log_error(f"Error getting items for MR: {str(e)}", "Production Plan MR Items Error")
+		# Continue even if MR items fail to populate
+	
+	return {
+		"name": production_plan.name,
+		"message": f"Production Plan {production_plan.name} created successfully"
+	}
 

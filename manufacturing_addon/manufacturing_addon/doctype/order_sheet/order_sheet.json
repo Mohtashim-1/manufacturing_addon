@@ -85,6 +85,7 @@
    "label": "Order Details"
   },
   {
+   "allow_bulk_edit": 1,
    "fieldname": "order_sheet_ct",
    "fieldtype": "Table",
    "label": "Order Sheet CT",

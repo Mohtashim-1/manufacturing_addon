@@ -2,7 +2,25 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on("Order Sheet", {
+	setup(frm) {
+		// Ensure bulk edit is enabled for order_sheet_ct field
+		frappe.model.with_doctype("Order Sheet", () => {
+			let df = frappe.meta.get_docfield("Order Sheet", "order_sheet_ct");
+			if (df) {
+				df.allow_bulk_edit = 1;
+			}
+		});
+	},
+
+	onload(frm) {
+		// Show download/upload buttons after form loads
+		frm.trigger("show_bulk_edit_buttons");
+	},
+
 	refresh(frm) {
+		// Show download/upload buttons on refresh
+		frm.trigger("show_bulk_edit_buttons");
+
 		// Add button to fetch items from Sales Order
 		if (frm.doc.docstatus === 0) {
 			frm.add_custom_button(
@@ -192,5 +210,44 @@ frappe.ui.form.on("Order Sheet", {
 				});
 			}
 		});
+	},
+
+	show_bulk_edit_buttons(frm) {
+		// Function to show download and upload buttons for order_sheet_ct
+		if (!frm.fields_dict.order_sheet_ct) return;
+		
+		let check_and_show = () => {
+			if (frm.fields_dict.order_sheet_ct && frm.fields_dict.order_sheet_ct.grid) {
+				let grid = frm.fields_dict.order_sheet_ct.grid;
+				if (grid && grid.wrapper) {
+					let $download = grid.wrapper.find(".grid-download");
+					let $upload = grid.wrapper.find(".grid-upload");
+					
+					// Show buttons if they exist
+					if ($download.length) {
+						$download.removeClass("hidden");
+					}
+					if ($upload.length) {
+						$upload.removeClass("hidden");
+					}
+					
+					// If buttons don't exist, try to setup bulk edit
+					if (!$download.length && grid.setup_allow_bulk_edit) {
+						// Force allow_bulk_edit on the field definition
+						if (grid.df) {
+							grid.df.allow_bulk_edit = 1;
+						}
+						grid.setup_allow_bulk_edit();
+					}
+				}
+			}
+		};
+		
+		// Try immediately
+		check_and_show();
+		
+		// Also try after a short delay to ensure grid is fully initialized
+		setTimeout(check_and_show, 300);
+		setTimeout(check_and_show, 1000);
 	}
 });

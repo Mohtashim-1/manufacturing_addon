@@ -239,15 +239,25 @@ def find_or_create_standard_size(standard_size_str):
 	if existing:
 		return existing[0].name
 	
-	# Try to parse and create
-	# Format: {lenght_in_cm}X{width_in_cm_copy}
-	# Example: "60X70"
-	try:
-		if 'X' in standard_size_str:
-			parts = standard_size_str.split('X')
-			if len(parts) == 2:
+	# Also search by fields in case name doesn't match exactly
+	if 'X' in standard_size_str:
+		parts = standard_size_str.split('X')
+		if len(parts) == 2:
+			try:
 				lenght_in_cm = float(parts[0].strip())
 				width_in_cm = float(parts[1].strip())
+				
+				# Check if exists by fields
+				existing_by_fields = frappe.get_all(
+					"Standard Size",
+					filters={
+						"lenght_in_cm": lenght_in_cm,
+						"width_in_cm_copy": width_in_cm
+					},
+					limit=1
+				)
+				if existing_by_fields:
+					return existing_by_fields[0].name
 				
 				# Create new Standard Size record
 				doc = frappe.get_doc({
@@ -257,14 +267,25 @@ def find_or_create_standard_size(standard_size_str):
 				})
 				doc.insert(ignore_permissions=True)
 				frappe.db.commit()
-				frappe.logger().info(f"Successfully created Standard Size '{doc.name}' for '{standard_size_str}'")
 				return doc.name
-			else:
-				frappe.log_error(f"Standard Size format invalid: '{standard_size_str}' - expected format: numberXnumber", "Standard Size Creation")
-	except Exception as e:
-		error_detail = str(e)[:100] if len(str(e)) > 100 else str(e)
-		frappe.log_error(f"Error creating Standard Size '{standard_size_str}': {error_detail}", "Standard Size Creation")
-		frappe.logger().error(f"Error creating Standard Size '{standard_size_str}': {error_detail}")
+			except frappe.exceptions.DuplicateEntryError:
+				# If duplicate, find and return existing
+				existing_dup = frappe.get_all(
+					"Standard Size",
+					filters={
+						"lenght_in_cm": lenght_in_cm,
+						"width_in_cm_copy": width_in_cm
+					},
+					limit=1
+				)
+				if existing_dup:
+					return existing_dup[0].name
+				return None
+			except Exception as e:
+				# Only log non-duplicate errors
+				if "Duplicate" not in str(e) and "already exists" not in str(e):
+					error_detail = str(e)[:100] if len(str(e)) > 100 else str(e)
+					frappe.log_error(f"Error creating Standard Size '{standard_size_str}': {error_detail}", "Standard Size Creation")
 	
 	return None
 
@@ -427,43 +448,63 @@ def find_or_create_size(size_value):
 				print(f"✓✓✓ SUCCESS! Created Stitching Size: '{doc.name}'")
 				print(f"=== END FIND_OR_CREATE_SIZE ===\n")
 				return doc.name
-			except (frappe.exceptions.DuplicateEntryError, Exception) as de:
-				# If duplicate or any error, try to find existing record
-				error_str = str(de)
-				print(f"⚠ Error creating record: {error_str[:200]}")
-				
-				# Check if it's a duplicate error
-				if "Duplicate" in error_str or "already exists" in error_str:
-					print("Trying to find existing record...")
+			except frappe.exceptions.DuplicateEntryError as de:
+				# If duplicate, silently find existing record (don't show error to user)
+				print(f"⚠ Duplicate detected, finding existing record...")
+				try:
+					# Search by the fields we tried to create
+					filters = {
+						"lenght": lenght,
+						"width": width
+					}
+					if flap is not None:
+						filters["flap"] = flap
+					else:
+						# If flap is None, search for records where flap is also None or not set
+						filters["flap"] = ["in", [None, 0]]
+					
+					existing = frappe.get_all(
+						"Stitching Size",
+						filters=filters,
+						limit=1
+					)
+					if existing:
+						print(f"✓ Found existing duplicate: '{existing[0].name}'")
+						print(f"=== END FIND_OR_CREATE_SIZE ===\n")
+						return existing[0].name
+					else:
+						print(f"✗ Could not find existing record with filters: {filters}")
+				except Exception as e2:
+					print(f"✗ Error searching for existing: {str(e2)[:200]}")
+				# Don't raise - just return None and let fallback handle it
+				pass
+			except Exception as e:
+				# For other errors, log but don't show duplicate messages
+				error_str = str(e)
+				if "Duplicate" not in error_str and "already exists" not in error_str:
+					print(f"⚠ Error creating record: {error_str[:200]}")
+					raise
+				else:
+					# It's a duplicate, handle silently
+					print(f"⚠ Duplicate detected (other exception), finding existing...")
 					try:
-						# Search by the fields we tried to create
 						filters = {
 							"lenght": lenght,
 							"width": width
 						}
 						if flap is not None:
 							filters["flap"] = flap
-						else:
-							# If flap is None, search for records where flap is also None or not set
-							filters["flap"] = ["in", [None, 0]]
-						
 						existing = frappe.get_all(
 							"Stitching Size",
 							filters=filters,
 							limit=1
 						)
 						if existing:
-							print(f"✓ Found existing duplicate: '{existing[0].name}'")
+							print(f"✓ Found existing: '{existing[0].name}'")
 							print(f"=== END FIND_OR_CREATE_SIZE ===\n")
 							return existing[0].name
-						else:
-							print(f"✗ Could not find existing record with filters: {filters}")
-					except Exception as e2:
-						print(f"✗ Error searching for existing: {str(e2)[:200]}")
-				
-				# If it's not a duplicate or we couldn't find it, continue to next attempt
-				if not isinstance(de, frappe.exceptions.DuplicateEntryError):
-					raise
+					except:
+						pass
 			except frappe.exceptions.ValidationError as ve:
 				print(f"✗ Validation Error: {str(ve)[:200]}")
 				print("Trying again without standard_size...")

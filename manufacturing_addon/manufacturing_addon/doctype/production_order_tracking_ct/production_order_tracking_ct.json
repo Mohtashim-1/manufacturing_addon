@@ -1,0 +1,241 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-04 18:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item",
+  "dessin",
+  "size_cm",
+  "color",
+  "ean_code",
+  "quantity",
+  "qty_ctn",
+  "total_cartons",
+  "section_break_cutting",
+  "cutting_plan",
+  "cutting_duvet",
+  "cutting_fitted",
+  "cutting_pillow",
+  "section_break_stitching",
+  "stitching_duvet",
+  "stitching_fitted",
+  "stitching_pillow",
+  "section_break_packing",
+  "packing_ctn",
+  "packing_pcs",
+  "packing_percentage"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "item",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "ITEM",
+   "width": "120"
+  },
+  {
+   "columns": 1,
+   "fieldname": "dessin",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Dessin",
+   "width": "120"
+  },
+  {
+   "columns": 1,
+   "fieldname": "size_cm",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Size (CM)",
+   "width": "100"
+  },
+  {
+   "columns": 1,
+   "fieldname": "color",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "COLOR",
+   "width": "100"
+  },
+  {
+   "columns": 1,
+   "fieldname": "ean_code",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "EANCODE",
+   "width": "120"
+  },
+  {
+   "columns": 1,
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "QUANTITY",
+   "width": "100"
+  },
+  {
+   "columns": 1,
+   "fieldname": "qty_ctn",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "QTY/CTN",
+   "width": "100"
+  },
+  {
+   "columns": 1,
+   "fieldname": "total_cartons",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "TOTAL CARTONS",
+   "width": "120"
+  },
+  {
+   "fieldname": "section_break_cutting",
+   "fieldtype": "Section Break",
+   "label": "CUTTING"
+  },
+  {
+   "columns": 1,
+   "fieldname": "cutting_plan",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "PLAN",
+   "width": "80"
+  },
+  {
+   "columns": 1,
+   "fieldname": "cutting_duvet",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "DUVET",
+   "width": "80"
+  },
+  {
+   "columns": 1,
+   "fieldname": "cutting_fitted",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Fitted",
+   "width": "80"
+  },
+  {
+   "columns": 1,
+   "fieldname": "cutting_pillow",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "PILLOW",
+   "width": "80"
+  },
+  {
+   "fieldname": "section_break_stitching",
+   "fieldtype": "Section Break",
+   "label": "STITCHING"
+  },
+  {
+   "columns": 1,
+   "fieldname": "stitching_duvet",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "DUVET",
+   "width": "80"
+  },
+  {
+   "columns": 1,
+   "fieldname": "stitching_fitted",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Fitted",
+   "width": "80"
+  },
+  {
+   "columns": 1,
+   "fieldname": "stitching_pillow",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "PILLOW",
+   "width": "80"
+  },
+  {
+   "fieldname": "section_break_packing",
+   "fieldtype": "Section Break",
+   "label": "PACKING"
+  },
+  {
+   "columns": 1,
+   "fieldname": "packing_ctn",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "CTN",
+   "width": "80"
+  },
+  {
+   "columns": 1,
+   "fieldname": "packing_pcs",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "PCS",
+   "width": "80"
+  },
+  {
+   "columns": 1,
+   "fieldname": "packing_percentage",
+   "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Percentage",
+   "width": "100"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-12-04 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Production Order Tracking CT",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
+

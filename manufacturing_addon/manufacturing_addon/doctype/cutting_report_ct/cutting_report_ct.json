@@ -5,7 +5,7 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": [
+  "field_order": [
   "customer",
   "so_item",
   "combo_item",
@@ -17,6 +17,7 @@
   "finished_size",
   "column_break_gplg",
   "qty",
+  "planned_qty",
   "plan_copy",
   "qty_ctn",
   "column_break_kihr",
@@ -125,6 +126,17 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "planned_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Planned Qty",
    "read_only": 1
   },
   {

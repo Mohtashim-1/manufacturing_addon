@@ -23,20 +23,73 @@ class CuttingReport(Document):
                 """, (self.order_sheet,), as_dict=True)
 
                 self.cutting_report_ct = []
-                for r in rec:  
-                    self.append("cutting_report_ct", {
-                        "customer": r.get("customer"),
-                        "design": r.get("design"),
-                        "colour": r.get("colour"),
-                        "finished_size": r.get("size"),
-                        "qty_ctn": r.get("qty_ctn"),
-                        "article": r.get("stitching_article_no"),
-                        "ean": r.get("ean"),
-                        "qty": r.get("planned_qty") or 0,
-                        "so_item": r.get("so_item"),
-                        "combo_item": r.get("combo_item"),
-                    })
-                    self.save()
+                for r in rec:
+                    so_item = r.get("so_item")
+                    planned_qty = r.get("planned_qty") or 0
+                    
+                    if not so_item:
+                        continue
+                    
+                    print(f"\n--- Processing Order Sheet CT Row ---")
+                    print(f"SO Item: {so_item}, Planned Qty: {planned_qty}")
+                    
+                    # Check if item is product combo
+                    try:
+                        item_doc = frappe.get_doc("Item", so_item)
+                        is_product_combo = getattr(item_doc, 'custom_is_product_combo', 0) == 1
+                        print(f"Item {so_item} - custom_is_product_combo: {is_product_combo}")
+                    except Exception as e:
+                        print(f"Error fetching item {so_item}: {str(e)}")
+                        is_product_combo = False
+                    
+                    # If product_combo = 1, expand into combo items
+                    if is_product_combo:
+                        print(f"✓ Product Combo detected, expanding combo items...")
+                        # Get combo items from Item's custom_product_combo_item child table
+                        try:
+                            combo_items = getattr(item_doc, 'custom_product_combo_item', [])
+                            print(f"Found {len(combo_items)} combo items")
+                            
+                            if combo_items:
+                                # Add each combo item to cutting report
+                                for combo_item_row in combo_items:
+                                    combo_item_code = combo_item_row.item
+                                    combo_pcs = combo_item_row.pcs or 1
+                                    
+                                    # Calculate qty: combo_item.pcs * order_sheet_ct.planned_qty
+                                    calculated_qty = combo_pcs * planned_qty
+                                    
+                                    print(f"  → Combo Item: {combo_item_code}, PCS: {combo_pcs}, Calculated Qty: {calculated_qty} ({combo_pcs} * {planned_qty})")
+                                    
+                                    self.append("cutting_report_ct", {
+                                        "customer": r.get("customer"),
+                                        "design": r.get("design"),
+                                        "colour": r.get("colour"),
+                                        "finished_size": r.get("size"),
+                                        "qty_ctn": r.get("qty_ctn"),
+                                        "article": r.get("stitching_article_no"),
+                                        "ean": r.get("ean"),
+                                        "qty": calculated_qty,  # combo_item.pcs * planned_qty
+                                        "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                                        "so_item": so_item,  # Original item
+                                        "combo_item": combo_item_code,  # Combo item from child table
+                                    })
+                            else:
+                                # No combo items found, skip
+                                print(f"✗ No combo items found, skipping")
+                                continue
+                        except Exception as e:
+                            error_msg = f"Error processing combo items for {so_item}: {str(e)}"
+                            print(f"✗ {error_msg}")
+                            frappe.log_error(error_msg, "Cutting Report Combo Item")
+                            continue
+                    else:
+                        # If product_combo = 0, skip the item (don't add to cutting report)
+                        # As per requirement: "agar order sheet mai 1 finished item hoga tu item nahi"
+                        print(f"✗ Not a product combo, skipping (item nahi)")
+                        continue
+                
+                self.save()
 
     def validate(self):
         self.calculate_finished_cutting_qty()

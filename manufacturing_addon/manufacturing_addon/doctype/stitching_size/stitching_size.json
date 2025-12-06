@@ -1,11 +1,13 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{lenght}X{width},{standard_size}+{flap}",
+ "autoname": "format:{size}",
  "creation": "2024-11-11 18:33:18.523882",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "section_break_xoqa",
+  "size",
   "lenght",
   "column_break_dtdj",
   "width",
@@ -14,7 +16,10 @@
   "column_break_zasf",
   "flap",
   "column_break_uopy",
-  "consumption"
+  "consumption",
+  "column_break_bkej",
+  "section_break_atwy",
+  "combo_detail"
  ],
  "fields": [
   {
@@ -70,11 +75,35 @@
    "fieldname": "consumption",
    "fieldtype": "Float",
    "label": "Consumption"
+  },
+  {
+   "fieldname": "column_break_bkej",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_xoqa",
+   "fieldtype": "Section Break",
+   "label": "Dimensions"
+  },
+  {
+   "fieldname": "size",
+   "fieldtype": "Data",
+   "label": "Size"
+  },
+  {
+   "fieldname": "section_break_atwy",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "combo_detail",
+   "fieldtype": "Table",
+   "label": "Combo Detail",
+   "options": "Product Combo Item"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-04 15:46:14.560672",
+ "modified": "2025-12-06 21:38:40.482951",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stitching Size",

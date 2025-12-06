@@ -1,0 +1,191 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:POT-{DD}-{MM}-{YY}-{###}",
+ "creation": "2025-12-04 18:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "po_number",
+  "ship_date",
+  "date",
+  "column_break_header",
+  "customer",
+  "port_of_destination",
+  "sales_order",
+  "section_break_items",
+  "items_table",
+  "section_break_totals",
+  "total_quantity",
+  "total_cartons",
+  "total_cutting_plan",
+  "total_cutting_duvet",
+  "total_cutting_pillow",
+  "total_stitching_duvet",
+  "total_stitching_pillow",
+  "total_packing_ctn",
+  "total_packing_pcs"
+ ],
+ "fields": [
+  {
+   "fieldname": "po_number",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "PO #"
+  },
+  {
+   "fieldname": "ship_date",
+   "fieldtype": "Date",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "SHIP DATE"
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Date"
+  },
+  {
+   "fieldname": "column_break_header",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "port_of_destination",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "PORT OF DESTINATION"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "section_break_items",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "allow_bulk_edit": 1,
+   "fieldname": "items_table",
+   "fieldtype": "Table",
+   "label": "Items Table",
+   "options": "Production Order Tracking CT"
+  },
+  {
+   "fieldname": "section_break_totals",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "total_quantity",
+   "fieldtype": "Float",
+   "label": "Total QUANTITY",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_cartons",
+   "fieldtype": "Float",
+   "label": "Total CARTONS",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_cutting_plan",
+   "fieldtype": "Float",
+   "label": "Total CUTTING PLAN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_cutting_duvet",
+   "fieldtype": "Float",
+   "label": "Total CUTTING DUVET",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_cutting_pillow",
+   "fieldtype": "Float",
+   "label": "Total CUTTING PILLOW",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_stitching_duvet",
+   "fieldtype": "Float",
+   "label": "Total STITCHING DUVET",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_stitching_pillow",
+   "fieldtype": "Float",
+   "label": "Total STITCHING PILLOW",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_packing_ctn",
+   "fieldtype": "Float",
+   "label": "Total PACKING CTN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_packing_pcs",
+   "fieldtype": "Float",
+   "label": "Total PACKING PCS",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-12-04 18:28:12.609644",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Production Order Tracking",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

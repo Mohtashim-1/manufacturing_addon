@@ -14,7 +14,13 @@ class StitchingSize(Document):
 			frappe.throw("Width is required")
 	
 	def autoname(self):
-		"""Custom autoname to handle None values in standard_size and flap"""
+		"""Custom autoname - use size field if available, otherwise build from lenght/width"""
+		# If size field is set, use it directly as the name
+		if self.size:
+			self.name = self.size
+			return
+		
+		# Otherwise, build name from lenght/width/standard_size/flap
 		# Format numbers without .0 for integers
 		def format_num(n):
 			if n is None:

@@ -233,15 +233,7 @@ function loadDashboardData() {
 	let salesOrder = $('#filter_sales_order').val();
 	let orderSheet = $('#filter_order_sheet').val();
 	
-	if (!customer && !salesOrder && !orderSheet) {
-		frappe.msgprint({
-			message: __('Please select at least one filter (Customer, Sales Order, or Order Sheet)'),
-			indicator: 'orange',
-			title: __('Filter Required')
-		});
-		return;
-	}
-	
+	// If no filter is selected, show all data (pass null values)
 	frappe.call({
 		method: 'manufacturing_addon.manufacturing_addon.page.order_tracking.order_tracking.get_dashboard_data',
 		args: {

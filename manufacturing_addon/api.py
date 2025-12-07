@@ -62,6 +62,106 @@ def add_parameter(doc, method):
             for param in category.custom_item_parameter:
                 row = doc.append("custom_item_parameter", {})
                 row.parameter = param.parameter
+    
+    # Copy combo_detail from Stitching Size to Item's custom_product_combo_item
+    print(f"\n{'='*60}")
+    print(f"[add_parameter] Processing Item: '{doc.name}'")
+    print(f"{'='*60}")
+    
+    # Check if item has SIZE attribute
+    size_value = None
+    
+    # Method 1: Try to get from database (for existing items)
+    print(f"[add_parameter] Method 1: Getting variant attributes from database for item: '{doc.name}'")
+    variant_attributes = frappe.get_all(
+        "Item Variant Attribute",
+        filters={"parent": doc.name},
+        fields=["attribute", "attribute_value"]
+    )
+    
+    print(f"[add_parameter] Found {len(variant_attributes)} variant attributes from database")
+    for attr in variant_attributes:
+        print(f"  - Attribute: '{attr.attribute}' = '{attr.attribute_value}'")
+        if attr.attribute and attr.attribute.upper() == "SIZE":
+            size_value = attr.attribute_value
+            print(f"[add_parameter] Found SIZE attribute from database: '{size_value}'")
+            break
+    
+    # Method 2: If not found, try to get from document's attributes (for new items)
+    if not size_value and hasattr(doc, 'attributes'):
+        print(f"[add_parameter] Method 2: Checking document attributes")
+        if doc.attributes:
+            for attr in doc.attributes:
+                print(f"  - Document Attribute: '{attr.attribute}' = '{attr.attribute_value}'")
+                if attr.attribute and attr.attribute.upper() == "SIZE":
+                    size_value = attr.attribute_value
+                    print(f"[add_parameter] Found SIZE attribute from document: '{size_value}'")
+                    break
+    
+    # Method 3: If still not found, extract from item name (fallback)
+    if not size_value:
+        print(f"[add_parameter] Method 3: Extracting SIZE from item name: '{doc.name}'")
+        import re
+        item_name = doc.name or ""
+        # Pattern: numberXnumber (with optional comma, plus, and more parts)
+        size_pattern = re.search(r'(\d+(?:\.\d+)?X\d+(?:\.\d+)?(?:[,\+]\d+(?:\.\d+)?(?:X\d+(?:\.\d+)?)?(?:\+\d+(?:\.\d+)?)?)*)', item_name)
+        if size_pattern:
+            size_value = size_pattern.group(1)
+            print(f"[add_parameter] Extracted SIZE from item name: '{size_value}'")
+    
+    if not size_value:
+        print(f"[add_parameter] No SIZE found for item '{doc.name}'")
+        print(f"{'='*60}\n")
+        return
+    
+    # If SIZE attribute found, get combo_detail from Stitching Size
+    print(f"[add_parameter] Looking for Stitching Size with name: '{size_value}'")
+    stitching_size = frappe.db.get_value("Stitching Size", size_value, "name")
+    
+    if not stitching_size:
+        print(f"[add_parameter] Stitching Size '{size_value}' not found")
+        print(f"{'='*60}\n")
+        return
+    
+    print(f"[add_parameter] Found Stitching Size: '{stitching_size}'")
+    stitching_size_doc = frappe.get_doc("Stitching Size", stitching_size)
+    
+    # Check if combo_detail exists
+    if not hasattr(stitching_size_doc, 'combo_detail'):
+        print(f"[add_parameter] Stitching Size '{stitching_size}' has no combo_detail field")
+        print(f"{'='*60}\n")
+        return
+    
+    if not stitching_size_doc.combo_detail:
+        print(f"[add_parameter] Stitching Size '{stitching_size}' has empty combo_detail")
+        print(f"{'='*60}\n")
+        return
+    
+    print(f"[add_parameter] Found {len(stitching_size_doc.combo_detail)} combo_detail rows")
+    
+    # Check if Item has custom_product_combo_item field
+    if not hasattr(doc, 'custom_product_combo_item'):
+        print(f"[add_parameter] Item '{doc.name}' has no custom_product_combo_item field")
+        print(f"{'='*60}\n")
+        return
+    
+    # Clear existing custom_product_combo_item if any
+    existing_count = len(doc.custom_product_combo_item) if doc.custom_product_combo_item else 0
+    if existing_count > 0:
+        print(f"[add_parameter] Clearing {existing_count} existing custom_product_combo_item rows")
+        doc.set("custom_product_combo_item", [])
+    
+    # Copy combo_detail to custom_product_combo_item
+    copied_count = 0
+    for combo_row in stitching_size_doc.combo_detail:
+        print(f"[add_parameter] Copying combo item: item='{combo_row.item}', pcs={combo_row.pcs}")
+        new_row = doc.append("custom_product_combo_item", {})
+        new_row.item = combo_row.item
+        new_row.pcs = combo_row.pcs
+        copied_count += 1
+    
+    print(f"[add_parameter] ✓ Successfully copied {copied_count} combo items from Stitching Size '{stitching_size}' to Item '{doc.name}'")
+    print(f"{'='*60}\n")
 
 
 

@@ -1,11 +1,11 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2025-01-20 00:00:00.000000",
+ "creation": "2025-01-20 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
-  "field_order": [
+ "field_order": [
   "customer",
   "so_item",
   "combo_item",
@@ -16,9 +16,10 @@
   "design",
   "finished_size",
   "column_break_gplg",
-  "qty",
+  "order_qty",
+  "pcs",
   "planned_qty",
-  "plan_copy",
+  "qty",
   "qty_ctn",
   "column_break_kihr",
   "finished_cutting_qty",
@@ -118,6 +119,28 @@
   },
   {
    "columns": 1,
+   "fieldname": "order_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Order Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "pcs",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "PCS",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
    "fieldname": "qty",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -148,17 +171,6 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Cutting Qty"
-  },
-  {
-   "fieldname": "plan_copy",
-   "fieldtype": "Data",
-   "in_filter": 1,
-   "in_global_search": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Plan Qty",
-   "read_only": 1
   },
   {
    "fieldname": "so_item",
@@ -208,14 +220,14 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-01-20 00:00:00.000000",
+ "modified": "2025-12-07 00:49:29.640679",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Cutting Report CT",
  "owner": "Administrator",
  "permissions": [],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
 }
-

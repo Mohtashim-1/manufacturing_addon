@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:OS-{DD}-{MM}-{YY}-{###}",
+ "autoname": "format:{sales_order}-{#}",
  "creation": "2024-11-11 17:23:00.879120",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -95,6 +95,7 @@
    "default": "0",
    "fieldname": "is_or",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "is OR"
   },
   {
@@ -161,6 +162,7 @@
   {
    "fieldname": "sales_order",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Sales Order",
    "options": "Sales Order"
   }
@@ -168,7 +170,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-03-06 10:17:12.706432",
+ "modified": "2025-12-07 00:17:25.287446",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",
@@ -189,6 +191,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

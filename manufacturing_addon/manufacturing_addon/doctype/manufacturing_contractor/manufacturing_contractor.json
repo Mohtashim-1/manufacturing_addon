@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{supplier}",
+ "creation": "2025-12-06 23:57:16.256328",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "supplier",
+  "cutting",
+  "stitching",
+  "packing"
+ ],
+ "fields": [
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier"
+  },
+  {
+   "default": "0",
+   "fieldname": "cutting",
+   "fieldtype": "Check",
+   "label": "Cutting"
+  },
+  {
+   "default": "0",
+   "fieldname": "stitching",
+   "fieldtype": "Check",
+   "label": "Stitching"
+  },
+  {
+   "default": "0",
+   "fieldname": "packing",
+   "fieldtype": "Check",
+   "label": "Packing"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-12-07 00:02:15.712705",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Manufacturing Contractor",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

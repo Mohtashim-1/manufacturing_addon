@@ -9,22 +9,267 @@ from frappe import _
 class PackingReport(Document):
     @frappe.whitelist()
     def get_data1(self):
+        print(f"\n{'='*60}")
+        print(f"[get_data1] Starting for Packing Report: '{self.name}'")
+        print(f"[get_data1] Order Sheet: '{self.order_sheet}'")
+        print(f"{'='*60}")
+        
+        if not self.order_sheet:
+            print(f"[get_data1] ERROR: No Order Sheet selected")
+            frappe.throw("Please select an Order Sheet first.")
+        
         if isinstance(self.order_sheet, str) and self.order_sheet:
+            try:
+                # Use ignore_links to load cancelled Order Sheets
             doc = frappe.get_doc("Order Sheet", self.order_sheet)
+                print(f"[get_data1] Loaded Order Sheet: '{doc.name}'")
+                print(f"[get_data1] Order Sheet is_or: {doc.is_or}")
+                print(f"[get_data1] Order Sheet docstatus: {doc.docstatus}")
+                
+                # Check if Order Sheet is cancelled
+                if doc.docstatus == 2:
+                    print(f"[get_data1] WARNING: Order Sheet is cancelled, but proceeding anyway")
+            except Exception as e:
+                print(f"[get_data1] ERROR loading Order Sheet: {str(e)}")
+                frappe.throw(f"Invalid Order Sheet reference: {str(e)}")
         else:
+            print(f"[get_data1] ERROR: Invalid Order Sheet type")
             frappe.throw("Invalid Order Sheet reference.")
-        if not self.packing_report_ct:
+        
+        # Check if packing_report_ct is empty or not
+        existing_rows = len(self.packing_report_ct) if self.packing_report_ct else 0
+        print(f"[get_data1] Existing packing_report_ct rows: {existing_rows}")
+        
+        # Clear existing rows to allow re-fetch with new calculations
+        if existing_rows > 0:
+            print(f"[get_data1] Clearing {existing_rows} existing rows to re-fetch data...")
+            self.packing_report_ct = []
+        
+        if not self.packing_report_ct or existing_rows == 0:
+            print(f"[get_data1] packing_report_ct is empty, will fetch data")
             if doc.is_or == 0:
+                print(f"[get_data1] Order Sheet is_or = 0, fetching data...")
                 rec = frappe.db.sql("""
                     SELECT * FROM `tabOrder Sheet` AS opr
                     LEFT JOIN `tabOrder Sheet CT` AS orct
                     ON orct.parent = opr.name
                     WHERE opr.name = %s AND opr.is_or = 0
                 """, (self.order_sheet,), as_dict=True)
+                
+                print(f"[get_data1] Found {len(rec)} rows from Order Sheet")
 
                 self.packing_report_ct = []
-                for r in rec:  
-                    self.append("packing_report_ct", {
+                print(f"[get_data1] Processing {len(rec)} Order Sheet CT rows...")
+                for idx, r in enumerate(rec):
+                    so_item = r.get("so_item")
+                    planned_qty = r.get("planned_qty") or 0
+                    order_qty = r.get("order_qty") or 0
+                    
+                    print(f"\n{'='*60}")
+                    print(f"[get_data1] Row {idx+1} - Raw Data from Order Sheet CT:")
+                    print(f"  - so_item: '{so_item}'")
+                    print(f"  - order_qty (raw): {r.get('order_qty')}")
+                    print(f"  - planned_qty (raw): {r.get('planned_qty')}")
+                    print(f"  - order_qty (after or 0): {order_qty}")
+                    print(f"  - planned_qty (after or 0): {planned_qty}")
+                    print(f"  - All keys in row: {list(r.keys())}")
+                    print(f"{'='*60}")
+                    
+                    if not so_item:
+                        print(f"[get_data1] Row {idx+1}: Skipping - no so_item")
+                        continue
+                    
+                    # In Packing Report, show FINISHED ITEM directly (not expand into combo items)
+                    # But get combo items info for reference
+                    try:
+                        item_doc = frappe.get_doc("Item", so_item)
+                        combo_items = getattr(item_doc, 'custom_product_combo_item', [])
+                        
+                        print(f"[get_data1] Item {so_item}:")
+                        print(f"  - custom_product_combo_item count: {len(combo_items) if combo_items else 0}")
+                        
+                        # Get combo items from Item or Stitching Size for reference
+                        bundle_items_data = []  # List of dicts: [{"pcs": 2, "item": "PILLOW 80X80"}, ...]
+                        if combo_items and len(combo_items) > 0:
+                            print(f"[get_data1] ✓ Found {len(combo_items)} combo items in Item for reference")
+                            for combo_item_row in combo_items:
+                                bundle_items_data.append({
+                                    "pcs": combo_item_row.pcs or 1,
+                                    "item": combo_item_row.item
+                                })
+                        else:
+                            # Try Stitching Size
+                            size_value = None
+                            variant_attrs = frappe.get_all(
+                                "Item Variant Attribute",
+                                filters={"parent": so_item},
+                                fields=["attribute", "attribute_value"]
+                            )
+                            for attr in variant_attrs:
+                                if attr.attribute and attr.attribute.upper() == "SIZE":
+                                    size_value = attr.attribute_value
+                                    break
+                            
+                            if size_value:
+                                stitching_size = frappe.db.get_value("Stitching Size", size_value, "name")
+                                if stitching_size:
+                                    stitching_size_doc = frappe.get_doc("Stitching Size", stitching_size)
+                                    if stitching_size_doc.combo_detail and len(stitching_size_doc.combo_detail) > 0:
+                                        print(f"[get_data1] ✓ Found {len(stitching_size_doc.combo_detail)} combo items in Stitching Size for reference")
+                                        for combo_item_row in stitching_size_doc.combo_detail:
+                                            bundle_items_data.append({
+                                                "pcs": combo_item_row.pcs or 1,
+                                                "item": combo_item_row.item
+                                            })
+                        
+                        # Format bundle items as HTML table with detailed cutting and stitching data for each bundle item
+                        if bundle_items_data:
+                            # Create HTML table with detailed information for each bundle item
+                            bundle_items_html = """
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse; margin: 0; font-size: 11px; border: 1px solid #ddd;">
+                                    <thead>
+                                        <tr style="background-color: #f0f0f0;">
+                                            <th style="border: 1px solid #ddd; padding: 6px; text-align: left; font-weight: bold;">Bundle Item</th>
+                                            <th style="border: 1px solid #ddd; padding: 6px; text-align: left; font-weight: bold;">PCS</th>
+                                            <th colspan="6" style="border: 1px solid #ddd; padding: 6px; text-align: center; font-weight: bold; background-color: #e3f2fd;">CUTTING</th>
+                                            <th colspan="6" style="border: 1px solid #ddd; padding: 6px; text-align: center; font-weight: bold; background-color: #fff3e0;">STITCHING</th>
+                                        </tr>
+                                        <tr style="background-color: #f5f5f5;">
+                                            <th style="border: 1px solid #ddd; padding: 4px;"></th>
+                                            <th style="border: 1px solid #ddd; padding: 4px;"></th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #e3f2fd;">Order Qty</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #e3f2fd;">Planned Qty</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #e3f2fd;">PCS</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #e3f2fd;">Qty</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #e3f2fd;">Qty/Ctn</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #e3f2fd;">Finished</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #fff3e0;">Order Qty</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #fff3e0;">Planned Qty</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #fff3e0;">PCS</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #fff3e0;">Qty</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #fff3e0;">Qty/Ctn</th>
+                                            <th style="border: 1px solid #ddd; padding: 4px; background-color: #fff3e0;">Finished</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                            """
+                            
+                            # For each bundle item, fetch cutting and stitching data
+                            for item_data in bundle_items_data:
+                                combo_item_code = item_data['item']
+                                combo_pcs = item_data['pcs']
+                                
+                                # Fetch cutting data for this combo item from Cutting Report CT
+                                cutting_data = frappe.db.sql("""
+                                    SELECT 
+                                        crct.order_qty,
+                                        crct.planned_qty,
+                                        crct.pcs,
+                                        crct.qty,
+                                        crct.qty_ctn
+                                    FROM `tabCutting Report CT` AS crct
+                                    LEFT JOIN `tabCutting Report` AS cr ON crct.parent = cr.name
+                                    WHERE cr.order_sheet = %s 
+                                        AND crct.so_item = %s 
+                                        AND crct.combo_item = %s
+                                    LIMIT 1
+                                """, (self.order_sheet, so_item, combo_item_code), as_dict=True)
+                                
+                                # Fetch finished cutting qty for this combo item
+                                finished_cutting_data = frappe.db.sql("""
+                                    SELECT SUM(crct.cutting_qty) AS finished_cutting_qty
+                                    FROM `tabCutting Report CT` AS crct
+                                    LEFT JOIN `tabCutting Report` AS cr ON crct.parent = cr.name
+                                    WHERE cr.order_sheet = %s 
+                                        AND crct.so_item = %s 
+                                        AND crct.combo_item = %s
+                                        AND cr.docstatus = 1
+                                """, (self.order_sheet, so_item, combo_item_code), as_dict=True)
+                                
+                                cutting_order_qty = cutting_data[0].order_qty if cutting_data and cutting_data[0] and cutting_data[0].order_qty else 0
+                                cutting_planned_qty = cutting_data[0].planned_qty if cutting_data and cutting_data[0] and cutting_data[0].planned_qty else 0
+                                cutting_pcs = cutting_data[0].pcs if cutting_data and cutting_data[0] and cutting_data[0].pcs else combo_pcs
+                                cutting_qty = cutting_data[0].qty if cutting_data and cutting_data[0] and cutting_data[0].qty else 0
+                                cutting_qty_ctn = cutting_data[0].qty_ctn if cutting_data and cutting_data[0] and cutting_data[0].qty_ctn else ""
+                                cutting_finished = finished_cutting_data[0].finished_cutting_qty if finished_cutting_data and finished_cutting_data[0] and finished_cutting_data[0].finished_cutting_qty else 0
+                                
+                                # Fetch stitching data for this combo item from Stitching Report CT
+                                stitching_data = frappe.db.sql("""
+                                    SELECT 
+                                        srct.order_qty,
+                                        srct.planned_qty,
+                                        srct.pcs,
+                                        srct.qty,
+                                        srct.qty_ctn
+                                    FROM `tabStitching Report CT` AS srct
+                                    LEFT JOIN `tabStitching Report` AS sr ON srct.parent = sr.name
+                                    WHERE sr.order_sheet = %s 
+                                        AND srct.so_item = %s 
+                                        AND srct.combo_item = %s
+                                    LIMIT 1
+                                """, (self.order_sheet, so_item, combo_item_code), as_dict=True)
+                                
+                                # Fetch finished stitching qty for this combo item
+                                finished_stitching_data = frappe.db.sql("""
+                                    SELECT SUM(srct.stitching_qty) AS finished_stitching_qty
+                                    FROM `tabStitching Report CT` AS srct
+                                    LEFT JOIN `tabStitching Report` AS sr ON srct.parent = sr.name
+                                    WHERE sr.order_sheet = %s 
+                                        AND srct.so_item = %s 
+                                        AND srct.combo_item = %s
+                                        AND sr.docstatus = 1
+                                """, (self.order_sheet, so_item, combo_item_code), as_dict=True)
+                                
+                                stitching_order_qty = stitching_data[0].order_qty if stitching_data and stitching_data[0] and stitching_data[0].order_qty else 0
+                                stitching_planned_qty = stitching_data[0].planned_qty if stitching_data and stitching_data[0] and stitching_data[0].planned_qty else 0
+                                stitching_pcs = stitching_data[0].pcs if stitching_data and stitching_data[0] and stitching_data[0].pcs else combo_pcs
+                                stitching_qty = stitching_data[0].qty if stitching_data and stitching_data[0] and stitching_data[0].qty else 0
+                                stitching_qty_ctn = stitching_data[0].qty_ctn if stitching_data and stitching_data[0] and stitching_data[0].qty_ctn else ""
+                                stitching_finished = finished_stitching_data[0].finished_stitching_qty if finished_stitching_data and finished_stitching_data[0] and finished_stitching_data[0].finished_stitching_qty else 0
+                                
+                                bundle_items_html += f"""
+                                        <tr>
+                                            <td style="border: 1px solid #ddd; padding: 6px; font-weight: bold;">{combo_item_code}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px;">{combo_pcs}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #e3f2fd;">{cutting_order_qty}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #e3f2fd;">{cutting_planned_qty}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #e3f2fd;">{cutting_pcs}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #e3f2fd;">{cutting_qty}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #e3f2fd;">{cutting_qty_ctn}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #e3f2fd;">{cutting_finished}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #fff3e0;">{stitching_order_qty}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #fff3e0;">{stitching_planned_qty}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #fff3e0;">{stitching_pcs}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #fff3e0;">{stitching_qty}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #fff3e0;">{stitching_qty_ctn}</td>
+                                            <td style="border: 1px solid #ddd; padding: 6px; background-color: #fff3e0;">{stitching_finished}</td>
+                                        </tr>
+                                """
+                            
+                            bundle_items_html += """
+                                    </tbody>
+                                </table>
+                            </div>
+                            """
+                            bundle_items_text = bundle_items_html.strip()
+                        else:
+                            bundle_items_text = None
+                        
+                        # Plain text version for print logs
+                        bundle_items_log = ', '.join([f"{item['pcs']}x {item['item']}" for item in bundle_items_data]) if bundle_items_data else None
+                        
+                        print(f"\n{'='*60}")
+                        print(f"[get_data1] ADDING FINISHED ITEM TO PACKING REPORT:")
+                        print(f"{'='*60}")
+                        print(f"  Finished Item: {so_item}")
+                        print(f"  Bundle Items: {bundle_items_log or 'None'}")
+                        print(f"  Order Qty: {order_qty}")
+                        print(f"  Planned Qty: {planned_qty}")
+                        print(f"  Qty: {planned_qty} (same as planned_qty for finished item)")
+                        print(f"{'='*60}")
+                        
+                        new_row = self.append("packing_report_ct", {
                         "customer": r.get("customer"),
                         "design": r.get("design"),
                         "colour": r.get("colour"),
@@ -32,13 +277,67 @@ class PackingReport(Document):
                         "qty_ctn": r.get("qty_ctn"),
                         "article": r.get("stitching_article_no"),
                         "ean": r.get("ean"),
-                        "qty": r.get("planned_qty") or 0,
-                        "so_item": r.get("so_item"),
-                        "combo_item": r.get("combo_item"),
-                    })
-                    self.save()
+                            "order_qty": order_qty,  # Original order_qty from Order Sheet CT
+                            "pcs": 1,  # For finished item, PCS = 1 (it's already a complete unit)
+                            "qty": planned_qty,  # For finished item, qty = planned_qty (not multiplied)
+                            "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                            "so_item": so_item,  # Finished item
+                            "combo_item": None,  # No combo_item for finished item in packing
+                            "bundle_items": bundle_items_text,  # Bundle/combo items breakdown (HTML formatted)
+                        })
+                        
+                        # Verify bundle_items was set
+                        print(f"[get_data1] ✓ Finished item added successfully!")
+                        print(f"[get_data1] Verifying bundle_items in row:")
+                        print(f"  - bundle_items set: {new_row.bundle_items is not None}")
+                        print(f"  - bundle_items length: {len(new_row.bundle_items) if new_row.bundle_items else 0}")
+                        print(f"  - bundle_items preview: {new_row.bundle_items[:100] if new_row.bundle_items else 'None'}...")
+                        print(f"{'='*60}\n")
+                    except Exception as e:
+                        error_msg = f"Error processing item {so_item}: {str(e)}"
+                        print(f"[get_data1] Row {idx+1}: ✗ ERROR: {error_msg}")
+                        frappe.log_error(error_msg, "Packing Report Item Processing")
+                        continue
+                
+                print(f"\n{'='*60}")
+                print(f"[get_data1] SUMMARY:")
+                print(f"  - Total rows added to packing_report_ct: {len(self.packing_report_ct)}")
+                print(f"[get_data1] Final packing_report_ct data:")
+                for idx, row in enumerate(self.packing_report_ct):
+                    print(f"  Row {idx+1}:")
+                    print(f"    - so_item: {row.so_item}")
+                    print(f"    - combo_item: {row.combo_item}")
+                    print(f"    - bundle_items: {row.bundle_items}")
+                    print(f"    - order_qty: {row.order_qty}")
+                    print(f"    - planned_qty: {row.planned_qty}")
+                    print(f"    - pcs: {row.pcs}")
+                    print(f"    - qty: {row.qty}")
+                print(f"{'='*60}")
+                print(f"[get_data1] Saving Packing Report...")
+                
+                # Set flag to ignore link validation (allow cancelled Order Sheets)
+                self.flags.ignore_links = True
+                
+                try:
+                    self.save(ignore_permissions=True)
+                    frappe.db.commit()
+                    print(f"[get_data1] ✓ Saved successfully")
+                except Exception as e:
+                    print(f"[get_data1] ERROR saving: {str(e)}")
+                    frappe.db.rollback()
+                    raise
+                
+                print(f"{'='*60}\n")
+            else:
+                print(f"[get_data1] Order Sheet is_or = 1, skipping (only process when is_or = 0)")
+                print(f"{'='*60}\n")
+        else:
+            print(f"[get_data1] packing_report_ct already has {existing_rows} rows, skipping fetch")
+            print(f"{'='*60}\n")
 
     def validate(self):
+        self.calculate_finished_cutting_qty()
+        self.calculate_finished_stitching_qty()
         self.calculate_finished_quality_qty()
         self.calculate_finished_packaging_qty()
         self.packing_condition()
@@ -47,8 +346,92 @@ class PackingReport(Document):
         self.total()
     
     def before_save(self):
+        self.calculate_finished_cutting_qty()
+        self.calculate_finished_stitching_qty()
         self.calculate_finished_quality_qty()
         self.calculate_finished_packaging_qty()
+
+    def calculate_finished_cutting_qty(self):
+        """Get finished cutting qty from Cutting Reports"""
+        try:
+            cutting_totals = {}
+            for row in self.packing_report_ct:
+                if not row.so_item:
+                    continue
+                
+                if row.combo_item:
+                    # If combo_item is set, get cutting qty for that specific combo item
+                    query = """
+                        SELECT SUM(crct.cutting_qty) AS total_cutting
+                        FROM `tabCutting Report CT` AS crct 
+                        LEFT JOIN `tabCutting Report` AS cr 
+                        ON crct.parent = cr.name
+                        WHERE cr.order_sheet = %s AND crct.so_item = %s AND crct.combo_item = %s AND cr.docstatus = 1
+                        GROUP BY crct.so_item, crct.combo_item
+                    """
+                    params = (self.order_sheet, row.so_item, row.combo_item)
+                else:
+                    # If combo_item is None (finished item), sum up ALL combo items for this finished item
+                    # In Cutting/Stitching Reports, combo_item is always set, so we sum all of them
+                    query = """
+                        SELECT SUM(crct.cutting_qty) AS total_cutting
+                        FROM `tabCutting Report CT` AS crct 
+                        LEFT JOIN `tabCutting Report` AS cr 
+                        ON crct.parent = cr.name
+                        WHERE cr.order_sheet = %s AND crct.so_item = %s AND cr.docstatus = 1
+                        GROUP BY crct.so_item
+                    """
+                    params = (self.order_sheet, row.so_item)
+
+                result = frappe.db.sql(query, params, as_dict=True)
+                cutting_totals[(row.so_item, row.combo_item or '')] = result[0].total_cutting if result else 0
+
+            for row in self.packing_report_ct:
+                row.finished_cutting_qty = cutting_totals.get((row.so_item, row.combo_item or ''), 0)
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Finished Cutting Quantity Fetch Failed")
+
+    def calculate_finished_stitching_qty(self):
+        """Get finished stitching qty from Stitching Reports"""
+        try:
+            stitching_totals = {}
+            for row in self.packing_report_ct:
+                if not row.so_item:
+                    continue
+                
+                if row.combo_item:
+                    # If combo_item is set, get stitching qty for that specific combo item
+                    query = """
+                        SELECT SUM(srct.stitching_qty) AS total_stitching
+                        FROM `tabStitching Report CT` AS srct 
+                        LEFT JOIN `tabStitching Report` AS sr 
+                        ON srct.parent = sr.name
+                        WHERE sr.order_sheet = %s AND srct.so_item = %s AND srct.combo_item = %s AND sr.docstatus = 1
+                        GROUP BY srct.so_item, srct.combo_item
+                    """
+                    params = (self.order_sheet, row.so_item, row.combo_item)
+                else:
+                    # If combo_item is None (finished item), sum up ALL combo items for this finished item
+                    # In Cutting/Stitching Reports, combo_item is always set, so we sum all of them
+                    query = """
+                        SELECT SUM(srct.stitching_qty) AS total_stitching
+                        FROM `tabStitching Report CT` AS srct 
+                        LEFT JOIN `tabStitching Report` AS sr 
+                        ON srct.parent = sr.name
+                        WHERE sr.order_sheet = %s AND srct.so_item = %s AND sr.docstatus = 1
+                        GROUP BY srct.so_item
+                    """
+                    params = (self.order_sheet, row.so_item)
+
+                result = frappe.db.sql(query, params, as_dict=True)
+                stitching_totals[(row.so_item, row.combo_item or '')] = result[0].total_stitching if result else 0
+
+            for row in self.packing_report_ct:
+                row.finished_stitching_qty = stitching_totals.get((row.so_item, row.combo_item or ''), 0)
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Finished Stitching Quantity Fetch Failed")
 
     def calculate_finished_quality_qty(self):
         """Get finished quality qty from Quality Reports"""
@@ -97,6 +480,32 @@ class PackingReport(Document):
                 if not row.so_item:
                     continue
                 
+                # Exclude current document from calculation
+                current_doc_filter = ""
+                if self.name:
+                    current_doc_filter = "AND pr.name != %s"
+                    if row.combo_item:
+                        query = """
+                            SELECT SUM(prct.packaging_qty) AS total_packaging
+                            FROM `tabPacking Report CT` AS prct 
+                            LEFT JOIN `tabPacking Report` AS pr 
+                            ON prct.parent = pr.name
+                            WHERE pr.order_sheet = %s AND prct.so_item = %s AND prct.combo_item = %s AND pr.docstatus = 1 {current_doc_filter}
+                            GROUP BY prct.so_item, prct.combo_item
+                        """.format(current_doc_filter=current_doc_filter)
+                        params = (self.order_sheet, row.so_item, row.combo_item, self.name)
+                    else:
+                        query = """
+                            SELECT SUM(prct.packaging_qty) AS total_packaging
+                            FROM `tabPacking Report CT` AS prct 
+                            LEFT JOIN `tabPacking Report` AS pr 
+                            ON prct.parent = pr.name
+                            WHERE pr.order_sheet = %s AND prct.so_item = %s AND (prct.combo_item IS NULL OR prct.combo_item = '') AND pr.docstatus = 1 {current_doc_filter}
+                            GROUP BY prct.so_item
+                        """.format(current_doc_filter=current_doc_filter)
+                        params = (self.order_sheet, row.so_item, self.name)
+                else:
+                    # New document, no need to exclude
                 if row.combo_item:
                     query = """
                         SELECT SUM(prct.packaging_qty) AS total_packaging
@@ -129,19 +538,37 @@ class PackingReport(Document):
             frappe.throw(f"Error in calculating finished packaging quantity: {str(e)}")
 
     def packing_condition(self):
-        """Validate that packaging qty doesn't exceed quality qty"""
+        """Validate that total packaging qty (finished_packaging_qty + packaging_qty) doesn't exceed stitching qty"""
         if not self.packing_report_ct:
             return
 
-        for i in self.packing_report_ct:
-            packing_qty = i.packaging_qty or 0
-            quality_qty = i.finished_quality_qty or 0
+        # First ensure finished_stitching_qty and finished_packaging_qty are calculated
+        self.calculate_finished_stitching_qty()
+        self.calculate_finished_packaging_qty()
 
-            if packing_qty > quality_qty:
-                frappe.msgprint(
-                    f"⚠️ Warning: Packing Qty ({packing_qty}) cannot be greater than Finished Quality Qty ({quality_qty}) for row {i.idx}.", 
-                    indicator='orange', 
-                    title="Warning"
+        for i in self.packing_report_ct:
+            current_packaging_qty = i.packaging_qty or 0
+            finished_packaging_qty = i.finished_packaging_qty or 0
+            stitching_qty = i.finished_stitching_qty or 0
+            
+            # Total packaging = already packaged (from other documents) + current packaging qty
+            total_packaging = finished_packaging_qty + current_packaging_qty
+
+            # Only validate if stitching_qty > 0 (if stitching_qty is 0, allow any packaging qty)
+            if stitching_qty > 0:
+                # Check if total packaging (already packaged + current) exceeds stitching qty
+                if total_packaging > stitching_qty:
+                    frappe.throw(
+                        _("Total Packing Qty ({0} = Finished Packing Qty {1} + Current Packing Qty {2}) cannot be greater than Finished Stitching Qty ({3}) for row {4} (Item: {5}, Combo Item: {6}). Please reduce the Packing Qty.").format(
+                            total_packaging,
+                            finished_packaging_qty,
+                            current_packaging_qty,
+                            stitching_qty,
+                            i.idx,
+                            i.so_item or "N/A",
+                            i.combo_item or "N/A"
+                        ),
+                        title=_("Validation Error")
                 )
 
     def total_qty(self):
@@ -188,4 +615,3 @@ class PackingReport(Document):
         for i in self.packing_report_ct:
             total_qty += i.qty or 0
             self.ordered_qty = total_qty
-

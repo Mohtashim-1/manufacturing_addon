@@ -120,7 +120,8 @@ doctype_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Production Plan": "manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan.ProductionPlan"
+	"Production Plan": "manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan.ProductionPlan",
+	"Purchase Order": "manufacturing_addon.manufacturing_addon.doctype.purchase_order.purchase_order.PurchaseOrder"
 }
 
 # Document Events

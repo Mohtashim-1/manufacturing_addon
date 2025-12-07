@@ -615,3 +615,180 @@ class PackingReport(Document):
         for i in self.packing_report_ct:
             total_qty += i.qty or 0
             self.ordered_qty = total_qty
+
+    def on_submit(self):
+        """Create Stock Entry for Manufacture when Packing Report is submitted"""
+        try:
+            print(f"\n{'='*60}")
+            print(f"[on_submit] Creating Stock Entry for Packing Report: '{self.name}'")
+            print(f"{'='*60}")
+            
+            # Fixed warehouses
+            source_warehouse = "Work In Progress - SAH"
+            target_warehouse = "Stores - SAH"
+            
+            print(f"[on_submit] Source Warehouse: {source_warehouse}")
+            print(f"[on_submit] Target Warehouse: {target_warehouse}")
+            
+            # Get company from Order Sheet
+            company = None
+            if self.order_sheet:
+                order_sheet_doc = frappe.get_doc("Order Sheet", self.order_sheet)
+                company = order_sheet_doc.get("company")
+                if not company:
+                    # Try to get from Sales Order (Order Sheet has sales_order field directly)
+                    if order_sheet_doc.get("sales_order"):
+                        company = frappe.db.get_value("Sales Order", order_sheet_doc.sales_order, "company")
+            
+            if not company:
+                frappe.throw(_("Company not found. Please ensure Order Sheet has a company set."))
+            
+            print(f"[on_submit] Company: {company}")
+            
+            # Process each packing report row
+            stock_entries_created = []
+            
+            for row in self.packing_report_ct:
+                if not row.so_item or not row.packaging_qty or row.packaging_qty <= 0:
+                    continue
+                
+                finished_item = row.so_item
+                packaging_qty = row.packaging_qty
+                
+                print(f"\n[on_submit] Processing row: Finished Item = {finished_item}, Packaging Qty = {packaging_qty}")
+                
+                # Get BOM for finished item
+                bom_no = frappe.db.get_value("BOM", {"item": finished_item, "is_active": 1, "is_default": 1}, "name")
+                
+                if not bom_no:
+                    # Try to get any active BOM for this item
+                    bom_no = frappe.db.get_value("BOM", {"item": finished_item, "is_active": 1}, "name", order_by="is_default desc, creation desc")
+                
+                if not bom_no:
+                    frappe.throw(_("BOM not found for item {0}. Please create a BOM for this item.").format(finished_item))
+                
+                # Verify BOM item matches finished item
+                bom_item = frappe.db.get_value("BOM", bom_no, "item")
+                if bom_item != finished_item:
+                    frappe.throw(_("BOM {0} is for item {1}, but finished item is {2}. Please use the correct BOM.").format(bom_no, bom_item, finished_item))
+                
+                print(f"[on_submit] BOM: {bom_no}, BOM Item: {bom_item}, Finished Item: {finished_item}")
+                
+                # Create Stock Entry
+                stock_entry = frappe.new_doc("Stock Entry")
+                stock_entry.stock_entry_type = "Manufacture"
+                stock_entry.company = company
+                stock_entry.posting_date = self.date or frappe.utils.nowdate()
+                stock_entry.posting_time = self.time or frappe.utils.nowtime()
+                stock_entry.bom_no = bom_no
+                stock_entry.fg_completed_qty = packaging_qty
+                stock_entry.from_warehouse = source_warehouse
+                stock_entry.to_warehouse = target_warehouse
+                
+                # Set custom field if it exists
+                if hasattr(stock_entry, 'custom_packing_report'):
+                    stock_entry.custom_packing_report = self.name
+                
+                # Call get_items to populate items from BOM
+                print(f"[on_submit] Calling get_items() to populate items from BOM...")
+                stock_entry.get_items()
+                
+                if not stock_entry.items:
+                    frappe.throw(_("No items found from BOM {0}. Please check the BOM.").format(bom_no))
+                
+                print(f"[on_submit] Items populated: {len(stock_entry.items)} items")
+                
+                # Set custom_packing_report field for all items
+                for item in stock_entry.items:
+                    if hasattr(item, 'custom_packing_report'):
+                        item.custom_packing_report = self.name
+                        print(f"[on_submit] Set custom_packing_report for {item.item_code}: {self.name}")
+                
+                # Calculate valuation rates for consumed items from source warehouse
+                for item in stock_entry.items:
+                    if item.s_warehouse and not item.is_finished_item:
+                        # Get valuation rate from stock ledger for consumed items
+                        valuation_rate = frappe.db.get_value(
+                            "Stock Ledger Entry",
+                            filters={
+                                "item_code": item.item_code,
+                                "warehouse": item.s_warehouse
+                            },
+                            fieldname="valuation_rate",
+                            order_by="posting_date desc, posting_time desc, creation desc",
+                            as_dict=False
+                        )
+                        
+                        if valuation_rate:
+                            item.basic_rate = valuation_rate
+                            item.valuation_rate = valuation_rate
+                            print(f"[on_submit] Set valuation rate for {item.item_code}: {valuation_rate}")
+                        else:
+                            # If no valuation rate found, try to get from Bin
+                            bin_data = frappe.db.get_value(
+                                "Bin",
+                                filters={"item_code": item.item_code, "warehouse": item.s_warehouse},
+                                fieldname=["valuation_rate", "stock_value", "actual_qty"],
+                                as_dict=True
+                            )
+                            if bin_data and bin_data.actual_qty > 0:
+                                calculated_rate = bin_data.stock_value / bin_data.actual_qty
+                                item.basic_rate = calculated_rate
+                                item.valuation_rate = calculated_rate
+                                print(f"[on_submit] Calculated valuation rate for {item.item_code} from Bin: {calculated_rate}")
+                
+                # Ensure finished good is added (get_items should add it, but let's verify and add if missing)
+                finished_item_found = False
+                for item in stock_entry.items:
+                    if item.item_code == finished_item and (item.is_finished_item or item.t_warehouse):
+                        finished_item_found = True
+                        break
+                
+                if not finished_item_found:
+                    # Add finished good manually
+                    item_uom = frappe.db.get_value("Item", finished_item, "stock_uom") or "Nos"
+                    finished_item_row = stock_entry.append("items", {
+                        "item_code": finished_item,
+                        "qty": packaging_qty,
+                        "t_warehouse": target_warehouse,
+                        "uom": item_uom,
+                        "is_finished_item": 1
+                    })
+                    # Set custom_packing_report for manually added finished good
+                    if hasattr(finished_item_row, 'custom_packing_report'):
+                        finished_item_row.custom_packing_report = self.name
+                    print(f"[on_submit] Added finished good manually: {finished_item} = {packaging_qty} {item_uom}")
+                
+                # Save and submit Stock Entry
+                stock_entry.insert(ignore_permissions=True)
+                # stock_entry.submit()
+                
+                stock_entries_created.append(stock_entry.name)
+                print(f"[on_submit] ✓ Stock Entry '{stock_entry.name}' created and submitted successfully")
+            
+            if not stock_entries_created:
+                frappe.throw(_("No items to process. Please ensure packaging quantities are entered."))
+            
+            print(f"{'='*60}\n")
+            
+            # Show success message
+            if len(stock_entries_created) == 1:
+                frappe.msgprint(
+                    _("Stock Entry {0} created and submitted successfully.").format(
+                        frappe.bold(stock_entries_created[0])
+                    ),
+                    alert=True
+                )
+            else:
+                frappe.msgprint(
+                    _("Stock Entries {0} created and submitted successfully.").format(
+                        ", ".join([frappe.bold(se) for se in stock_entries_created])
+                    ),
+                    alert=True
+                )
+            
+        except Exception as e:
+            error_msg = f"Error creating Stock Entry: {str(e)}"
+            print(f"[on_submit] ✗ ERROR: {error_msg}")
+            frappe.log_error(frappe.get_traceback(), "Packing Report Stock Entry Creation Failed")
+            frappe.throw(_(error_msg))

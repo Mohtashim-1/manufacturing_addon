@@ -21,7 +21,7 @@ class StitchingReport(Document):
         if isinstance(self.order_sheet, str) and self.order_sheet:
             try:
                 # Use ignore_links to load cancelled Order Sheets
-                doc = frappe.get_doc("Order Sheet", self.order_sheet)
+            doc = frappe.get_doc("Order Sheet", self.order_sheet)
                 print(f"[get_data1] Loaded Order Sheet: '{doc.name}'")
                 print(f"[get_data1] Order Sheet is_or: {doc.is_or}")
                 print(f"[get_data1] Order Sheet docstatus: {doc.docstatus}")
@@ -226,14 +226,14 @@ class StitchingReport(Document):
                                             print(f"  - qty_ctn: {r.get('qty_ctn')} (from Order Sheet CT)")
                                             print(f"{'='*60}")
                                             
-                                            self.append("stitching_report_ct", {
-                                                "customer": r.get("customer"),
-                                                "design": r.get("design"),
-                                                "colour": r.get("colour"),
-                                                "finished_size": r.get("size"),
-                                                "qty_ctn": r.get("qty_ctn"),
-                                                "article": r.get("stitching_article_no"),
-                                                "ean": r.get("ean"),
+                    self.append("stitching_report_ct", {
+                        "customer": r.get("customer"),
+                        "design": r.get("design"),
+                        "colour": r.get("colour"),
+                        "finished_size": r.get("size"),
+                        "qty_ctn": r.get("qty_ctn"),
+                        "article": r.get("stitching_article_no"),
+                        "ean": r.get("ean"),
                                                 "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                                 "pcs": combo_pcs,
                                                 "qty": calculated_qty,  # planned_qty * pcs
@@ -375,26 +375,26 @@ class StitchingReport(Document):
                         params = (self.order_sheet, row.so_item, self.name)
                 else:
                     # New document, no need to exclude
-                    if row.combo_item:
-                        query = """
-                            SELECT SUM(srct.stitching_qty) AS total_stitching
-                            FROM `tabStitching Report CT` AS srct 
-                            LEFT JOIN `tabStitching Report` AS sr 
-                            ON srct.parent = sr.name
-                            WHERE sr.order_sheet = %s AND srct.so_item = %s AND srct.combo_item = %s AND sr.docstatus = 1
-                            GROUP BY srct.so_item, srct.combo_item
-                        """
-                        params = (self.order_sheet, row.so_item, row.combo_item)
-                    else:
-                        query = """
-                            SELECT SUM(srct.stitching_qty) AS total_stitching
-                            FROM `tabStitching Report CT` AS srct 
-                            LEFT JOIN `tabStitching Report` AS sr 
-                            ON srct.parent = sr.name
-                            WHERE sr.order_sheet = %s AND srct.so_item = %s AND (srct.combo_item IS NULL OR srct.combo_item = '') AND sr.docstatus = 1
-                            GROUP BY srct.so_item
-                        """
-                        params = (self.order_sheet, row.so_item)
+                if row.combo_item:
+                    query = """
+                        SELECT SUM(srct.stitching_qty) AS total_stitching
+                        FROM `tabStitching Report CT` AS srct 
+                        LEFT JOIN `tabStitching Report` AS sr 
+                        ON srct.parent = sr.name
+                        WHERE sr.order_sheet = %s AND srct.so_item = %s AND srct.combo_item = %s AND sr.docstatus = 1
+                        GROUP BY srct.so_item, srct.combo_item
+                    """
+                    params = (self.order_sheet, row.so_item, row.combo_item)
+                else:
+                    query = """
+                        SELECT SUM(srct.stitching_qty) AS total_stitching
+                        FROM `tabStitching Report CT` AS srct 
+                        LEFT JOIN `tabStitching Report` AS sr 
+                        ON srct.parent = sr.name
+                        WHERE sr.order_sheet = %s AND srct.so_item = %s AND (srct.combo_item IS NULL OR srct.combo_item = '') AND sr.docstatus = 1
+                        GROUP BY srct.so_item
+                    """
+                    params = (self.order_sheet, row.so_item)
 
                 result = frappe.db.sql(query, params, as_dict=True)
                 stitching_totals[(row.so_item, row.combo_item or '')] = result[0].total_stitching if result else 0

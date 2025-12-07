@@ -19,6 +19,7 @@ def get_data(data=None):
 		"Raw Material Issuance": ["items", "custom_raw_material_transfer_issuance"],
 		"Machine Parts Issuance": ["items", "custom_machine_parts_issuance"],
 		"General Item Issuance": ["items", "custom_general_item_issuance"],
+		"Packing Report": ["items", "custom_packing_report"],
 	})
 	
 	# Add to transactions (Reference section)
@@ -45,6 +46,8 @@ def get_data(data=None):
 		reference_group["items"].append("Machine Parts Issuance")
 	if "General Item Issuance" not in reference_group["items"]:
 		reference_group["items"].append("General Item Issuance")
+	if "Packing Report" not in reference_group["items"]:
+		reference_group["items"].append("Packing Report")
 
 	
 	return data

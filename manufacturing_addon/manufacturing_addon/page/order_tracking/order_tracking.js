@@ -472,10 +472,10 @@ function renderDetailedTable(details) {
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(row.stitching_finished || 0)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-warning text-white'}">${stitchingStatus}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${formatNumber(row.packing_qty || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${formatNumber(row.packing_finished || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${formatPercentage(packingPercent)}%</td>
-				<td class="text-center ${isBundleItem ? '' : 'bg-success text-white'}">${packingStatus}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatNumber(row.packing_qty || 0)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatNumber(row.packing_finished || 0)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatPercentage(packingPercent) + '%'}</td>
+				<td class="text-center ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : packingStatus}</td>
 			</tr>
 		`);
 		tbody.append(tr);

@@ -119,27 +119,45 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		packing_data = {}
 		
 		if packing_report_names:
+			print(f"\n{'='*80}")
+			print(f"[Order Tracking] Fetching Packing Report data...")
+			print(f"  - Packing Report Names: {packing_report_names}")
+			print(f"  - Order Sheet Names: {order_sheet_names}")
+			print(f"{'='*80}\n")
+			
+			# Packing is done at finished item level, so we need to SUM all quantities
+			# for a given order_sheet + so_item, regardless of combo_item
 			packing_report_ct = frappe.db.sql("""
 				SELECT 
 					pr.order_sheet,
 					prct.so_item,
-					prct.combo_item,
 					SUM(prct.packaging_qty) as finished_qty,
 					SUM(prct.planned_qty) as planned_qty
 				FROM `tabPacking Report CT` prct
 				LEFT JOIN `tabPacking Report` pr ON prct.parent = pr.name
 				WHERE pr.order_sheet IN %s AND pr.docstatus = 1
-				GROUP BY pr.order_sheet, prct.so_item, prct.combo_item
+				GROUP BY pr.order_sheet, prct.so_item
 			""", (order_sheet_names,), as_dict=True)
 			
+			print(f"[Order Tracking] Packing Report CT Query Results (Aggregated by finished item):")
+			print(f"  - Total rows: {len(packing_report_ct)}")
+			for idx, row in enumerate(packing_report_ct, 1):
+				print(f"  - Row {idx}: order_sheet='{row.order_sheet}', so_item='{row.so_item}', finished_qty={row.finished_qty}, planned_qty={row.planned_qty}")
+			
 			for row in packing_report_ct:
-				key = f"{row.order_sheet}||{row.so_item}||{row.combo_item or ''}"
+				# For packing, we aggregate all bundle items into finished item
+				# So combo_item is always empty string
+				key = f"{row.order_sheet}||{row.so_item}||"
 				# Use finished_qty as the actual qty (what was actually packed)
 				packing_data[key] = {
-					"qty": row.finished_qty or 0,  # Actual packaging_qty from reports
+					"qty": row.finished_qty or 0,  # Actual packaging_qty from reports (sum of all bundle items)
 					"finished": row.finished_qty or 0,  # Same as qty (what was packed)
-					"planned": row.planned_qty or 0
+					"planned": row.planned_qty or 0  # Planned qty (sum of all bundle items)
 				}
+				print(f"  - Stored packing_data['{key}'] = {packing_data[key]}")
+			
+			print(f"\n[Order Tracking] Final packing_data keys: {list(packing_data.keys())}")
+			print(f"{'='*80}\n")
 		
 		# Build details array with bundle items breakdown
 		details = []
@@ -201,10 +219,37 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				})
 			
 			# Add finished item row (parent row)
+			# For cutting and stitching, finished items don't have data (only bundle items do)
+			# For packing, finished items DO have data (packing is done at finished item level)
 			finished_key = f"{order_sheet}||{so_item}||"
+			
+			print(f"\n{'='*80}")
+			print(f"[Order Tracking] Processing finished item row:")
+			print(f"  - Order Sheet: {order_sheet}")
+			print(f"  - SO Item: {so_item}")
+			print(f"  - Finished Key: '{finished_key}'")
+			print(f"  - Available packing_data keys: {list(packing_data.keys())}")
+			
 			cutting_info_finished = cutting_data.get(finished_key, {"qty": 0, "finished": 0, "planned": 0})
 			stitching_info_finished = stitching_data.get(finished_key, {"qty": 0, "finished": 0, "planned": 0})
+			# Packing is done at finished item level, so combo_item is always empty
 			packing_info_finished = packing_data.get(finished_key, {"qty": 0, "finished": 0, "planned": 0})
+			
+			print(f"  - Cutting Info: {cutting_info_finished}")
+			print(f"  - Stitching Info: {stitching_info_finished}")
+			print(f"  - Packing Info: {packing_info_finished}")
+			
+			# Try alternative keys if main key doesn't match
+			if packing_info_finished["qty"] == 0 and packing_info_finished["finished"] == 0:
+				print(f"  - ⚠️ Packing data not found with key '{finished_key}', trying alternatives...")
+				for alt_key in packing_data.keys():
+					if order_sheet in alt_key and so_item in alt_key:
+						print(f"  - Found matching key: '{alt_key}' -> {packing_data[alt_key]}")
+						packing_info_finished = packing_data[alt_key]
+						break
+			
+			print(f"  - Final Packing Info: {packing_info_finished}")
+			print(f"{'='*80}\n")
 			
 			# Calculate total PCS
 			total_pcs = sum([bi["pcs"] for bi in bundle_items])
@@ -239,7 +284,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				bundle_key = f"{order_sheet}||{so_item}||{combo_item_code}"
 				cutting_info = cutting_data.get(bundle_key, {"qty": 0, "finished": 0, "planned": 0})
 				stitching_info = stitching_data.get(bundle_key, {"qty": 0, "finished": 0, "planned": 0})
-				packing_info = packing_data.get(bundle_key, {"qty": 0, "finished": 0, "planned": 0})
+				# Packing is done at finished item level, not bundle item level
+				# So bundle items don't have packing data
 				
 				details.append({
 					"order_sheet": order_sheet,
@@ -256,19 +302,22 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 					"stitching_qty": stitching_info["qty"],
 					"stitching_finished": stitching_info["finished"],
 					"stitching_planned": stitching_info["planned"],
-					"packing_qty": packing_info["qty"],
-					"packing_finished": packing_info["finished"],
-					"packing_planned": packing_info["planned"],
+					"packing_qty": 0,  # Packing is not done at bundle item level
+					"packing_finished": 0,  # Packing is not done at bundle item level
+					"packing_planned": 0,  # Packing is not done at bundle item level
 					"is_parent": False
 				})
 				
-				# Add bundle item totals (these are the actual quantities from reports)
+				# Add bundle item totals for cutting and stitching only
+				# Packing totals will come from finished item
 				total_cutting_planned += cutting_info["planned"]
 				total_cutting_finished += cutting_info["finished"]
 				total_stitching_planned += stitching_info["planned"]
 				total_stitching_finished += stitching_info["finished"]
-				total_packing_planned += packing_info["planned"]
-				total_packing_finished += packing_info["finished"]
+			
+			# Add packing totals from finished item (packing is done at finished item level)
+			total_packing_planned += packing_info_finished["planned"]
+			total_packing_finished += packing_info_finished["finished"]
 			
 			# Add order_qty (only once per finished item)
 			total_order_qty += row.order_qty or 0

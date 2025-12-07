@@ -21,7 +21,7 @@ class PackingReport(Document):
         if isinstance(self.order_sheet, str) and self.order_sheet:
             try:
                 # Use ignore_links to load cancelled Order Sheets
-            doc = frappe.get_doc("Order Sheet", self.order_sheet)
+                doc = frappe.get_doc("Order Sheet", self.order_sheet)
                 print(f"[get_data1] Loaded Order Sheet: '{doc.name}'")
                 print(f"[get_data1] Order Sheet is_or: {doc.is_or}")
                 print(f"[get_data1] Order Sheet docstatus: {doc.docstatus}")
@@ -506,26 +506,26 @@ class PackingReport(Document):
                         params = (self.order_sheet, row.so_item, self.name)
                 else:
                     # New document, no need to exclude
-                if row.combo_item:
-                    query = """
-                        SELECT SUM(prct.packaging_qty) AS total_packaging
-                        FROM `tabPacking Report CT` AS prct 
-                        LEFT JOIN `tabPacking Report` AS pr 
-                        ON prct.parent = pr.name
-                        WHERE pr.order_sheet = %s AND prct.so_item = %s AND prct.combo_item = %s AND pr.docstatus = 1
-                        GROUP BY prct.so_item, prct.combo_item
-                    """
-                    params = (self.order_sheet, row.so_item, row.combo_item)
-                else:
-                    query = """
-                        SELECT SUM(prct.packaging_qty) AS total_packaging
-                        FROM `tabPacking Report CT` AS prct 
-                        LEFT JOIN `tabPacking Report` AS pr 
-                        ON prct.parent = pr.name
-                        WHERE pr.order_sheet = %s AND prct.so_item = %s AND (prct.combo_item IS NULL OR prct.combo_item = '') AND pr.docstatus = 1
-                        GROUP BY prct.so_item
-                    """
-                    params = (self.order_sheet, row.so_item)
+                    if row.combo_item:
+                        query = """
+                            SELECT SUM(prct.packaging_qty) AS total_packaging
+                            FROM `tabPacking Report CT` AS prct 
+                            LEFT JOIN `tabPacking Report` AS pr 
+                            ON prct.parent = pr.name
+                            WHERE pr.order_sheet = %s AND prct.so_item = %s AND prct.combo_item = %s AND pr.docstatus = 1
+                            GROUP BY prct.so_item, prct.combo_item
+                        """
+                        params = (self.order_sheet, row.so_item, row.combo_item)
+                    else:
+                        query = """
+                            SELECT SUM(prct.packaging_qty) AS total_packaging
+                            FROM `tabPacking Report CT` AS prct 
+                            LEFT JOIN `tabPacking Report` AS pr 
+                            ON prct.parent = pr.name
+                            WHERE pr.order_sheet = %s AND prct.so_item = %s AND (prct.combo_item IS NULL OR prct.combo_item = '') AND pr.docstatus = 1
+                            GROUP BY prct.so_item
+                        """
+                        params = (self.order_sheet, row.so_item)
 
                 result = frappe.db.sql(query, params, as_dict=True)
                 packaging_totals[(row.so_item, row.combo_item or '')] = result[0].total_packaging if result else 0

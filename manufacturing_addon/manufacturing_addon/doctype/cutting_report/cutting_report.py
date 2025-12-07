@@ -21,7 +21,7 @@ class CuttingReport(Document):
         if isinstance(self.order_sheet, str) and self.order_sheet:
             try:
                 # Use ignore_links to load cancelled Order Sheets
-            doc = frappe.get_doc("Order Sheet", self.order_sheet)
+                doc = frappe.get_doc("Order Sheet", self.order_sheet)
                 print(f"[get_data1] Loaded Order Sheet: '{doc.name}'")
                 print(f"[get_data1] Order Sheet is_or: {doc.is_or}")
                 print(f"[get_data1] Order Sheet docstatus: {doc.docstatus}")
@@ -95,10 +95,10 @@ class CuttingReport(Document):
                         # First, try to get combo items from Item's custom_product_combo_item
                         if combo_items and len(combo_items) > 0:
                             print(f"[get_data1] ✓ Found {len(combo_items)} combo items in Item")
-                                # Add each combo item to cutting report
-                                for combo_item_row in combo_items:
-                                    combo_item_code = combo_item_row.item
-                                    combo_pcs = combo_item_row.pcs or 1
+                            # Add each combo item to cutting report
+                            for combo_item_row in combo_items:
+                                combo_item_code = combo_item_row.item
+                                combo_pcs = combo_item_row.pcs or 1
                                 calculated_qty = combo_pcs * planned_qty
                                 
                                 print(f"\n{'='*60}")
@@ -185,8 +185,8 @@ class CuttingReport(Document):
                                         for combo_item_row in stitching_size_doc.combo_detail:
                                             combo_item_code = combo_item_row.item
                                             combo_pcs = combo_item_row.pcs or 1
-                                    calculated_qty = combo_pcs * planned_qty
-                                    
+                                            calculated_qty = combo_pcs * planned_qty
+                                            
                                             print(f"\n{'='*60}")
                                             print(f"[get_data1] PROCESSING COMBO ITEM FROM STITCHING SIZE:")
                                             print(f"{'='*60}")
@@ -225,26 +225,26 @@ class CuttingReport(Document):
                                             print(f"  - qty: {calculated_qty} (calculated as: {planned_qty} * {combo_pcs})")
                                             print(f"  - qty_ctn: {r.get('qty_ctn')} (from Order Sheet CT)")
                                             print(f"{'='*60}")
-                                    
-                                    self.append("cutting_report_ct", {
-                                        "customer": r.get("customer"),
-                                        "design": r.get("design"),
-                                        "colour": r.get("colour"),
-                                        "finished_size": r.get("size"),
-                                        "qty_ctn": r.get("qty_ctn"),
-                                        "article": r.get("stitching_article_no"),
-                                        "ean": r.get("ean"),
+                                            
+                                            self.append("cutting_report_ct", {
+                                                "customer": r.get("customer"),
+                                                "design": r.get("design"),
+                                                "colour": r.get("colour"),
+                                                "finished_size": r.get("size"),
+                                                "qty_ctn": r.get("qty_ctn"),
+                                                "article": r.get("stitching_article_no"),
+                                                "ean": r.get("ean"),
                                                 "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                                 "pcs": combo_pcs,
                                                 "qty": calculated_qty,  # planned_qty * pcs
-                                        "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                                                "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
                                                 "so_item": so_item,
                                                 "combo_item": combo_item_code,
                                             })
                                             
                                             print(f"[get_data1] ✓ Row added successfully!")
                                             print(f"{'='*60}\n")
-                                continue
+                                        continue
                             
                             # If no combo items found anywhere, skip
                             print(f"[get_data1] Row {idx+1}: ✗ No combo items found (not in Item or Stitching Size), skipping")

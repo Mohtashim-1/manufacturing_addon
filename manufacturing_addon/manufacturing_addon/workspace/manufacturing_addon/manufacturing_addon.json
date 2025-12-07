@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\":\"IM3VaN_w-W\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Manufacturing Addon</span>\",\"col\":12}},{\"id\":\"a0enumBPU6\",\"type\":\"card\",\"data\":{\"card_name\":\"Master\",\"col\":4}},{\"id\":\"oTz0a8s8VJ\",\"type\":\"card\",\"data\":{\"card_name\":\"Transactions\",\"col\":4}}]",
+ "content": "[{\"id\":\"IM3VaN_w-W\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Manufacturing Addon</span>\",\"col\":12}},{\"id\":\"a0enumBPU6\",\"type\":\"card\",\"data\":{\"card_name\":\"Master\",\"col\":4}},{\"id\":\"oTz0a8s8VJ\",\"type\":\"card\",\"data\":{\"card_name\":\"Transactions\",\"col\":4}},{\"id\":\"z9dMjoWv8E\",\"type\":\"card\",\"data\":{\"card_name\":\"Report\",\"col\":4}}]",
  "creation": "2025-02-12 16:53:03.062250",
  "custom_blocks": [],
  "docstatus": 0,
@@ -140,9 +140,28 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Report",
+   "link_count": 1,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Order Tracking Dashboard",
+   "link_count": 0,
+   "link_to": "order-tracking",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2025-12-05 18:53:01.255401",
+ "modified": "2025-12-07 12:41:56.395087",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Addon",

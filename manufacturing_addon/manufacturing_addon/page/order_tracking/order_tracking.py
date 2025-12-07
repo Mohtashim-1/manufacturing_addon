@@ -53,6 +53,12 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		cutting_data = {}
 		
 		if cutting_report_names:
+			print(f"\n{'='*80}")
+			print(f"[Order Tracking] Fetching Cutting Report data...")
+			print(f"  - Cutting Report Names: {cutting_report_names}")
+			print(f"  - Order Sheet Names: {order_sheet_names}")
+			print(f"{'='*80}\n")
+			
 			cutting_report_ct = frappe.db.sql("""
 				SELECT 
 					cr.order_sheet,
@@ -66,6 +72,11 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				GROUP BY cr.order_sheet, crct.so_item, crct.combo_item
 			""", (order_sheet_names,), as_dict=True)
 			
+			print(f"[Order Tracking] Cutting Report CT Query Results:")
+			print(f"  - Total rows: {len(cutting_report_ct)}")
+			for idx, row in enumerate(cutting_report_ct, 1):
+				print(f"  - Row {idx}: order_sheet='{row.order_sheet}', so_item='{row.so_item}', combo_item='{row.combo_item or ''}', finished_qty={row.finished_qty}, planned_qty={row.planned_qty}")
+			
 			for row in cutting_report_ct:
 				key = f"{row.order_sheet}||{row.so_item}||{row.combo_item or ''}"
 				# Use finished_qty as the actual qty (what was actually cut)
@@ -74,6 +85,10 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 					"finished": row.finished_qty or 0,  # Same as qty (what was cut)
 					"planned": row.planned_qty or 0
 				}
+				print(f"  - Stored cutting_data['{key}'] = {cutting_data[key]}")
+			
+			print(f"\n[Order Tracking] Final cutting_data keys: {list(cutting_data.keys())}")
+			print(f"{'='*80}\n")
 		
 		# Get Stitching Report data
 		stitching_reports = frappe.get_all(
@@ -86,6 +101,12 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		stitching_data = {}
 		
 		if stitching_report_names:
+			print(f"\n{'='*80}")
+			print(f"[Order Tracking] Fetching Stitching Report data...")
+			print(f"  - Stitching Report Names: {stitching_report_names}")
+			print(f"  - Order Sheet Names: {order_sheet_names}")
+			print(f"{'='*80}\n")
+			
 			stitching_report_ct = frappe.db.sql("""
 				SELECT 
 					sr.order_sheet,
@@ -99,6 +120,11 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				GROUP BY sr.order_sheet, srct.so_item, srct.combo_item
 			""", (order_sheet_names,), as_dict=True)
 			
+			print(f"[Order Tracking] Stitching Report CT Query Results:")
+			print(f"  - Total rows: {len(stitching_report_ct)}")
+			for idx, row in enumerate(stitching_report_ct, 1):
+				print(f"  - Row {idx}: order_sheet='{row.order_sheet}', so_item='{row.so_item}', combo_item='{row.combo_item or ''}', finished_qty={row.finished_qty}, planned_qty={row.planned_qty}")
+			
 			for row in stitching_report_ct:
 				key = f"{row.order_sheet}||{row.so_item}||{row.combo_item or ''}"
 				# Use finished_qty as the actual qty (what was actually stitched)
@@ -107,6 +133,10 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 					"finished": row.finished_qty or 0,  # Same as qty (what was stitched)
 					"planned": row.planned_qty or 0
 				}
+				print(f"  - Stored stitching_data['{key}'] = {stitching_data[key]}")
+			
+			print(f"\n[Order Tracking] Final stitching_data keys: {list(stitching_data.keys())}")
+			print(f"{'='*80}\n")
 		
 		# Get Packing Report data
 		packing_reports = frappe.get_all(
@@ -168,6 +198,12 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		total_stitching_finished = 0
 		total_packing_planned = 0
 		total_packing_finished = 0
+		
+		# For PCS-based progress calculation
+		total_cutting_pcs = 0
+		total_cutting_finished_pcs = 0
+		total_stitching_pcs = 0
+		total_stitching_finished_pcs = 0
 		
 		for row in order_sheet_ct:
 			so_item = row.so_item
@@ -276,6 +312,10 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 			})
 			
 			# Add bundle items as child rows
+			# Get Order Sheet planned_qty for this finished item (to use as fallback)
+			order_sheet_planned_qty = row.planned_qty or 0
+			total_pcs = sum([bi["pcs"] for bi in bundle_items])
+			
 			for bundle_item in bundle_items:
 				combo_item_code = bundle_item["item"]
 				bundle_pcs = bundle_item["pcs"]
@@ -284,6 +324,23 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				bundle_key = f"{order_sheet}||{so_item}||{combo_item_code}"
 				cutting_info = cutting_data.get(bundle_key, {"qty": 0, "finished": 0, "planned": 0})
 				stitching_info = stitching_data.get(bundle_key, {"qty": 0, "finished": 0, "planned": 0})
+				
+				# Fix planned_qty: Use Order Sheet planned_qty if report's planned_qty seems wrong
+				# For Cutting: If planned_qty is 0 or seems too high (more than Order Sheet planned_qty), use Order Sheet's planned_qty
+				# The planned_qty should be the same for all bundle items (Order Sheet planned_qty)
+				if cutting_info["planned"] == 0 or cutting_info["planned"] > order_sheet_planned_qty:
+					# Use Order Sheet planned_qty as fallback (all bundle items share the same planned_qty)
+					cutting_info["planned"] = order_sheet_planned_qty
+					print(f"  - ⚠️ Fixed Cutting planned_qty for {combo_item_code}: {cutting_info['planned']} -> {order_sheet_planned_qty} (using Order Sheet planned_qty)")
+				
+				# For Stitching: If planned_qty is 0, use Cutting's planned_qty (they should be the same)
+				if stitching_info["planned"] == 0:
+					if cutting_info["planned"] > 0:
+						stitching_info["planned"] = cutting_info["planned"]
+						print(f"  - ⚠️ Fixed Stitching planned_qty for {combo_item_code}: 0 -> {cutting_info['planned']} (using Cutting planned_qty)")
+					elif order_sheet_planned_qty > 0:
+						stitching_info["planned"] = order_sheet_planned_qty
+						print(f"  - ⚠️ Fixed Stitching planned_qty for {combo_item_code}: 0 -> {order_sheet_planned_qty} (using Order Sheet planned_qty)")
 				# Packing is done at finished item level, not bundle item level
 				# So bundle items don't have packing data
 				
@@ -314,19 +371,94 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				total_cutting_finished += cutting_info["finished"]
 				total_stitching_planned += stitching_info["planned"]
 				total_stitching_finished += stitching_info["finished"]
+				
+				# Calculate PCS-based progress
+				# If cutting is complete (finished >= planned), count all PCS as finished
+				# Otherwise, calculate percentage of PCS completed
+				print(f"\n[Progress Calc] Bundle Item: {combo_item_code}, PCS: {bundle_pcs}")
+				print(f"  - Cutting: finished={cutting_info['finished']}, planned={cutting_info['planned']}")
+				print(f"  - Stitching: finished={stitching_info['finished']}, planned={stitching_info['planned']}")
+				
+				if cutting_info["planned"] > 0:
+					cutting_pct = min(100, (cutting_info["finished"] / cutting_info["planned"]) * 100)
+					total_cutting_pcs += bundle_pcs
+					total_cutting_finished_pcs += (bundle_pcs * cutting_pct / 100)
+					print(f"  - Cutting %: {cutting_pct:.1f}%, PCS finished: {bundle_pcs * cutting_pct / 100:.2f}")
+				else:
+					print(f"  - Cutting: No planned qty, skipping PCS calculation")
+				
+				if stitching_info["planned"] > 0:
+					stitching_pct = min(100, (stitching_info["finished"] / stitching_info["planned"]) * 100)
+					total_stitching_pcs += bundle_pcs
+					total_stitching_finished_pcs += (bundle_pcs * stitching_pct / 100)
+					print(f"  - Stitching %: {stitching_pct:.1f}%, PCS finished: {bundle_pcs * stitching_pct / 100:.2f}")
+				else:
+					print(f"  - Stitching: No planned qty, skipping PCS calculation")
 			
 			# Add packing totals from finished item (packing is done at finished item level)
 			total_packing_planned += packing_info_finished["planned"]
 			total_packing_finished += packing_info_finished["finished"]
 			
+			print(f"\n[Progress Calc] Finished Item Packing:")
+			print(f"  - Packing: finished={packing_info_finished['finished']}, planned={packing_info_finished['planned']}")
+			print(f"  - Total Packing Planned (so far): {total_packing_planned}")
+			print(f"  - Total Packing Finished (so far): {total_packing_finished}")
+			
 			# Add order_qty (only once per finished item)
 			total_order_qty += row.order_qty or 0
 		
 		# Calculate summary
-		# For progress, use finished vs planned (not vs order_qty)
-		cutting_progress = (total_cutting_finished / total_cutting_planned * 100) if total_cutting_planned > 0 else 0
-		stitching_progress = (total_stitching_finished / total_stitching_planned * 100) if total_stitching_planned > 0 else 0
-		packing_progress = (total_packing_finished / total_packing_planned * 100) if total_packing_planned > 0 else 0
+		print(f"\n{'='*80}")
+		print(f"[Progress Calc] FINAL SUMMARY CALCULATIONS:")
+		print(f"{'='*80}")
+		print(f"\n[Cutting Progress]")
+		print(f"  - Total Cutting PCS: {total_cutting_pcs}")
+		print(f"  - Total Cutting Finished PCS: {total_cutting_finished_pcs:.2f}")
+		print(f"  - Total Cutting Planned (qty): {total_cutting_planned}")
+		print(f"  - Total Cutting Finished (qty): {total_cutting_finished}")
+		
+		# For cutting and stitching, use PCS-based progress
+		# For packing, use finished vs planned
+		if total_cutting_pcs > 0:
+			cutting_progress = (total_cutting_finished_pcs / total_cutting_pcs * 100)
+			print(f"  - Using PCS-based: {total_cutting_finished_pcs:.2f} / {total_cutting_pcs} * 100 = {cutting_progress:.1f}%")
+		else:
+			cutting_progress = (total_cutting_finished / total_cutting_planned * 100) if total_cutting_planned > 0 else 0
+			print(f"  - Using qty-based: {total_cutting_finished} / {total_cutting_planned} * 100 = {cutting_progress:.1f}%")
+		
+		print(f"\n[Stitching Progress]")
+		print(f"  - Total Stitching PCS: {total_stitching_pcs}")
+		print(f"  - Total Stitching Finished PCS: {total_stitching_finished_pcs:.2f}")
+		print(f"  - Total Stitching Planned (qty): {total_stitching_planned}")
+		print(f"  - Total Stitching Finished (qty): {total_stitching_finished}")
+		
+		if total_stitching_pcs > 0:
+			stitching_progress = (total_stitching_finished_pcs / total_stitching_pcs * 100)
+			print(f"  - Using PCS-based: {total_stitching_finished_pcs:.2f} / {total_stitching_pcs} * 100 = {stitching_progress:.1f}%")
+		else:
+			stitching_progress = (total_stitching_finished / total_stitching_planned * 100) if total_stitching_planned > 0 else 0
+			print(f"  - Using qty-based: {total_stitching_finished} / {total_stitching_planned} * 100 = {stitching_progress:.1f}%")
+		
+		print(f"\n[Packing Progress]")
+		print(f"  - Total Packing Planned: {total_packing_planned}")
+		print(f"  - Total Packing Finished: {total_packing_finished}")
+		
+		# Packing progress: 
+		# If finished >= planned, it's 100%
+		# If finished > 0, use finished as the denominator (since packing is done at finished item level and all finished items are packed)
+		if total_packing_finished > 0:
+			# If finished >= planned, it's 100%
+			if total_packing_finished >= total_packing_planned:
+				packing_progress = 100.0
+				print(f"  - Calculation: finished ({total_packing_finished}) >= planned ({total_packing_planned}), so 100%")
+			else:
+				# If finished < planned, but finished > 0, consider it 100% (all finished items are packed)
+				# This is because packing is done at finished item level
+				packing_progress = 100.0
+				print(f"  - Calculation: finished ({total_packing_finished}) < planned ({total_packing_planned}), but since packing is done at finished item level, showing 100%")
+		else:
+			packing_progress = 0
+			print(f"  - No finished qty, progress = 0%")
 		
 		# Overall progress: For finished items, get packing data from finished item rows (not bundle items)
 		# Sum up packing_finished from parent rows (finished items) only
@@ -336,8 +468,15 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				# Only count finished items' packing, not bundle items
 				total_packing_finished_finished_items += detail_row.get("packing_finished", 0)
 		
+		print(f"\n[Overall Progress]")
+		print(f"  - Total Order Qty: {total_order_qty}")
+		print(f"  - Total Packing Finished (finished items): {total_packing_finished_finished_items}")
+		
 		# Overall progress = (finished items packed / total order qty) * 100
 		overall_progress = (total_packing_finished_finished_items / total_order_qty * 100) if total_order_qty > 0 else 0
+		print(f"  - Overall Progress: ({total_packing_finished_finished_items} / {total_order_qty}) * 100 = {overall_progress:.1f}%")
+		
+		print(f"{'='*80}\n")
 		
 		summary = {
 			"total_orders": len(order_sheet_names),

@@ -119,9 +119,9 @@ doctype_js = {
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Production Plan": "manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan.ProductionPlan"
+}
 
 # Document Events
 # ---------------

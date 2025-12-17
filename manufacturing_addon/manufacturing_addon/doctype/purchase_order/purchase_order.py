@@ -8,10 +8,83 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 	Override PurchaseOrder to validate that PO item qty doesn't exceed Material Request qty
 	"""
 	
+	def before_validate(self):
+		"""Override before_validate to prevent supplier reset from production plan"""
+		# Store user's supplier choice if document exists and supplier was manually changed
+		if self.name and not self.name.startswith("new-"):
+			try:
+				# Check if supplier was changed by user (not from production plan)
+				old_doc = frappe.get_doc("Purchase Order", self.name)
+				if old_doc.supplier and self.supplier and old_doc.supplier != self.supplier:
+					# User changed supplier - store it to prevent reset
+					self._user_changed_supplier = True
+					self._user_supplier = self.supplier
+					print(f"[PO DEBUG] ✅ before_validate: User changed supplier from {old_doc.supplier} to {self.supplier}")
+				elif old_doc.supplier:
+					# Store existing supplier as user's choice if not already set
+					if not hasattr(self, '_user_supplier') or not self._user_supplier:
+						self._user_supplier = old_doc.supplier
+						print(f"[PO DEBUG] before_validate: Stored existing supplier: {old_doc.supplier}")
+			except Exception as e:
+				# Document might not exist yet
+				pass
+		elif self.supplier and not hasattr(self, '_user_supplier'):
+			# For new documents, store initial supplier
+			self._user_supplier = self.supplier
+		
+		super().before_validate()
+	
+	def set_missing_values(self, for_validate=False):
+		"""Override set_missing_values to prevent supplier reset from production plan"""
+		# Store current supplier before calling parent method
+		user_supplier = None
+		if hasattr(self, '_user_supplier') and self._user_supplier:
+			user_supplier = self._user_supplier
+		elif self.name and not self.name.startswith("new-"):
+			# Try to get from database if user changed it
+			try:
+				old_doc = frappe.get_doc("Purchase Order", self.name)
+				if old_doc.supplier:
+					user_supplier = old_doc.supplier
+			except:
+				pass
+		
+		# Call parent method
+		super().set_missing_values(for_validate)
+		
+		# Restore user's supplier if it was reset
+		if user_supplier and self.supplier != user_supplier:
+			print(f"[PO DEBUG] set_missing_values reset supplier to {self.supplier}, restoring to {user_supplier}")
+			self.supplier = user_supplier
+			self._user_supplier = user_supplier
+	
 	def validate(self):
 		"""Override validate to add Material Request quantity validation"""
+		# CRITICAL: Check if supplier was manually changed before calling super().validate()
+		# Standard ERPNext might reset supplier in validate() based on production plan items
+		user_supplier_before = None
+		if hasattr(self, '_user_supplier') and self._user_supplier:
+			user_supplier_before = self._user_supplier
+		elif self.name and not self.name.startswith("new-"):
+			# Try to get from database
+			try:
+				old_doc = frappe.get_doc("Purchase Order", self.name)
+				if old_doc.supplier:
+					user_supplier_before = old_doc.supplier
+			except:
+				pass
+		
+		# Call parent validate
 		super().validate()
 		self.validate_po_qty_against_mr()
+		
+		# CRITICAL: Restore user's supplier if it was reset during validate
+		if user_supplier_before and self.supplier != user_supplier_before:
+			print(f"[PO DEBUG] ⚠️ validate: Supplier reset detected!")
+			print(f"[PO DEBUG] Current: {self.supplier}, Expected: {user_supplier_before}")
+			print(f"[PO DEBUG] Restoring supplier to: {user_supplier_before}")
+			self.supplier = user_supplier_before
+			self._user_supplier = user_supplier_before
 	
 	def validate_po_qty_against_mr(self):
 		"""

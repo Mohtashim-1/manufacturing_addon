@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "format:PR-{YY}-{MM}-{DD}-{####}",
- "creation": "2025-01-20 00:00:00.000000",
+ "creation": "2025-01-20 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -12,6 +12,8 @@
   "time",
   "column_break_qnok",
   "order_sheet",
+  "column_break_ynuh",
+  "supplier",
   "packing_report_data_section",
   "packing_report_ct",
   "section_break_yedn",
@@ -112,12 +114,23 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "link_filters": "[[\"Manufacturing Contractor\",\"packing\",\"=\",1]]",
+   "options": "Manufacturing Contractor"
+  },
+  {
+   "fieldname": "column_break_ynuh",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-20 00:00:00.000000",
+ "modified": "2025-12-18 03:44:26.646188",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Packing Report",
@@ -138,6 +151,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
@@ -145,4 +159,3 @@
  "track_seen": 1,
  "track_views": 1
 }
-

@@ -4,6 +4,58 @@
 import frappe
 from frappe.model.document import Document
 from frappe import _
+from frappe.utils import flt
+
+# Patch Stock Entry's set_rate_for_outgoing_items to respect set_basic_rate_manually and already set rates
+_original_set_rate_for_outgoing_items = None
+
+def _patched_set_rate_for_outgoing_items(self, reset_outgoing_rate=True, raise_error_if_no_rate=True):
+    """Patched version that skips rate calculation for items with set_basic_rate_manually=1 or already set rates"""
+    outgoing_items_cost = 0.0
+    for d in self.get("items"):
+        if d.s_warehouse:
+            # Skip if rate is manually set (set_basic_rate_manually=1) OR if rate is already > 0 and we're not resetting
+            set_manually = getattr(d, 'set_basic_rate_manually', 0)
+            current_rate = flt(d.basic_rate)
+            if set_manually:
+                # Rate is manually set - skip recalculation, just calculate amount
+                print(f"[PATCH] Skipping rate calc for {d.item_code}: set_basic_rate_manually={set_manually}, current_rate={current_rate}")
+                d.basic_amount = flt(flt(d.transfer_qty) * flt(d.basic_rate), d.precision("basic_amount"))
+                if not d.t_warehouse:
+                    outgoing_items_cost += flt(d.basic_amount)
+                continue
+            
+            # If rate is already set (> 0) and we're not resetting, skip
+            if flt(d.basic_rate) > 0 and not reset_outgoing_rate:
+                d.basic_amount = flt(flt(d.transfer_qty) * flt(d.basic_rate), d.precision("basic_amount"))
+                if not d.t_warehouse:
+                    outgoing_items_cost += flt(d.basic_amount)
+                continue
+            
+            # Original logic for items without manually set rates
+            if reset_outgoing_rate:
+                from erpnext.stock.utils import get_incoming_rate
+                args = self.get_args_for_incoming_rate(d)
+                rate = get_incoming_rate(args, raise_error_if_no_rate)
+                if rate >= 0:
+                    d.basic_rate = rate
+
+            d.basic_amount = flt(flt(d.transfer_qty) * flt(d.basic_rate), d.precision("basic_amount"))
+            if not d.t_warehouse:
+                outgoing_items_cost += flt(d.basic_amount)
+
+    return outgoing_items_cost
+
+# Apply the patch once
+if not hasattr(frappe, '_stock_entry_rate_patch_applied'):
+    try:
+        from erpnext.stock.doctype.stock_entry.stock_entry import StockEntry
+        _original_set_rate_for_outgoing_items = StockEntry.set_rate_for_outgoing_items
+        StockEntry.set_rate_for_outgoing_items = _patched_set_rate_for_outgoing_items
+        frappe._stock_entry_rate_patch_applied = True
+        print("[Packing Report] Patched StockEntry.set_rate_for_outgoing_items to respect set_basic_rate_manually")
+    except Exception as e:
+        print(f"[Packing Report] Warning: Could not patch StockEntry.set_rate_for_outgoing_items: {str(e)}")
 
 
 class PackingReport(Document):
@@ -676,7 +728,7 @@ class PackingReport(Document):
                 
                 # Create Stock Entry
                 stock_entry = frappe.new_doc("Stock Entry")
-                stock_entry.stock_entry_type = "Manufacture"
+                stock_entry.purpose = "Manufacture"
                 stock_entry.company = company
                 stock_entry.posting_date = self.date or frappe.utils.nowdate()
                 stock_entry.posting_time = self.time or frappe.utils.nowtime()
@@ -684,6 +736,9 @@ class PackingReport(Document):
                 stock_entry.fg_completed_qty = packaging_qty
                 stock_entry.from_warehouse = source_warehouse
                 stock_entry.to_warehouse = target_warehouse
+                
+                # Set stock_entry_type based on purpose
+                stock_entry.set_stock_entry_type()
                 
                 # Set custom field if it exists
                 if hasattr(stock_entry, 'custom_packing_report'):
@@ -698,44 +753,23 @@ class PackingReport(Document):
                 
                 print(f"[on_submit] Items populated: {len(stock_entry.items)} items")
                 
-                # Set custom_packing_report field for all items
+                # Ensure warehouses are set for all items
+                # For Manufacture type, consumed items should have s_warehouse, finished items should have t_warehouse
+                warehouses_modified = False
                 for item in stock_entry.items:
+                    # Set source warehouse for consumed items (raw materials)
+                    if not item.is_finished_item and not item.s_warehouse:
+                        item.s_warehouse = source_warehouse
+                        warehouses_modified = True
+                    # Set target warehouse for finished items
+                    if item.is_finished_item and not item.t_warehouse:
+                        item.t_warehouse = target_warehouse
+                        warehouses_modified = True
+                    
+                    # Set custom_packing_report field
                     if hasattr(item, 'custom_packing_report'):
                         item.custom_packing_report = self.name
                         print(f"[on_submit] Set custom_packing_report for {item.item_code}: {self.name}")
-                
-                # Calculate valuation rates for consumed items from source warehouse
-                for item in stock_entry.items:
-                    if item.s_warehouse and not item.is_finished_item:
-                        # Get valuation rate from stock ledger for consumed items
-                        valuation_rate = frappe.db.get_value(
-                            "Stock Ledger Entry",
-                            filters={
-                                "item_code": item.item_code,
-                                "warehouse": item.s_warehouse
-                            },
-                            fieldname="valuation_rate",
-                            order_by="posting_date desc, posting_time desc, creation desc",
-                            as_dict=False
-                        )
-                        
-                        if valuation_rate:
-                            item.basic_rate = valuation_rate
-                            item.valuation_rate = valuation_rate
-                            print(f"[on_submit] Set valuation rate for {item.item_code}: {valuation_rate}")
-                        else:
-                            # If no valuation rate found, try to get from Bin
-                            bin_data = frappe.db.get_value(
-                                "Bin",
-                                filters={"item_code": item.item_code, "warehouse": item.s_warehouse},
-                                fieldname=["valuation_rate", "stock_value", "actual_qty"],
-                                as_dict=True
-                            )
-                            if bin_data and bin_data.actual_qty > 0:
-                                calculated_rate = bin_data.stock_value / bin_data.actual_qty
-                                item.basic_rate = calculated_rate
-                                item.valuation_rate = calculated_rate
-                                print(f"[on_submit] Calculated valuation rate for {item.item_code} from Bin: {calculated_rate}")
                 
                 # Ensure finished good is added (get_items should add it, but let's verify and add if missing)
                 finished_item_found = False
@@ -758,9 +792,406 @@ class PackingReport(Document):
                     if hasattr(finished_item_row, 'custom_packing_report'):
                         finished_item_row.custom_packing_report = self.name
                     print(f"[on_submit] Added finished good manually: {finished_item} = {packaging_qty} {item_uom}")
+                    warehouses_modified = True
+                
+                # Always recalculate rates after modifying items (warehouses or adding items)
+                # This ensures valuation rates are fetched from stock ledger for all items with proper warehouse assignments
+                # Note: validate() will call calculate_rate_and_amount() with raise_error_if_no_rate=True by default,
+                # so we need to ensure all items have proper rates calculated before insert
+                print(f"\n{'='*80}")
+                print(f"[on_submit] Recalculating rates after modifying items...")
+                print(f"[on_submit] Items before rate calculation: {len(stock_entry.items)}")
+                for idx, item in enumerate(stock_entry.items):
+                    print(f"  Item {idx+1}: {item.item_code}")
+                    print(f"    - s_warehouse: {item.s_warehouse}")
+                    print(f"    - t_warehouse: {item.t_warehouse}")
+                    print(f"    - is_finished_item: {item.is_finished_item}")
+                    print(f"    - qty: {item.qty}")
+                    print(f"    - transfer_qty: {getattr(item, 'transfer_qty', 'NOT SET')}")
+                
+                # Ensure transfer_qty is set for all items before calculating rates
+                print(f"[on_submit] Setting transfer_qty for all items...")
+                stock_entry.set_transfer_qty()
+                print(f"[on_submit] transfer_qty set. Items after set_transfer_qty:")
+                for idx, item in enumerate(stock_entry.items):
+                    print(f"  Item {idx+1}: {item.item_code} | transfer_qty: {item.transfer_qty}")
+                
+                # Recalculate rates - this will fetch valuation rates from stock ledger
+                # Use raise_error_if_no_rate=False to allow items without stock to proceed
+                # (they will need allow_zero_valuation_rate set if they truly have no stock)
+                print(f"[on_submit] Calling calculate_rate_and_amount(raise_error_if_no_rate=False)...")
+                stock_entry.calculate_rate_and_amount(raise_error_if_no_rate=False)
+                print(f"[on_submit] calculate_rate_and_amount() completed")
+                print(f"{'='*80}\n")
+                
+                print(f"[on_submit] Valuation rates after calculation:")
+                from frappe.utils import flt
+                for item in stock_entry.items:
+                    if item.s_warehouse:
+                        print(f"\n{'='*80}")
+                        print(f"[on_submit] Processing consumed item: {item.item_code}")
+                        print(f"  - s_warehouse: {item.s_warehouse}")
+                        print(f"  - transfer_qty: {item.transfer_qty}")
+                        print(f"  - basic_rate (before check): {item.basic_rate}")
+                        print(f"  - valuation_rate (before check): {item.valuation_rate}")
+                        print(f"  - allow_zero_valuation_rate (before check): {item.allow_zero_valuation_rate}")
+                        
+                        # If item has no rate and no allow_zero_valuation_rate, try to get rate from stock ledger
+                        # Try multiple methods to get the valuation rate
+                        if not flt(item.basic_rate) and not item.allow_zero_valuation_rate:
+                            print(f"[on_submit] Item {item.item_code} has no rate and allow_zero_valuation_rate is False, attempting to fetch from stock ledger...")
+                            
+                            rate = None
+                            
+                            # Method 1: Try get_incoming_rate (for outgoing items)
+                            try:
+                                from erpnext.stock.utils import get_incoming_rate
+                                print(f"[on_submit] Method 1: Trying get_incoming_rate()...")
+                                args = stock_entry.get_args_for_incoming_rate(item)
+                                print(f"[on_submit] Args: item_code={args.get('item_code')}, warehouse={args.get('warehouse')}, qty={args.get('qty')}")
+                                rate = get_incoming_rate(args, raise_error_if_no_rate=False)
+                                print(f"[on_submit] get_incoming_rate() returned: {rate}")
+                            except Exception as e:
+                                print(f"[on_submit] get_incoming_rate() failed: {str(e)}")
+                            
+                            # Method 2: If get_incoming_rate returned 0 or None, try get_valuation_rate directly from stock ledger
+                            if not rate or flt(rate) == 0:
+                                try:
+                                    from erpnext.stock.stock_ledger import get_valuation_rate
+                                    import erpnext
+                                    print(f"[on_submit] Method 2: Trying get_valuation_rate() directly from stock ledger...")
+                                    print(f"[on_submit] Args: item_code={item.item_code}, warehouse={item.s_warehouse}, company={stock_entry.company}")
+                                    rate = get_valuation_rate(
+                                        item.item_code,
+                                        item.s_warehouse,
+                                        stock_entry.doctype,
+                                        stock_entry.name or "",  # Use empty string if not saved yet
+                                        item.allow_zero_valuation_rate,
+                                        currency=erpnext.get_company_currency(stock_entry.company),
+                                        company=stock_entry.company,
+                                        raise_error_if_no_rate=False,
+                                        batch_no=item.batch_no,
+                                        serial_and_batch_bundle=item.serial_and_batch_bundle,
+                                    )
+                                    print(f"[on_submit] get_valuation_rate() returned: {rate}")
+                                except Exception as e:
+                                    print(f"[on_submit] get_valuation_rate() failed: {str(e)}")
+                            
+                            # Method 3: If still no rate, check bin table (current stock balance)
+                            if not rate or flt(rate) == 0:
+                                try:
+                                    print(f"[on_submit] Method 3: Checking bin table for current stock valuation rate...")
+                                    bin_data = frappe.db.sql("""
+                                        SELECT valuation_rate, actual_qty, stock_value
+                                        FROM `tabBin`
+                                        WHERE item_code = %s 
+                                            AND warehouse = %s
+                                    """, (item.item_code, item.s_warehouse), as_dict=True)
+                                    
+                                    if bin_data and bin_data[0]:
+                                        bin_info = bin_data[0]
+                                        actual_qty = flt(bin_info.get('actual_qty', 0))
+                                        stock_value = flt(bin_info.get('stock_value', 0))
+                                        bin_valuation_rate = flt(bin_info.get('valuation_rate', 0))
+                                        
+                                        print(f"[on_submit] Bin data: actual_qty={actual_qty}, stock_value={stock_value}, valuation_rate={bin_valuation_rate}")
+                                        
+                                        if actual_qty > 0:
+                                            # Use valuation_rate from bin if available, otherwise calculate from stock_value/actual_qty
+                                            if bin_valuation_rate and bin_valuation_rate > 0:
+                                                rate = bin_valuation_rate
+                                                print(f"[on_submit] Using valuation_rate from bin: {rate}")
+                                            elif stock_value > 0:
+                                                rate = stock_value / actual_qty
+                                                print(f"[on_submit] Calculated rate from stock_value/actual_qty: {rate}")
+                                            else:
+                                                print(f"[on_submit] Bin has stock but no valuation rate or stock value")
+                                        else:
+                                            print(f"[on_submit] Bin shows no stock (actual_qty={actual_qty})")
+                                    else:
+                                        print(f"[on_submit] No bin record found for item-warehouse combination")
+                                except Exception as e:
+                                    print(f"[on_submit] Bin query failed: {str(e)}")
+                                    import traceback
+                                    print(f"[on_submit] Traceback: {traceback.format_exc()}")
+                            
+                            # Method 4: If still no rate, query latest stock ledger entry (any qty, just get the rate)
+                            if not rate or flt(rate) == 0:
+                                try:
+                                    print(f"[on_submit] Method 4: Querying latest stock ledger entry for valuation rate...")
+                                    sle_data = frappe.db.sql("""
+                                        SELECT valuation_rate, actual_qty, stock_value, stock_value_difference
+                                        FROM `tabStock Ledger Entry`
+                                        WHERE item_code = %s 
+                                            AND warehouse = %s
+                                            AND is_cancelled = 0
+                                            AND valuation_rate > 0
+                                        ORDER BY posting_date DESC, posting_time DESC, creation DESC
+                                        LIMIT 1
+                                    """, (item.item_code, item.s_warehouse), as_dict=True)
+                                    
+                                    if sle_data and sle_data[0].get('valuation_rate'):
+                                        rate = flt(sle_data[0].valuation_rate)
+                                        print(f"[on_submit] Latest stock ledger entry returned valuation_rate: {rate}")
+                                    else:
+                                        print(f"[on_submit] No stock ledger entry found with valuation_rate > 0")
+                                        # Try without valuation_rate filter - get any entry and calculate
+                                        sle_data2 = frappe.db.sql("""
+                                            SELECT stock_value, actual_qty, stock_value_difference
+                                            FROM `tabStock Ledger Entry`
+                                            WHERE item_code = %s 
+                                                AND warehouse = %s
+                                                AND is_cancelled = 0
+                                            ORDER BY posting_date DESC, posting_time DESC, creation DESC
+                                            LIMIT 10
+                                        """, (item.item_code, item.s_warehouse), as_dict=True)
+                                        print(f"[on_submit] Found {len(sle_data2)} stock ledger entries (without valuation_rate filter)")
+                                        for sle in sle_data2:
+                                            print(f"  - actual_qty: {sle.get('actual_qty')}, stock_value: {sle.get('stock_value')}, stock_value_difference: {sle.get('stock_value_difference')}")
+                                except Exception as e:
+                                    print(f"[on_submit] Stock ledger query failed: {str(e)}")
+                            
+                            # Method 5: Check if item has stock in ANY warehouse and get weighted average
+                            if not rate or flt(rate) == 0:
+                                try:
+                                    print(f"[on_submit] Method 5: Checking all warehouses for this item...")
+                                    # Get weighted average valuation rate across all warehouses
+                                    all_warehouses_data = frappe.db.sql("""
+                                        SELECT 
+                                            SUM(stock_value) as total_stock_value,
+                                            SUM(actual_qty) as total_actual_qty,
+                                            AVG(valuation_rate) as avg_valuation_rate
+                                        FROM `tabBin`
+                                        WHERE item_code = %s 
+                                            AND actual_qty > 0
+                                    """, (item.item_code,), as_dict=True)
+                                    
+                                    if all_warehouses_data and all_warehouses_data[0]:
+                                        data = all_warehouses_data[0]
+                                        total_qty = flt(data.get('total_actual_qty', 0))
+                                        total_value = flt(data.get('total_stock_value', 0))
+                                        
+                                        print(f"[on_submit] All warehouses: total_qty={total_qty}, total_value={total_value}")
+                                        
+                                        if total_qty > 0 and total_value > 0:
+                                            rate = total_value / total_qty
+                                            print(f"[on_submit] Calculated weighted average rate from all warehouses: {rate}")
+                                        else:
+                                            print(f"[on_submit] No stock found in any warehouse")
+                                except Exception as e:
+                                    print(f"[on_submit] All warehouses query failed: {str(e)}")
+                            
+                            # Set the rate if found - store it to set after final recalculation
+                            if rate and flt(rate) > 0:
+                                # Item has valuation rate - store it to set after final recalculation
+                                # (because calculate_rate_and_amount will reset it)
+                                print(f"[on_submit] ✓ Item {item.item_code} has valuation rate {rate} from stock ledger")
+                                # Store the rate in a custom attribute to set after recalculation
+                                item._manual_valuation_rate = flt(rate)
+                                # Also set it now so it's available, but it will be overwritten by calculate_rate_and_amount
+                                item.allow_zero_valuation_rate = 0
+                                item.basic_rate = flt(rate)
+                                item.basic_amount = flt(flt(item.transfer_qty) * flt(item.basic_rate), item.precision("basic_amount"))
+                                print(f"[on_submit] Stored manual rate {rate} to set after final recalculation")
+                                print(f"[on_submit] Set now (will be restored after recalculation): basic_rate={item.basic_rate}, basic_amount={item.basic_amount}")
+                            else:
+                                # No rate available - allow zero valuation rate
+                                print(f"[on_submit] ✗ WARNING: Item {item.item_code} has no valuation rate in {item.s_warehouse}")
+                                print(f"  - All methods returned 0 or None")
+                                print(f"  - Setting allow_zero_valuation_rate=1")
+                                item.allow_zero_valuation_rate = 1
+                                item.basic_rate = 0.0
+                                item.basic_amount = 0.0
+                                # Ensure the flag is set as integer (1) not boolean
+                                if hasattr(item, 'db_set'):
+                                    # This is a child table row, ensure flag is set
+                                    item.db_set('allow_zero_valuation_rate', 1, update_modified=False)
+                                print(f"[on_submit] Verified allow_zero_valuation_rate={item.allow_zero_valuation_rate}")
+                        else:
+                            if flt(item.basic_rate):
+                                print(f"[on_submit] Item {item.item_code} already has rate: {item.basic_rate}, skipping")
+                            elif item.allow_zero_valuation_rate:
+                                print(f"[on_submit] Item {item.item_code} already has allow_zero_valuation_rate=True, skipping")
+                        print(f"{'='*80}\n")
+                    elif item.t_warehouse and item.is_finished_item:
+                        print(f"  - Finished: {item.item_code} | Rate: {item.basic_rate} | Valuation Rate: {item.valuation_rate}")
+                
+                # Final recalculation after any allow_zero_valuation_rate changes
+                # But skip if we have manually set rates (they will be restored after)
+                print(f"\n{'='*80}")
+                print(f"[on_submit] Final recalculation after rate fixes...")
+                has_manual_rates = any(hasattr(item, '_manual_valuation_rate') and item._manual_valuation_rate for item in stock_entry.items if item.s_warehouse)
+                if has_manual_rates:
+                    print(f"[on_submit] Skipping calculate_rate_and_amount() - will restore manual rates after")
+                else:
+                    stock_entry.calculate_rate_and_amount(raise_error_if_no_rate=False)
+                
+                # After recalculation (or if skipped), restore manually set rates that were found
+                print(f"[on_submit] Setting manually found rates...")
+                restored_count = 0
+                for item in stock_entry.items:
+                    if hasattr(item, '_manual_valuation_rate') and item._manual_valuation_rate:
+                        manual_rate = item._manual_valuation_rate
+                        old_rate = item.basic_rate
+                        print(f"[on_submit] Setting manual rate {manual_rate} for {item.item_code} (current: {old_rate})")
+                        item.allow_zero_valuation_rate = 0
+                        # Set set_basic_rate_manually flag BEFORE setting the rate
+                        if hasattr(item, 'set_basic_rate_manually'):
+                            item.set_basic_rate_manually = 1
+                            print(f"[on_submit] Set set_basic_rate_manually=1 to prevent rate reset")
+                        item.basic_rate = flt(manual_rate)
+                        item.basic_amount = flt(flt(item.transfer_qty) * flt(item.basic_rate), item.precision("basic_amount"))
+                        # Mark that this rate was manually set
+                        item._rate_manually_set = True
+                        print(f"[on_submit] Set: basic_rate={item.basic_rate}, basic_amount={item.basic_amount}, allow_zero_valuation_rate={item.allow_zero_valuation_rate}, set_basic_rate_manually={getattr(item, 'set_basic_rate_manually', 'N/A')}")
+                        # Keep _manual_valuation_rate until after final verification before insert
+                        restored_count += 1
+                print(f"[on_submit] Set {restored_count} manually found rates")
+                
+                print(f"[on_submit] Final state of all items:")
+                for idx, item in enumerate(stock_entry.items):
+                    if item.s_warehouse:
+                        print(f"  Consumed Item {idx+1}: {item.item_code}")
+                        print(f"    - s_warehouse: {item.s_warehouse}")
+                        print(f"    - transfer_qty: {item.transfer_qty}")
+                        print(f"    - basic_rate: {item.basic_rate}")
+                        print(f"    - valuation_rate: {item.valuation_rate}")
+                        print(f"    - allow_zero_valuation_rate: {item.allow_zero_valuation_rate}")
+                        print(f"    - basic_amount: {item.basic_amount}")
+                    elif item.t_warehouse and item.is_finished_item:
+                        print(f"  Finished Item {idx+1}: {item.item_code}")
+                        print(f"    - t_warehouse: {item.t_warehouse}")
+                        print(f"    - transfer_qty: {item.transfer_qty}")
+                        print(f"    - basic_rate: {item.basic_rate}")
+                        print(f"    - valuation_rate: {item.valuation_rate}")
+                print(f"{'='*80}\n")
+                
+                # Ensure allow_zero_valuation_rate is set correctly before insert
+                # Only set it for items that truly have no rate (not items with manually restored rates)
+                print(f"[on_submit] Final verification: Ensuring allow_zero_valuation_rate is set for items with zero rate...")
+                for item in stock_entry.items:
+                    if item.s_warehouse:
+                        current_rate = flt(item.basic_rate)
+                        # Check if item has a manually restored rate
+                        has_manual_rate = hasattr(item, '_manual_valuation_rate') and item._manual_valuation_rate
+                        
+                        if has_manual_rate:
+                            # Item has manual rate - ensure it's restored and clean up
+                            manual_rate = item._manual_valuation_rate
+                            # Always restore the manual rate (it might have been reset)
+                            if abs(flt(current_rate) - flt(manual_rate)) > 0.01:  # Use tolerance for float comparison
+                                print(f"[on_submit] Restoring manual rate {manual_rate} for {item.item_code} (current_rate={current_rate})")
+                                item.allow_zero_valuation_rate = 0
+                                item.basic_rate = flt(manual_rate)
+                                item.basic_amount = flt(flt(item.transfer_qty) * flt(item.basic_rate), item.precision("basic_amount"))
+                                print(f"[on_submit] ✓ Restored: basic_rate={item.basic_rate}, basic_amount={item.basic_amount}")
+                            else:
+                                print(f"[on_submit] {item.item_code}: Manual rate {manual_rate} already set correctly (current={current_rate})")
+                            # DON'T delete _manual_valuation_rate yet - keep it for final verification
+                        elif (not current_rate or current_rate == 0):
+                            # Item truly has no rate - set allow_zero_valuation_rate
+                            if not item.allow_zero_valuation_rate:
+                                print(f"[on_submit] WARNING: {item.item_code} has rate 0 but allow_zero_valuation_rate is not set! Setting it now...")
+                                item.allow_zero_valuation_rate = 1
+                                item.basic_rate = 0.0
+                                item.basic_amount = 0.0
+                            # Ensure it's integer 1, not boolean True
+                            if item.allow_zero_valuation_rate is True:
+                                item.allow_zero_valuation_rate = 1
+                            print(f"[on_submit] {item.item_code}: allow_zero_valuation_rate={item.allow_zero_valuation_rate} (type: {type(item.allow_zero_valuation_rate).__name__})")
+                        elif current_rate > 0:
+                            print(f"[on_submit] {item.item_code}: Has rate {current_rate}, no action needed")
+                
+                # Final verification: Double-check that manually found rates are still set
+                # This MUST happen right before insert to ensure rates aren't reset by validation
+                print(f"[on_submit] Final verification before insert: Checking all rates...")
+                for item in stock_entry.items:
+                    if item.s_warehouse:
+                        # If item has _manual_valuation_rate attribute, it means rate was found but might have been reset
+                        if hasattr(item, '_manual_valuation_rate') and item._manual_valuation_rate:
+                            manual_rate = item._manual_valuation_rate
+                            current_rate = flt(item.basic_rate)
+                            # Always restore the manual rate right before insert (it might have been reset by validation)
+                            if abs(current_rate - flt(manual_rate)) > 0.01:  # Use tolerance for float comparison
+                                print(f"[on_submit] CRITICAL: {item.item_code} rate was reset! Restoring {manual_rate} (current: {current_rate})")
+                            else:
+                                print(f"[on_submit] {item.item_code}: Rate {manual_rate} is set, but ensuring it persists...")
+                            
+                            # Always set the rate right before insert to ensure it persists
+                            item.allow_zero_valuation_rate = 0
+                            item.basic_rate = flt(manual_rate)
+                            item.basic_amount = flt(flt(item.transfer_qty) * flt(item.basic_rate), item.precision("basic_amount"))
+                            # Set set_basic_rate_manually to prevent future resets (though it might not work for outgoing items)
+                            if hasattr(item, 'set_basic_rate_manually'):
+                                item.set_basic_rate_manually = 1
+                            print(f"[on_submit] ✓ FINAL SET: {item.item_code} basic_rate={item.basic_rate}, basic_amount={item.basic_amount}, set_basic_rate_manually={getattr(item, 'set_basic_rate_manually', 'N/A')}")
+                            delattr(item, '_manual_valuation_rate')
+                        print(f"[on_submit] Pre-insert check - {item.item_code}: basic_rate={item.basic_rate}, allow_zero_valuation_rate={item.allow_zero_valuation_rate}")
+                
+                # Ensure set_basic_rate_manually is set for items with manually found rates BEFORE insert
+                # This will prevent validate() from trying to recalculate rates
+                print(f"[on_submit] Setting set_basic_rate_manually for items with manually found rates...")
+                for item in stock_entry.items:
+                    if item.s_warehouse and hasattr(item, '_manual_valuation_rate') and item._manual_valuation_rate:
+                        if hasattr(item, 'set_basic_rate_manually'):
+                            item.set_basic_rate_manually = 1
+                            print(f"[on_submit] Set set_basic_rate_manually=1 for {item.item_code} (rate={item._manual_valuation_rate})")
+                        # Ensure rate is set
+                        item.allow_zero_valuation_rate = 0
+                        item.basic_rate = flt(item._manual_valuation_rate)
+                        item.basic_amount = flt(flt(item.transfer_qty) * flt(item.basic_rate), item.precision("basic_amount"))
+                        print(f"[on_submit] Pre-insert: {item.item_code} basic_rate={item.basic_rate}, set_basic_rate_manually={getattr(item, 'set_basic_rate_manually', 'N/A')}")
+                
+                # Store manually found rates in Stock Entry document to restore after validation (backup)
+                stock_entry._manual_rates_to_restore = {}
+                for idx, item in enumerate(stock_entry.items):
+                    if item.s_warehouse and hasattr(item, '_manual_valuation_rate') and item._manual_valuation_rate:
+                        key = f"{item.item_code}_{idx}"
+                        stock_entry._manual_rates_to_restore[key] = {
+                            'rate': item._manual_valuation_rate,
+                            'item_code': item.item_code,
+                            'idx': idx
+                        }
+                        print(f"[on_submit] Stored manual rate {item._manual_valuation_rate} for {item.item_code} (key={key})")
                 
                 # Save and submit Stock Entry
-                stock_entry.insert(ignore_permissions=True)
+                print(f"[on_submit] Inserting Stock Entry (patch should prevent rate reset during validation)...")
+                try:
+                    stock_entry.insert(ignore_permissions=True)
+                    print(f"[on_submit] Stock Entry inserted: {stock_entry.name}")
+                    
+                    # After insert, restore manually found rates that were reset by validation
+                    if hasattr(stock_entry, '_manual_rates_to_restore') and stock_entry._manual_rates_to_restore:
+                        print(f"[on_submit] Restoring {len(stock_entry._manual_rates_to_restore)} manually found rates after insert...")
+                        # Reload the document to get fresh items
+                        stock_entry.reload()
+                        restored_count = 0
+                        for idx, item in enumerate(stock_entry.items):
+                            key = f"{item.item_code}_{idx}"
+                            if key in stock_entry._manual_rates_to_restore:
+                                manual_data = stock_entry._manual_rates_to_restore[key]
+                                manual_rate = manual_data['rate']
+                                print(f"[on_submit] Restoring rate {manual_rate} for {item.item_code} (idx={idx}, key={key})")
+                                item.allow_zero_valuation_rate = 0
+                                item.basic_rate = flt(manual_rate)
+                                item.basic_amount = flt(flt(item.transfer_qty) * flt(item.basic_rate), item.precision("basic_amount"))
+                                print(f"[on_submit] ✓ Restored: basic_rate={item.basic_rate}, basic_amount={item.basic_amount}")
+                                restored_count += 1
+                        
+                        if restored_count > 0:
+                            # Save again to persist the restored rates
+                            print(f"[on_submit] Saving Stock Entry with {restored_count} restored rates...")
+                            stock_entry.save(ignore_permissions=True)
+                            frappe.db.commit()
+                            print(f"[on_submit] ✓ Stock Entry saved with restored rates")
+                        else:
+                            print(f"[on_submit] WARNING: No rates were restored (items might have changed)")
+                except Exception as e:
+                    print(f"[on_submit] Error during insert/save: {str(e)}")
+                    import traceback
+                    print(f"[on_submit] Traceback: {traceback.format_exc()}")
+                    raise
+                print(f"[on_submit] Stock Entry inserted: {stock_entry.name}")
                 # stock_entry.submit()
                 
                 stock_entries_created.append(stock_entry.name)

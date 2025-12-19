@@ -200,9 +200,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		total_packing_finished = 0
 		
 		# For PCS-based progress calculation
-		total_cutting_pcs = 0
+		# Calculate total finished PCS (finished qty * pcs for each bundle item)
 		total_cutting_finished_pcs = 0
-		total_stitching_pcs = 0
 		total_stitching_finished_pcs = 0
 		
 		for row in order_sheet_ct:
@@ -372,28 +371,20 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				total_stitching_planned += stitching_info["planned"]
 				total_stitching_finished += stitching_info["finished"]
 				
-				# Calculate PCS-based progress
-				# If cutting is complete (finished >= planned), count all PCS as finished
-				# Otherwise, calculate percentage of PCS completed
+				# Calculate finished PCS: finished qty * pcs for each bundle item
 				print(f"\n[Progress Calc] Bundle Item: {combo_item_code}, PCS: {bundle_pcs}")
 				print(f"  - Cutting: finished={cutting_info['finished']}, planned={cutting_info['planned']}")
 				print(f"  - Stitching: finished={stitching_info['finished']}, planned={stitching_info['planned']}")
 				
-				if cutting_info["planned"] > 0:
-					cutting_pct = min(100, (cutting_info["finished"] / cutting_info["planned"]) * 100)
-					total_cutting_pcs += bundle_pcs
-					total_cutting_finished_pcs += (bundle_pcs * cutting_pct / 100)
-					print(f"  - Cutting %: {cutting_pct:.1f}%, PCS finished: {bundle_pcs * cutting_pct / 100:.2f}")
-				else:
-					print(f"  - Cutting: No planned qty, skipping PCS calculation")
+				# Total Finished Cutting PCS = sum of (finished qty * pcs) for each bundle item
+				cutting_finished_pcs = cutting_info["finished"] * bundle_pcs
+				total_cutting_finished_pcs += cutting_finished_pcs
+				print(f"  - Cutting Finished PCS: {cutting_info['finished']} * {bundle_pcs} = {cutting_finished_pcs:.2f}")
 				
-				if stitching_info["planned"] > 0:
-					stitching_pct = min(100, (stitching_info["finished"] / stitching_info["planned"]) * 100)
-					total_stitching_pcs += bundle_pcs
-					total_stitching_finished_pcs += (bundle_pcs * stitching_pct / 100)
-					print(f"  - Stitching %: {stitching_pct:.1f}%, PCS finished: {bundle_pcs * stitching_pct / 100:.2f}")
-				else:
-					print(f"  - Stitching: No planned qty, skipping PCS calculation")
+				# Total Finished Stitching PCS = sum of (finished qty * pcs) for each bundle item
+				stitching_finished_pcs = stitching_info["finished"] * bundle_pcs
+				total_stitching_finished_pcs += stitching_finished_pcs
+				print(f"  - Stitching Finished PCS: {stitching_info['finished']} * {bundle_pcs} = {stitching_finished_pcs:.2f}")
 			
 			# Add packing totals from finished item (packing is done at finished item level)
 			total_packing_planned += packing_info_finished["planned"]
@@ -412,53 +403,48 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		print(f"[Progress Calc] FINAL SUMMARY CALCULATIONS:")
 		print(f"{'='*80}")
 		print(f"\n[Cutting Progress]")
-		print(f"  - Total Cutting PCS: {total_cutting_pcs}")
 		print(f"  - Total Cutting Finished PCS: {total_cutting_finished_pcs:.2f}")
+		print(f"  - Total Order Qty: {total_order_qty}")
 		print(f"  - Total Cutting Planned (qty): {total_cutting_planned}")
 		print(f"  - Total Cutting Finished (qty): {total_cutting_finished}")
 		
-		# For cutting and stitching, use PCS-based progress
-		# For packing, use finished vs planned
-		if total_cutting_pcs > 0:
-			cutting_progress = (total_cutting_finished_pcs / total_cutting_pcs * 100)
-			print(f"  - Using PCS-based: {total_cutting_finished_pcs:.2f} / {total_cutting_pcs} * 100 = {cutting_progress:.1f}%")
+		# Cutting % = (Total Finished Cutting PCS / Order qty) × 100
+		# Allow percentage above 100% if finished exceeds order qty
+		if total_order_qty > 0:
+			cutting_progress = (total_cutting_finished_pcs / total_order_qty) * 100
+			print(f"  - Calculation: ({total_cutting_finished_pcs:.2f} / {total_order_qty}) * 100 = {cutting_progress:.1f}%")
 		else:
-			cutting_progress = (total_cutting_finished / total_cutting_planned * 100) if total_cutting_planned > 0 else 0
-			print(f"  - Using qty-based: {total_cutting_finished} / {total_cutting_planned} * 100 = {cutting_progress:.1f}%")
+			cutting_progress = 0
+			print(f"  - No order qty, progress = 0%")
 		
 		print(f"\n[Stitching Progress]")
-		print(f"  - Total Stitching PCS: {total_stitching_pcs}")
 		print(f"  - Total Stitching Finished PCS: {total_stitching_finished_pcs:.2f}")
+		print(f"  - Total Order Qty: {total_order_qty}")
 		print(f"  - Total Stitching Planned (qty): {total_stitching_planned}")
 		print(f"  - Total Stitching Finished (qty): {total_stitching_finished}")
 		
-		if total_stitching_pcs > 0:
-			stitching_progress = (total_stitching_finished_pcs / total_stitching_pcs * 100)
-			print(f"  - Using PCS-based: {total_stitching_finished_pcs:.2f} / {total_stitching_pcs} * 100 = {stitching_progress:.1f}%")
+		# Stitching % = (Total Finished Stitching PCS / order qty) × 100
+		# Allow percentage above 100% if finished exceeds order qty
+		if total_order_qty > 0:
+			stitching_progress = (total_stitching_finished_pcs / total_order_qty) * 100
+			print(f"  - Calculation: ({total_stitching_finished_pcs:.2f} / {total_order_qty}) * 100 = {stitching_progress:.1f}%")
 		else:
-			stitching_progress = (total_stitching_finished / total_stitching_planned * 100) if total_stitching_planned > 0 else 0
-			print(f"  - Using qty-based: {total_stitching_finished} / {total_stitching_planned} * 100 = {stitching_progress:.1f}%")
+			stitching_progress = 0
+			print(f"  - No order qty, progress = 0%")
 		
 		print(f"\n[Packing Progress]")
-		print(f"  - Total Packing Planned: {total_packing_planned}")
 		print(f"  - Total Packing Finished: {total_packing_finished}")
+		print(f"  - Total Order Qty: {total_order_qty}")
+		print(f"  - Total Packing Planned: {total_packing_planned}")
 		
-		# Packing progress: 
-		# If finished >= planned, it's 100%
-		# If finished > 0, use finished as the denominator (since packing is done at finished item level and all finished items are packed)
-		if total_packing_finished > 0:
-			# If finished >= planned, it's 100%
-			if total_packing_finished >= total_packing_planned:
-				packing_progress = 100.0
-				print(f"  - Calculation: finished ({total_packing_finished}) >= planned ({total_packing_planned}), so 100%")
-			else:
-				# If finished < planned, but finished > 0, consider it 100% (all finished items are packed)
-				# This is because packing is done at finished item level
-				packing_progress = 100.0
-				print(f"  - Calculation: finished ({total_packing_finished}) < planned ({total_packing_planned}), but since packing is done at finished item level, showing 100%")
+		# Packing % = (Finished Packing Qty / order qty) × 100
+		# Allow percentage above 100% if finished exceeds order qty
+		if total_order_qty > 0:
+			packing_progress = (total_packing_finished / total_order_qty) * 100
+			print(f"  - Calculation: ({total_packing_finished} / {total_order_qty}) * 100 = {packing_progress:.1f}%")
 		else:
 			packing_progress = 0
-			print(f"  - No finished qty, progress = 0%")
+			print(f"  - No order qty, progress = 0%")
 		
 		# Overall progress: For finished items, get packing data from finished item rows (not bundle items)
 		# Sum up packing_finished from parent rows (finished items) only

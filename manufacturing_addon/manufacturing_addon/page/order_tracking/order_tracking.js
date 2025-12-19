@@ -415,13 +415,50 @@ function renderDetailedTable(details) {
 		return;
 	}
 	
+	// Build a map of parent order_qty for bundle items
+	const parentOrderQtyMap = {};
 	details.forEach(function(row) {
-		// Calculate percentages based on actual qty vs finished qty (not planned)
-		// If qty > 0, percentage = (finished / qty) * 100
-		// If qty == 0, check if there's planned qty to show progress
-		const cuttingPercent = row.cutting_qty > 0 ? (row.cutting_finished / row.cutting_qty * 100) : (row.cutting_planned > 0 ? (row.cutting_finished / row.cutting_planned * 100) : 0);
-		const stitchingPercent = row.stitching_qty > 0 ? (row.stitching_finished / row.stitching_qty * 100) : (row.stitching_planned > 0 ? (row.stitching_finished / row.stitching_planned * 100) : 0);
-		const packingPercent = row.packing_qty > 0 ? (row.packing_finished / row.packing_qty * 100) : (row.packing_planned > 0 ? (row.packing_finished / row.packing_planned * 100) : 0);
+		if (row.is_parent === true) {
+			// Store parent's order_qty keyed by order_sheet and item
+			const key = `${row.order_sheet}||${row.item}`;
+			parentOrderQtyMap[key] = row.order_qty || 0;
+		}
+	});
+	
+	details.forEach(function(row) {
+		// Calculate percentages based on finished qty vs order qty
+		// Allow percentages above 100% if finished exceeds order qty
+		// For bundle items, use parent's order_qty
+		let orderQty = row.order_qty || 0;
+		if (row.bundle_item && row.bundle_item !== null) {
+			// For bundle items, get parent's order_qty
+			const parentKey = `${row.order_sheet}||${row.item}`;
+			orderQty = parentOrderQtyMap[parentKey] || 0;
+		}
+		
+		// For Cutting: For bundle items, multiply finished by PCS to get PCS value
+		// Cutting % = (Finished Cutting PCS / Order Qty) × 100
+		let cuttingFinished = row.cutting_finished || 0;
+		if (row.pcs && row.pcs > 0 && row.bundle_item) {
+			// For bundle items, multiply by PCS to get PCS value
+			cuttingFinished = cuttingFinished * row.pcs;
+		}
+		// Allow percentage above 100%
+		const cuttingPercent = orderQty > 0 ? (cuttingFinished / orderQty * 100) : 0;
+		
+		// For Stitching: Same logic as Cutting
+		let stitchingFinished = row.stitching_finished || 0;
+		if (row.pcs && row.pcs > 0 && row.bundle_item) {
+			// For bundle items, multiply by PCS to get PCS value
+			stitchingFinished = stitchingFinished * row.pcs;
+		}
+		// Allow percentage above 100%
+		const stitchingPercent = orderQty > 0 ? (stitchingFinished / orderQty * 100) : 0;
+		
+		// For Packing: Packing is at finished item level, so no PCS multiplication needed
+		// Packing % = (Finished Packing Qty / Order Qty) × 100
+		// Allow percentage above 100%
+		const packingPercent = orderQty > 0 ? ((row.packing_finished || 0) / orderQty * 100) : 0;
 		
 		const cuttingStatus = getStatusBadge(cuttingPercent);
 		const stitchingStatus = getStatusBadge(stitchingPercent);
@@ -476,6 +513,10 @@ function renderDetailedTable(details) {
 
 function getStatusBadge(percent) {
 	if (percent >= 100) {
+		// Show "Over Complete" or "Complete" based on percentage
+		if (percent > 100) {
+			return '<span class="badge badge-success" style="background-color: #28a745;">Complete (' + formatPercentage(percent) + '%)</span>';
+		}
 		return '<span class="badge badge-success">Complete</span>';
 	} else if (percent >= 75) {
 		return '<span class="badge badge-info">In Progress</span>';

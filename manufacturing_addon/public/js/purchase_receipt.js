@@ -79,9 +79,20 @@ frappe.ui.form.on("Purchase Receipt Item", {
 			console.log("[PR Item] Stored original rate:", item._original_rate);
 		}
 		
-		// Only update stock_qty if conversion_factor exists and user hasn't manually set stock_qty
-		// Don't update if user is manually editing stock_qty
-		if (item.qty && item.conversion_factor && !item._manual_stock_qty) {
+		// CRITICAL: If user manually entered stock_qty, NEVER recalculate it from qty * conversion_factor
+		// Instead, calculate conversion_factor from stock_qty / qty
+		if (item._manual_stock_qty && item.stock_qty && item.stock_qty > 0 && item.qty && item.qty > 0) {
+			// User entered stock_qty, calculate conversion_factor from it
+			var conversion_factor = flt(item.stock_qty) / flt(item.qty);
+			console.log("[PR Item] User entered stock_qty - calculating conversion_factor from stock_qty/qty:", conversion_factor);
+			frappe.model.set_value(cdt, cdn, "conversion_factor", conversion_factor);
+			// CRITICAL: Restore exact stock_qty to prevent rounding
+			if (item._user_entered_stock_qty && Math.abs(flt(item.stock_qty) - item._user_entered_stock_qty) > 0.0001) {
+				item.stock_qty = item._user_entered_stock_qty;
+				refresh_field("stock_qty", cdn, "items");
+			}
+		} else if (item.qty && item.conversion_factor && !item._manual_stock_qty) {
+			// Only update stock_qty if user hasn't manually set it
 			var stock_qty = flt(item.qty) * flt(item.conversion_factor);
 			console.log("[PR Item] Auto-updating stock_qty from qty:", stock_qty);
 			frappe.model.set_value(cdt, cdn, "stock_qty", stock_qty);
@@ -93,12 +104,44 @@ frappe.ui.form.on("Purchase Receipt Item", {
 
 	stock_qty: function(frm, cdt, cdn) {
 		var item = locals[cdt][cdn];
-		var userEnteredStockQty = flt(item.stock_qty);
+		
+		// Get the raw value from the input field to preserve exact user input
+		var $stockQtyInput = null;
+		if (frm.fields_dict.items && frm.fields_dict.items.grid) {
+			var row = frm.fields_dict.items.grid.wrapper.find('[data-name="' + cdn + '"]').closest('.grid-row');
+			if (row.length) {
+				$stockQtyInput = row.find('input[data-fieldname="stock_qty"]');
+			}
+		}
+		
+		// Get exact value from input field if available, otherwise use item.stock_qty
+		var rawValue = $stockQtyInput && $stockQtyInput.length ? $stockQtyInput.val() : null;
+		
+		// Parse the value, removing commas and other formatting
+		var userEnteredStockQty;
+		if (rawValue !== null && rawValue !== '') {
+			// Remove commas and other formatting characters, then parse
+			var cleanedValue = String(rawValue).replace(/,/g, '').trim();
+			userEnteredStockQty = parseFloat(cleanedValue);
+			// If parseFloat returns NaN, fall back to flt(item.stock_qty)
+			if (isNaN(userEnteredStockQty)) {
+				userEnteredStockQty = flt(item.stock_qty);
+			}
+		} else {
+			userEnteredStockQty = flt(item.stock_qty);
+		}
+		
+		// If user entered a whole number (like 3200), preserve it as integer to avoid .0100 issues
+		if (userEnteredStockQty % 1 === 0) {
+			userEnteredStockQty = Math.round(userEnteredStockQty);
+		}
 		
 		console.log("[PR Item] stock_qty changed:", {
 			item_code: item.item_code,
 			qty: item.qty,
 			stock_qty: item.stock_qty,
+			raw_input_value: rawValue,
+			user_entered_stock_qty: userEnteredStockQty,
 			conversion_factor: item.conversion_factor,
 			rate: item.rate,
 			original_rate: item._original_rate
@@ -107,6 +150,11 @@ frappe.ui.form.on("Purchase Receipt Item", {
 		// Mark that user is manually editing stock_qty
 		item._manual_stock_qty = true;
 		item._user_entered_stock_qty = userEnteredStockQty; // Store exact value user entered
+		
+		// Set stock_qty to exact value to prevent any rounding
+		if (Math.abs(flt(item.stock_qty) - userEnteredStockQty) > 0.0001) {
+			item.stock_qty = userEnteredStockQty;
+		}
 		
 		// Set flag to prevent rate recalculation
 		item._prevent_rate_recalc = true;
@@ -137,11 +185,31 @@ frappe.ui.form.on("Purchase Receipt Item", {
 		// Auto-calculate conversion_factor from stock_qty and qty
 		// This is the key requirement: when user enters stock_qty, conversion_factor should auto-calculate
 		if (item.stock_qty && item.qty && item.qty > 0) {
-			var conversion_factor = flt(item.stock_qty) / flt(item.qty);
-			console.log("[PR Item] Auto-calculating conversion_factor from stock_qty:", conversion_factor);
+			// Store exact user-entered stock_qty before any calculations
+			var exact_stock_qty = item._user_entered_stock_qty || flt(item.stock_qty);
+			var conversion_factor = exact_stock_qty / flt(item.qty);
+			console.log("[PR Item] Auto-calculating conversion_factor from stock_qty:", conversion_factor, "exact_stock_qty:", exact_stock_qty);
 			
 			// Set conversion_factor and lock rate immediately
 			frappe.model.set_value(cdt, cdn, "conversion_factor", conversion_factor, function() {
+				// CRITICAL: Restore exact user-entered stock_qty after conversion_factor is set
+				// This prevents floating point precision issues (e.g., 3200 becoming 3200.0100)
+				if (exact_stock_qty && Math.abs(flt(item.stock_qty) - exact_stock_qty) > 0.0001) {
+					console.log("[PR Item] Restoring exact stock_qty from", item.stock_qty, "to", exact_stock_qty);
+					item.stock_qty = exact_stock_qty;
+					item._user_entered_stock_qty = exact_stock_qty;
+					refresh_field("stock_qty", cdn, "items");
+				}
+				
+				// Also restore after a short delay to catch any delayed recalculations
+				setTimeout(function() {
+					if (exact_stock_qty && Math.abs(flt(item.stock_qty) - exact_stock_qty) > 0.0001) {
+						console.log("[PR Item] Delayed restore of exact stock_qty from", item.stock_qty, "to", exact_stock_qty);
+						item.stock_qty = exact_stock_qty;
+						item._user_entered_stock_qty = exact_stock_qty;
+						refresh_field("stock_qty", cdn, "items");
+					}
+				}, 100);
 				// Immediately lock rate and price_list_rate using set_value to ensure UI updates
 				if (item._original_rate && item._original_rate > 0) {
 					if (Math.abs(flt(item.rate) - item._original_rate) > 0.01) {
@@ -167,8 +235,12 @@ frappe.ui.form.on("Purchase Receipt Item", {
 				}
 				
 				// Restore stock_qty to exact value user entered (prevent rounding)
-				if (item._user_entered_stock_qty && Math.abs(flt(item.stock_qty) - item._user_entered_stock_qty) > 0.0001) {
-					item.stock_qty = item._user_entered_stock_qty;
+				// Use exact_stock_qty if available, otherwise use _user_entered_stock_qty
+				var final_stock_qty = exact_stock_qty || item._user_entered_stock_qty;
+				if (final_stock_qty && Math.abs(flt(item.stock_qty) - final_stock_qty) > 0.0001) {
+					console.log("[PR Item] Final restore of exact stock_qty from", item.stock_qty, "to", final_stock_qty);
+					item.stock_qty = final_stock_qty;
+					item._user_entered_stock_qty = final_stock_qty;
 					refresh_field("stock_qty", cdn, "items");
 				}
 				
@@ -239,9 +311,29 @@ frappe.ui.form.on("Purchase Receipt Item", {
 			}
 		}
 		
-		// Only update stock_qty if user hasn't manually set it
-		// If user manually changed stock_qty, don't override it
-		if (item.qty && item.conversion_factor && !item._manual_stock_qty) {
+		// CRITICAL: If user manually entered stock_qty, NEVER recalculate it from qty * conversion_factor
+		// Instead, calculate conversion_factor from stock_qty / qty
+		if (item._manual_stock_qty && item.stock_qty && item.stock_qty > 0) {
+			console.log("[PR Item] User entered stock_qty - preserving it, NOT recalculating from qty * conversion_factor");
+			
+			// If qty exists, recalculate conversion_factor from stock_qty / qty to match user's stock_qty
+			if (item.qty && item.qty > 0) {
+				var correct_conversion_factor = flt(item.stock_qty) / flt(item.qty);
+				// Only update if conversion_factor doesn't match
+				if (Math.abs(flt(item.conversion_factor) - correct_conversion_factor) > 0.0001) {
+					console.log("[PR Item] Recalculating conversion_factor from stock_qty/qty:", correct_conversion_factor);
+					frappe.model.set_value(cdt, cdn, "conversion_factor", correct_conversion_factor);
+				}
+			}
+			
+			// CRITICAL: Restore exact stock_qty value to prevent any rounding
+			if (item._user_entered_stock_qty && Math.abs(flt(item.stock_qty) - item._user_entered_stock_qty) > 0.0001) {
+				console.log("[PR Item] Restoring exact stock_qty from", item.stock_qty, "to", item._user_entered_stock_qty);
+				item.stock_qty = item._user_entered_stock_qty;
+				refresh_field("stock_qty", cdn, "items");
+			}
+		} else if (item.qty && item.conversion_factor && !item._manual_stock_qty) {
+			// Only update stock_qty if user hasn't manually set it
 			var stock_qty = flt(item.qty) * flt(item.conversion_factor);
 			console.log("[PR Item] Auto-updating stock_qty from conversion_factor:", stock_qty);
 			frappe.model.set_value(cdt, cdn, "stock_qty", stock_qty);
@@ -504,6 +596,23 @@ function fetch_from_item_master(frm, cdt, cdn) {
 // Function to update stock_qty from qty and conversion_factor
 function update_stock_qty_from_qty(frm, cdt, cdn) {
 	var item = locals[cdt][cdn];
+	
+	// CRITICAL: If user manually entered stock_qty, NEVER recalculate it from qty * conversion_factor
+	// Instead, calculate conversion_factor from stock_qty / qty
+	if (item._manual_stock_qty && item.stock_qty && item.stock_qty > 0 && item.qty && item.qty > 0) {
+		// User entered stock_qty, calculate conversion_factor from it
+		var conversion_factor = flt(item.stock_qty) / flt(item.qty);
+		console.log("[PR Item] update_stock_qty_from_qty: User entered stock_qty, calculating conversion_factor:", conversion_factor);
+		frappe.model.set_value(cdt, cdn, "conversion_factor", conversion_factor);
+		// CRITICAL: Restore exact stock_qty to prevent rounding
+		if (item._user_entered_stock_qty && Math.abs(flt(item.stock_qty) - item._user_entered_stock_qty) > 0.0001) {
+			item.stock_qty = item._user_entered_stock_qty;
+			refresh_field("stock_qty", cdn, "items");
+		}
+		return; // Don't recalculate stock_qty
+	}
+	
+	// Only recalculate stock_qty if user hasn't manually set it
 	if (item.qty && item.conversion_factor && !item._manual_stock_qty) {
 		var stock_qty = flt(item.qty) * flt(item.conversion_factor);
 		console.log("[PR Item] update_stock_qty_from_qty:", stock_qty);
@@ -661,11 +770,23 @@ frappe.ui.form.on("Purchase Receipt", {
 					if (row_name) {
 						var item = locals['Purchase Receipt Item'][row_name];
 						if (item && item._user_entered_stock_qty !== undefined) {
-							var current_value = flt($input.val());
+							// Parse current value, removing commas
+							var currentRawValue = $input.val();
+							var cleanedCurrentValue = String(currentRawValue).replace(/,/g, '').trim();
+							var current_value = parseFloat(cleanedCurrentValue);
+							if (isNaN(current_value)) {
+								current_value = flt(item.stock_qty);
+							}
+							
 							// If value was rounded/changed, restore exact user value
 							if (Math.abs(current_value - item._user_entered_stock_qty) > 0.0001) {
 								console.log("[PR] DOM Watcher: Restoring exact stock_qty from", current_value, "to", item._user_entered_stock_qty);
-								$input.val(item._user_entered_stock_qty);
+								// Format the value for display (add commas if needed)
+								var displayValue = item._user_entered_stock_qty;
+								if (item._user_entered_stock_qty % 1 === 0) {
+									displayValue = Math.round(item._user_entered_stock_qty);
+								}
+								$input.val(displayValue);
 								item.stock_qty = item._user_entered_stock_qty;
 								refresh_field("stock_qty", row_name, "items");
 							}

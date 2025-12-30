@@ -32,6 +32,7 @@ doctype_js = {
     "Sales Order" : "public/js/sales_order.js",
     "Item" : "public/js/item.js",
     "BOM" : "public/js/bom.js",
+    "Purchase Receipt" : "public/js/purchase_receipt.js",
 
     }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -121,7 +122,8 @@ doctype_js = {
 
 override_doctype_class = {
 	"Production Plan": "manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan.ProductionPlan",
-	"Purchase Order": "manufacturing_addon.manufacturing_addon.doctype.purchase_order.purchase_order.PurchaseOrder"
+	"Purchase Order": "manufacturing_addon.manufacturing_addon.doctype.purchase_order.purchase_order.PurchaseOrder",
+	"Purchase Receipt": "manufacturing_addon.manufacturing_addon.doctype.purchase_receipt.purchase_receipt.CustomPurchaseReceipt"
 }
 
 # Document Events

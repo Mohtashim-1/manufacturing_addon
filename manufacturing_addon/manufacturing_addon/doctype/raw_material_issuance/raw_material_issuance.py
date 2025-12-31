@@ -316,7 +316,41 @@ def make_stock_entry_from_issuance(iss_doc):
 		# Fallback: set purpose directly if no stock entry type found
 		se.purpose = "Material Transfer"
 	
-	se.posting_date = iss_doc.posting_date
+	# Set posting_date from Raw Material Issuance document
+	# Get the actual posting_date value - reload from DB if needed to ensure we have the latest value
+	posting_date = iss_doc.posting_date
+	print(f"[RMTI] Initial posting_date from iss_doc: {posting_date}")
+	
+	if not posting_date:
+		# Reload from database to get the actual value
+		iss_doc.reload()
+		posting_date = iss_doc.posting_date
+		print(f"[RMTI] After reload, posting_date: {posting_date}")
+	
+	# Use posting_date if set, otherwise fallback to transaction_date or today
+	if not posting_date:
+		posting_date = getattr(iss_doc, 'transaction_date', None) or frappe.utils.today()
+		print(f"[RMTI] Using fallback posting_date: {posting_date}")
+	
+	# IMPORTANT: For past dates, we need to set set_posting_time = 1 first
+	# This allows setting custom posting_date and posting_time
+	se.set_posting_time = 1
+	print(f"[RMTI] Set set_posting_time = 1")
+	
+	# Now set posting_date and posting_time
+	posting_time = getattr(iss_doc, 'posting_time', None) or frappe.utils.nowtime()
+	se.posting_date = posting_date
+	se.posting_time = posting_time
+	
+	print(f"[RMTI] Stock Entry - posting_date: {se.posting_date}, posting_time: {se.posting_time}")
+	print(f"[RMTI] Raw Material Issuance - name: {iss_doc.name}, posting_date: {iss_doc.posting_date}")
+	
+	# Log for debugging (shortened to avoid length error)
+	frappe.log_error(
+		f"SE date: {se.posting_date} from RMTI: {iss_doc.name}",
+		"RMTI Stock Entry Date"
+	)
+	
 	se.from_warehouse = iss_doc.from_warehouse
 	se.to_warehouse = iss_doc.to_warehouse
 	
@@ -355,8 +389,33 @@ def make_stock_entry_from_issuance(iss_doc):
 		
 		se.append("items", item_dict)
 	
+	# Insert the stock entry
+	print(f"[RMTI] Before insert - posting_date: {se.posting_date}, set_posting_time: {getattr(se, 'set_posting_time', None)}")
 	se.insert(ignore_permissions=True)
+	print(f"[RMTI] After insert - posting_date: {se.posting_date}, set_posting_time: {getattr(se, 'set_posting_time', None)}")
+	
+	# Ensure posting_date and set_posting_time are set after insert (in case they were overridden by defaults)
+	if posting_date:
+		# Set set_posting_time first if not already set
+		if not getattr(se, 'set_posting_time', None):
+			se.set_posting_time = 1
+			se.db_set("set_posting_time", 1, update_modified=False)
+			print(f"[RMTI] Set set_posting_time = 1 after insert")
+		
+		# Set posting_date if it was changed
+		if se.posting_date != posting_date:
+			print(f"[RMTI] Posting date mismatch! SE: {se.posting_date}, Expected: {posting_date}")
+			se.posting_date = posting_date
+			se.posting_time = posting_time
+			se.db_set("posting_date", posting_date, update_modified=False)
+			se.db_set("posting_time", posting_time, update_modified=False)
+			se.reload()
+			print(f"[RMTI] After db_set and reload - posting_date: {se.posting_date}, posting_time: {se.posting_time}")
+	
+	# Submit the stock entry
+	print(f"[RMTI] Before submit - posting_date: {se.posting_date}, posting_time: {se.posting_time}")
 	se.submit()
+	print(f"[RMTI] After submit - Stock Entry {se.name} created with posting_date: {se.posting_date}")
 	
 	# Save link on Issuance
 	iss_doc.db_set("stock_entry", se.name)

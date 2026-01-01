@@ -677,7 +677,7 @@ class PackingReport(Document):
             
             # Fixed warehouses
             source_warehouse = "Work In Progress - SAH"
-            target_warehouse = "Stores - SAH"
+            target_warehouse = "Finished Goods - SAH"
             
             print(f"[on_submit] Source Warehouse: {source_warehouse}")
             print(f"[on_submit] Target Warehouse: {target_warehouse}")

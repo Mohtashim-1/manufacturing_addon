@@ -12,8 +12,12 @@
   "time",
   "column_break_qnok",
   "order_sheet",
+  "column_break_fiix",
+  "customer",
   "column_break_ynuh",
   "supplier",
+  "column_break_xljc",
+  "cost_center",
   "packing_report_data_section",
   "packing_report_ct",
   "section_break_yedn",
@@ -30,6 +34,10 @@
    "default": "Today",
    "fieldname": "date",
    "fieldtype": "Date",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Date"
   },
   {
@@ -45,6 +53,10 @@
    "default": "Now",
    "fieldname": "time",
    "fieldtype": "Time",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Time"
   },
   {
@@ -54,6 +66,11 @@
   {
    "fieldname": "order_sheet",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Order Sheet",
    "options": "Order Sheet"
   },
@@ -75,6 +92,10 @@
   {
    "fieldname": "ordered_qty",
    "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Ordered Qty",
    "precision": "0",
    "read_only": 1
@@ -86,6 +107,10 @@
   {
    "fieldname": "ready_qty",
    "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Ready Qty",
    "precision": "0",
    "read_only": 1
@@ -97,6 +122,10 @@
   {
    "fieldname": "percentage",
    "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Percentage",
    "precision": "0",
    "read_only": 1
@@ -118,6 +147,10 @@
   {
    "fieldname": "supplier",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Supplier",
    "link_filters": "[[\"Manufacturing Contractor\",\"packing\",\"=\",1]]",
    "options": "Manufacturing Contractor"
@@ -125,12 +158,43 @@
   {
    "fieldname": "column_break_ynuh",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_xljc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Cost Center",
+   "options": "Cost Center"
+  },
+  {
+   "fieldname": "column_break_fiix",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "order_sheet.customer",
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-18 03:44:26.646188",
+ "modified": "2026-01-01 18:07:07.405220",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Packing Report",
@@ -152,6 +216,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

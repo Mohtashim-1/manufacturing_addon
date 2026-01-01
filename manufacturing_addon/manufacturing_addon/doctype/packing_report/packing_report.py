@@ -744,6 +744,11 @@ class PackingReport(Document):
                 if hasattr(stock_entry, 'custom_packing_report'):
                     stock_entry.custom_packing_report = self.name
                 
+                # Set custom_cost_center from Packing Report
+                if hasattr(stock_entry, 'custom_cost_center') and self.cost_center:
+                    stock_entry.custom_cost_center = self.cost_center
+                    print(f"[on_submit] Set custom_cost_center: {self.cost_center}")
+                
                 # Call get_items to populate items from BOM
                 print(f"[on_submit] Calling get_items() to populate items from BOM...")
                 stock_entry.get_items()

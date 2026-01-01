@@ -12,6 +12,8 @@
   "time",
   "column_break_qnok",
   "order_sheet",
+  "column_break_pcxv",
+  "customer",
   "column_break_kqbg",
   "supplier",
   "stitching_report_data_section",
@@ -30,7 +32,13 @@
    "default": "Today",
    "fieldname": "date",
    "fieldtype": "Date",
-   "label": "Date"
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Date",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "get_data",
@@ -45,7 +53,13 @@
    "default": "Now",
    "fieldname": "time",
    "fieldtype": "Time",
-   "label": "Time"
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Time",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "column_break_qnok",
@@ -54,8 +68,14 @@
   {
    "fieldname": "order_sheet",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Order Sheet",
-   "options": "Order Sheet"
+   "options": "Order Sheet",
+   "reqd": 1
   },
   {
    "fieldname": "stitching_report_data_section",
@@ -75,7 +95,12 @@
   {
    "fieldname": "ordered_qty",
    "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Ordered Qty",
+   "non_negative": 1,
    "precision": "0",
    "read_only": 1
   },
@@ -86,6 +111,10 @@
   {
    "fieldname": "ready_qty",
    "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Ready Qty",
    "precision": "0",
    "read_only": 1
@@ -97,6 +126,10 @@
   {
    "fieldname": "percentage",
    "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Percentage",
    "precision": "0",
    "read_only": 1
@@ -122,15 +155,36 @@
   {
    "fieldname": "supplier",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Supplier",
    "link_filters": "[[\"Manufacturing Contractor\",\"stitching\",\"=\",1]]",
-   "options": "Manufacturing Contractor"
+   "options": "Manufacturing Contractor",
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_pcxv",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-18 03:43:31.896132",
+ "modified": "2026-01-01 18:02:50.592943",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stitching Report",
@@ -152,6 +206,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

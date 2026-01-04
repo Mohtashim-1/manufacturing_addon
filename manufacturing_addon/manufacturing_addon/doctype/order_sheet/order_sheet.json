@@ -6,6 +6,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "detail_tab",
   "posting_date_and_time",
   "shipment_date",
   "order_no",
@@ -25,7 +26,9 @@
   "column_break_cngj",
   "total_consumption",
   "section_break_di6r",
-  "amended_from"
+  "amended_from",
+  "dashboard_tab",
+  "dashboard"
  ],
  "fields": [
   {
@@ -170,12 +173,27 @@
    "hidden": 1,
    "label": "Sales Order",
    "options": "Sales Order"
+  },
+  {
+   "fieldname": "detail_tab",
+   "fieldtype": "Tab Break",
+   "label": "Detail"
+  },
+  {
+   "fieldname": "dashboard_tab",
+   "fieldtype": "Tab Break",
+   "label": "Dashboard"
+  },
+  {
+   "fieldname": "dashboard",
+   "fieldtype": "HTML",
+   "label": "Dashboard"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-01 18:03:03.589017",
+ "modified": "2026-01-04 16:40:12.257431",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

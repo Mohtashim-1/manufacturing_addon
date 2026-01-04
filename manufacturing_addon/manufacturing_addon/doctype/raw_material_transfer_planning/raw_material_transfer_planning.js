@@ -160,7 +160,7 @@ frappe.ui.form.on('Raw Material Transfer Planning', {
 							rmtp_raw_material_count: frm.doc.rmtp_raw_material ? frm.doc.rmtp_raw_material.length : 0,
 							message: r.message
 						});
-						frm.refresh_fields(['rmtp_raw_material', 'total_planned_qty', 'total_issued_qty', 'total_pending_qty', 'status']);
+						frm.refresh_fields(['rmtp_raw_material', 'total_planned_qty', 'total_issued_qty', 'total_pending_qty', 'total_transfer_percentage', 'status']);
 						if (r.message && r.message.message) {
 							frappe.show_alert({
 								message: r.message.message,
@@ -238,7 +238,7 @@ frappe.ui.form.on('Raw Material Transfer Planning', {
 					console.log('[RMT Planning] Refresh Issued Qty button clicked');
 					frm.call('refresh_issued_qty').then((r) => {
 						console.log('[RMT Planning] refresh_issued_qty completed', { response: r });
-						frm.refresh_fields(['rmtp_raw_material', 'total_issued_qty', 'total_pending_qty', 'status']);
+						frm.refresh_fields(['rmtp_raw_material', 'total_issued_qty', 'total_pending_qty', 'total_transfer_percentage', 'status']);
 					}).catch((err) => {
 						console.error('[RMT Planning] Error in refresh_issued_qty:', err);
 					});

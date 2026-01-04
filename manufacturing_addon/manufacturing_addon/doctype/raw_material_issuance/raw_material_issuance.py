@@ -50,6 +50,8 @@ class RawMaterialIssuance(Document):
 					{
 						"issued_qty": rm_row.issued_qty,
 						"pending_qty": rm_row.pending_qty,
+						"required_percentage": rm_row.required_percentage,
+						"transfer_percentage": rm_row.transfer_percentage,
 						"available_in_from_wh": rm_row.available_in_from_wh,
 						"available_in_company": rm_row.available_in_company
 					},
@@ -64,6 +66,8 @@ class RawMaterialIssuance(Document):
 					"total_planned_qty": planning_doc.total_planned_qty,
 					"total_issued_qty": planning_doc.total_issued_qty,
 					"total_pending_qty": planning_doc.total_pending_qty,
+					"total_required_percentage": planning_doc.total_required_percentage,
+					"total_transfer_percentage": planning_doc.total_transfer_percentage,
 					"status": planning_doc.status
 				},
 				update_modified=False
@@ -211,6 +215,8 @@ class RawMaterialIssuance(Document):
 					{
 						"issued_qty": rm_row.issued_qty,
 						"pending_qty": rm_row.pending_qty,
+						"required_percentage": rm_row.required_percentage,
+						"transfer_percentage": rm_row.transfer_percentage,
 						"available_in_from_wh": rm_row.available_in_from_wh,
 						"available_in_company": rm_row.available_in_company
 					},
@@ -226,7 +232,9 @@ class RawMaterialIssuance(Document):
 						"status": plan.status,
 						"total_planned_qty": plan.total_planned_qty,
 						"total_issued_qty": plan.total_issued_qty,
-						"total_pending_qty": plan.total_pending_qty
+						"total_pending_qty": plan.total_pending_qty,
+						"total_required_percentage": plan.total_required_percentage,
+						"total_transfer_percentage": plan.total_transfer_percentage
 					},
 					update_modified=False
 				)

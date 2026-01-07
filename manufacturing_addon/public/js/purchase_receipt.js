@@ -418,6 +418,13 @@ frappe.ui.form.on("Purchase Receipt Item", {
 			return;
 		}
 		
+		// If allow_zero_valuation_rate is enabled, allow rate to be 0
+		if (item.allow_zero_valuation_rate) {
+			console.log("[PR Item] allow_zero_valuation_rate is enabled, allowing rate to be 0");
+			// Do not restore the original rate if allow_zero_valuation_rate is checked
+			return;
+		}
+		
 		// If we have a locked rate and it's being changed by system (not user), restore it IMMEDIATELY
 		if (item._original_rate && item._original_rate > 0 && Math.abs(flt(item.rate) - item._original_rate) > 0.01) {
 			console.log("[PR Item] Rate changed from locked value! Restoring IMMEDIATELY from", item.rate, "to", item._original_rate);
@@ -884,7 +891,8 @@ if (typeof erpnext !== 'undefined' && erpnext.TransactionController) {
 		}
 		
 		// If this is Purchase Receipt and item has locked rate, prevent rate recalculation
-		if (doc.doctype === "Purchase Receipt" && item && item._original_rate && item._original_rate > 0) {
+		// BUT: If allow_zero_valuation_rate is enabled, allow rate to be 0
+		if (doc.doctype === "Purchase Receipt" && item && item._original_rate && item._original_rate > 0 && !item.allow_zero_valuation_rate) {
 			// Mark as being processed
 			inCalculateStockUomRate[itemKey] = true;
 			
@@ -919,7 +927,7 @@ if (typeof erpnext !== 'undefined' && erpnext.TransactionController) {
 				delete inCalculateStockUomRate[itemKey];
 			}
 		} else {
-			// Normal behavior for other doctypes
+			// Normal behavior for other doctypes or when allow_zero_valuation_rate is enabled
 			originalCalculateStockUomRate.call(this, doc, cdt, cdn);
 		}
 	};

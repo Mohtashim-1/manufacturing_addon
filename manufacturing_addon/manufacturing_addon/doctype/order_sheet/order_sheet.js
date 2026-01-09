@@ -47,6 +47,14 @@ frappe.ui.form.on("Order Sheet", {
 		if (frm.fields_dict.dashboard) {
 			if (!frm.doc.name) {
 				frm.fields_dict.dashboard.$wrapper.html(__("Save the Order Sheet to load the dashboard."));
+			} else if (frm.doc.docstatus !== 1) {
+				frm.fields_dict.dashboard.$wrapper.html(`
+					<div style="padding: 40px; text-align: center;">
+						<i class="fa fa-info-circle fa-3x" style="color: #6c757d; margin-bottom: 20px;"></i>
+						<h4 style="color: #495057; margin-bottom: 10px;">Dashboard Not Available</h4>
+						<p style="color: #6c757d;">Please submit the Order Sheet (docstatus = 1) to view the dashboard.</p>
+					</div>
+				`);
 			} else {
 				orderSheetDashboard.render(frm);
 			}
@@ -263,6 +271,19 @@ frappe.ui.form.on("Order Sheet", {
 
 const orderSheetDashboard = {
 	render(frm) {
+		// Only render dashboard if document is submitted (docstatus = 1)
+		if (frm.doc.docstatus !== 1) {
+			const wrapper = frm.fields_dict.dashboard.$wrapper;
+			wrapper.html(`
+				<div style="padding: 40px; text-align: center;">
+					<i class="fa fa-info-circle fa-3x" style="color: #6c757d; margin-bottom: 20px;"></i>
+					<h4 style="color: #495057; margin-bottom: 10px;">Dashboard Not Available</h4>
+					<p style="color: #6c757d;">Please submit the Order Sheet (docstatus = 1) to view the dashboard.</p>
+				</div>
+			`);
+			return;
+		}
+
 		const wrapper = frm.fields_dict.dashboard.$wrapper;
 		wrapper.empty().append(this.get_layout_html());
 
@@ -446,6 +467,18 @@ const orderSheetDashboard = {
 	},
 
 	load_data(frm, wrapper) {
+		// Only load data if document is submitted (docstatus = 1)
+		if (frm.doc.docstatus !== 1) {
+			wrapper.html(`
+				<div style="padding: 40px; text-align: center;">
+					<i class="fa fa-info-circle fa-3x" style="color: #6c757d; margin-bottom: 20px;"></i>
+					<h4 style="color: #495057; margin-bottom: 10px;">Dashboard Not Available</h4>
+					<p style="color: #6c757d;">Please submit the Order Sheet (docstatus = 1) to view the dashboard.</p>
+				</div>
+			`);
+			return;
+		}
+
 		const customer = this.customer_field ? this.customer_field.get_value() : "";
 		const salesOrder = this.sales_order_field ? this.sales_order_field.get_value() : "";
 		const orderSheet = this.order_sheet_field ? this.order_sheet_field.get_value() : frm.doc.name;

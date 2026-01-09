@@ -116,8 +116,7 @@
    "in_standard_filter": 1,
    "label": "Total Quantity",
    "non_negative": 1,
-   "read_only": 1,
-   "reqd": 1
+   "read_only": 1
   },
   {
    "fieldname": "column_break_djbx",
@@ -193,7 +192,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-04 16:40:12.257431",
+ "modified": "2026-01-10 00:35:32.034852",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

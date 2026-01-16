@@ -296,6 +296,19 @@ def find_or_create_size(size_value):
 	"""
 	if not size_value:
 		return None
+
+	def normalize_size_value(value):
+		value = (value or "").strip()
+		value = value.replace(" CM", "").replace('"', "").strip()
+		if value.startswith("("):
+			value = value[1:]
+		if ")*" in value:
+			value = value.replace(")*", "*")
+		if value.endswith(")"):
+			value = value[:-1]
+		return value.strip()
+
+	normalized_size = normalize_size_value(size_value)
 	
 	# Step 1: Check if exists by name (the name should be the full size value)
 	existing = frappe.get_all(
@@ -307,10 +320,20 @@ def find_or_create_size(size_value):
 	if existing:
 		print(f"[find_or_create_size] Found existing by name: '{existing[0].name}'")
 		return existing[0].name
+
+	if normalized_size and normalized_size != size_value:
+		existing_normalized = frappe.get_all(
+			"Stitching Size",
+			filters={"name": normalized_size},
+			limit=1
+		)
+		if existing_normalized:
+			print(f"[find_or_create_size] Found existing by normalized name: '{existing_normalized[0].name}'")
+			return existing_normalized[0].name
 	
 	# Step 2: Create new record with the full size value as name
 	# Extract lenght and width from first part for required fields
-	size_clean = size_value.replace(" CM", "").strip()
+	size_clean = normalized_size
 	first_part = size_clean
 	# Find first separator
 	for separator in [',', '+', '/']:
@@ -321,14 +344,13 @@ def find_or_create_size(size_value):
 	# Extract lenght and width for required fields
 	lenght = None
 	width = None
-	if 'X' in first_part:
-		parts = first_part.split('X')
-		if len(parts) >= 2:
-			try:
-				lenght = float(parts[0].strip())
-				width = float(parts[1].strip())
-			except (ValueError, IndexError):
-				pass
+	size_match = re.search(r'(\d+(?:\.\d+)?)\s*[Xx]\s*(\d+(?:\.\d+)?)', first_part)
+	if size_match:
+		try:
+			lenght = float(size_match.group(1))
+			width = float(size_match.group(2))
+		except (ValueError, IndexError):
+			pass
 	
 	# If we can't extract lenght/width, still try to create with just size field
 	# But Stitching Size requires lenght and width, so we need them
@@ -341,7 +363,7 @@ def find_or_create_size(size_value):
 			"doctype": "Stitching Size",
 			"lenght": lenght,
 			"width": width,
-			"size": size_value
+			"size": normalized_size or size_value
 		})
 		doc.insert(ignore_permissions=True)
 		frappe.db.commit()
@@ -355,6 +377,13 @@ def find_or_create_size(size_value):
 			print(f"[find_or_create_size] Found existing by name after duplicate error: '{existing_doc.name}'")
 			return existing_doc.name
 		except:
+			if normalized_size and normalized_size != size_value:
+				try:
+					existing_doc = frappe.get_doc("Stitching Size", normalized_size)
+					print(f"[find_or_create_size] Found existing by normalized name after duplicate error: '{existing_doc.name}'")
+					return existing_doc.name
+				except:
+					return None
 			return None
 	except Exception as e:
 		print(f"[find_or_create_size] ERROR creating Stitching Size: {str(e)[:200]}")
@@ -458,11 +487,18 @@ def get_items_from_sales_order(sales_order):
 			# Fallback: Try to extract size from item name
 			# Look for patterns like "140X220" or "140X220,60X70+15" in item name
 			item_name = item.item_code or item.item_name or ""
-			# Pattern: numberXnumber (with optional comma, plus, and more parts)
-			# Matches: "140X220", "140X220,60X70+15", "46X71+7.5", etc.
-			size_pattern = re.search(r'(\d+(?:\.\d+)?X\d+(?:\.\d+)?(?:[,\+]\d+(?:\.\d+)?(?:X\d+(?:\.\d+)?)?(?:\+\d+(?:\.\d+)?)?)*)', item_name)
+			# Pattern: size-like token with X separators and optional /, +, *, or parentheses
+			# Matches: "140X220", "140X220,60X70+15", "46X71+7.5", "140X200/70X80", "(135X200/80X80)*2"
+			size_pattern = re.search(r'([0-9][0-9Xx/,+*().]*[Xx][0-9Xx/,+*().]*)', item_name)
 			if size_pattern:
 				size_value = size_pattern.group(1)
+				size_value = size_value.strip()
+				if size_value.startswith("("):
+					size_value = size_value[1:]
+				if ")*" in size_value:
+					size_value = size_value.replace(")*", "*")
+				if size_value.endswith(")"):
+					size_value = size_value[:-1]
 				print(f"Extracted SIZE '{size_value}' from item name: '{item_name}'")
 		
 		if size_value:
@@ -665,4 +701,3 @@ def create_production_plan_from_order_sheet(order_sheet):
 		"name": production_plan.name,
 		"message": f"Production Plan {production_plan.name} created successfully"
 	}
-

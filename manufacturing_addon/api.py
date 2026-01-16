@@ -103,10 +103,17 @@ def add_parameter(doc, method):
         print(f"[add_parameter] Method 3: Extracting SIZE from item name: '{doc.name}'")
         import re
         item_name = doc.name or ""
-        # Pattern: numberXnumber (with optional comma, plus, and more parts)
-        size_pattern = re.search(r'(\d+(?:\.\d+)?X\d+(?:\.\d+)?(?:[,\+]\d+(?:\.\d+)?(?:X\d+(?:\.\d+)?)?(?:\+\d+(?:\.\d+)?)?)*)', item_name)
+        # Pattern: size-like token with X separators and optional /, +, *, or parentheses
+        size_pattern = re.search(r'([0-9][0-9Xx/,+*().]*[Xx][0-9Xx/,+*().]*)', item_name)
         if size_pattern:
             size_value = size_pattern.group(1)
+            size_value = size_value.strip()
+            if size_value.startswith("("):
+                size_value = size_value[1:]
+            if ")*" in size_value:
+                size_value = size_value.replace(")*", "*")
+            if size_value.endswith(")"):
+                size_value = size_value[:-1]
             print(f"[add_parameter] Extracted SIZE from item name: '{size_value}'")
     
     if not size_value:

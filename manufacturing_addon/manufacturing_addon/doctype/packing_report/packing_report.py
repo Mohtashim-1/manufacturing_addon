@@ -737,6 +737,10 @@ class PackingReport(Document):
                 stock_entry.from_warehouse = source_warehouse
                 stock_entry.to_warehouse = target_warehouse
                 
+                # Enable multi-level BOM to fetch all sub-assemblies and their components
+                stock_entry.use_multi_level_bom = 1
+                print(f"[on_submit] Set use_multi_level_bom = 1 to expand BOM recursively")
+                
                 # Set stock_entry_type based on purpose
                 stock_entry.set_stock_entry_type()
                 
@@ -749,8 +753,8 @@ class PackingReport(Document):
                     stock_entry.custom_cost_center = self.cost_center
                     print(f"[on_submit] Set custom_cost_center: {self.cost_center}")
                 
-                # Call get_items to populate items from BOM
-                print(f"[on_submit] Calling get_items() to populate items from BOM...")
+                # Call get_items to populate items from BOM (will use multi-level BOM if enabled)
+                print(f"[on_submit] Calling get_items() to populate items from BOM (with multi-level expansion)...")
                 stock_entry.get_items()
                 
                 if not stock_entry.items:

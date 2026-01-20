@@ -734,6 +734,7 @@ class PackingReport(Document):
                 stock_entry.posting_time = self.time or frappe.utils.nowtime()
                 stock_entry.bom_no = bom_no
                 stock_entry.fg_completed_qty = packaging_qty
+                stock_entry.from_bom = 1
                 stock_entry.from_warehouse = source_warehouse
                 stock_entry.to_warehouse = target_warehouse
                 

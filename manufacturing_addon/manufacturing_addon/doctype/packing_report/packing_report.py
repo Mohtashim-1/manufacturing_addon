@@ -739,8 +739,8 @@ class PackingReport(Document):
                 stock_entry.to_warehouse = target_warehouse
                 
                 # Enable multi-level BOM to fetch all sub-assemblies and their components
-                stock_entry.use_multi_level_bom = 1
-                print(f"[on_submit] Set use_multi_level_bom = 1 to expand BOM recursively")
+                # stock_entry.use_multi_level_bom = 1
+                # print(f"[on_submit] Set use_multi_level_bom = 1 to expand BOM recursively")
                 
                 # Set stock_entry_type based on purpose
                 stock_entry.set_stock_entry_type()

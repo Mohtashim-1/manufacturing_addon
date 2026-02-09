@@ -239,10 +239,15 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 			else:
 				print(f"  - Available qty: {mr_available_stock_qty}")
 			print(f"  - Current/New PO qty: {po_stock_qty}")
-			print(f"  - Validation: {po_stock_qty} > {mr_available_stock_qty} = {po_stock_qty > mr_available_stock_qty}")
+			
+			# Compare at the same precision to avoid tiny UOM conversion float diffs
+			precision = frappe.get_precision("Purchase Order Item", "stock_qty") or 6
+			po_stock_qty_cmp = frappe.utils.flt(po_stock_qty, precision)
+			mr_available_stock_qty_cmp = frappe.utils.flt(mr_available_stock_qty, precision)
+			print(f"  - Validation (precision {precision}): {po_stock_qty_cmp} > {mr_available_stock_qty_cmp} = {po_stock_qty_cmp > mr_available_stock_qty_cmp}")
 			
 			# Check if PO quantity exceeds available MR quantity
-			if po_stock_qty > mr_available_stock_qty:
+			if po_stock_qty_cmp > mr_available_stock_qty_cmp:
 				print(f"  - ERROR: Quantity exceeds available MR quantity!")
 				
 				# Build a clear, user-friendly error message with HTML formatting
@@ -338,4 +343,3 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 				print(f"  - ✓ Validation passed")
 		
 		print(f"{'='*80}\n")
-

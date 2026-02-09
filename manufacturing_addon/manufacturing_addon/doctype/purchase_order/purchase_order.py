@@ -74,6 +74,9 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 			except:
 				pass
 		
+		# Validate Material Request requirement (before calling parent validate)
+		self.validate_material_request_required()
+		
 		# Call parent validate
 		super().validate()
 		self.validate_po_qty_against_mr()
@@ -85,6 +88,127 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 			print(f"[PO DEBUG] Restoring supplier to: {user_supplier_before}")
 			self.supplier = user_supplier_before
 			self._user_supplier = user_supplier_before
+	
+	def validate_material_request_required(self):
+		"""
+		Validate that Purchase Order has at least one item linked to Material Request.
+		Exception: System Managers can create/edit PO without Material Request when in draft (docstatus = 0).
+		During submission/approval (docstatus = 1), System Manager must also follow validation.
+		"""
+		# Check if user is System Manager
+		is_system_manager = "System Manager" in frappe.get_roles()
+		user_roles = frappe.get_roles()
+		docstatus = self.docstatus or 0
+		
+		# Check if document is being submitted (either directly or through workflow)
+		# During workflow submission, docstatus might still be 0 in validate(), but _action indicates submission
+		is_being_submitted = False
+		
+		# Get _action if it exists
+		doc_action = getattr(self, '_action', None)
+		
+		# Check form_dict for workflow action or submit action
+		workflow_action = None
+		form_action = None
+		if hasattr(frappe.local, 'form_dict'):
+			form_dict = frappe.local.form_dict
+			workflow_action = form_dict.get('workflow_action')
+			form_action = form_dict.get('action')
+		
+		print(f"[PO Validation] Submission detection:")
+		print(f"  - docstatus: {docstatus}")
+		print(f"  - _action: {doc_action}")
+		print(f"  - form_dict.action: {form_action}")
+		print(f"  - form_dict.workflow_action: {workflow_action}")
+		
+		# Check if it's already submitted
+		if docstatus == 1:
+			is_being_submitted = True
+		# Check if _action indicates submission (this is set when submit() is called, including from workflow)
+		elif doc_action == 'submit':
+			is_being_submitted = True
+		# Check if form_dict has submit action
+		elif form_action == 'submit':
+			is_being_submitted = True
+		# Check if workflow action is being applied (user clicked workflow button)
+		elif workflow_action:
+			is_being_submitted = True
+		
+		print(f"[PO Validation] System Manager check:")
+		print(f"  - User roles: {user_roles}")
+		print(f"  - Is System Manager: {is_system_manager}")
+		print(f"  - Docstatus: {docstatus}")
+		print(f"  - Is being submitted: {is_being_submitted}")
+		print(f"  - Workflow action: {workflow_action}")
+		print(f"  - Document name: {self.name}")
+		if hasattr(self, '_action'):
+			print(f"  - _action: {self._action}")
+		
+		# System Manager exemption: Only allow exemption when creating/editing draft (docstatus = 0) AND not submitting
+		# During submission/approval/workflow actions, System Manager must also follow validation
+		if is_system_manager and docstatus == 0 and not is_being_submitted:
+			print("[PO Validation] System Manager detected - skipping Material Request validation (draft mode, regular save)")
+			return
+		
+		if is_system_manager and (docstatus == 1 or is_being_submitted):
+			print("[PO Validation] System Manager detected but document is being submitted/approved - validation applies")
+		
+		# Check if there are items
+		if not self.items or len(self.items) == 0:
+			frappe.throw(
+				_("Purchase Order must have at least one item."),
+				title=_("Items Required")
+			)
+		
+		# Check if ALL items have Material Request
+		items_without_mr = []
+		print(f"[PO Validation] Checking {len(self.items)} items for Material Request...")
+		for item in self.items:
+			print(f"[PO Validation] Item {item.idx}: item_code={item.item_code}, material_request={item.material_request}")
+			if not item.material_request:
+				items_without_mr.append({
+					"idx": item.idx,
+					"item_code": item.item_code or "N/A"
+				})
+				print(f"[PO Validation] Item {item.idx} MISSING Material Request!")
+			else:
+				print(f"[PO Validation] Material Request found: {item.material_request} in item {item.idx}")
+		
+		# If any item is missing Material Request, prevent save
+		if items_without_mr:
+			print(f"[PO Validation] ERROR: {len(items_without_mr)} item(s) missing Material Request!")
+			# Build formatted error message with HTML
+			error_msg = """
+				<div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;'>
+					<div style='color: #c62828; font-weight: 600; font-size: 14px; margin-bottom: 12px;'>
+						⚠️ Material Request Required
+					</div>
+					<div style='color: #333; font-size: 13px; margin-bottom: 16px; line-height: 1.6;'>
+						Purchase Order cannot be created without Material Request. The following item(s) are missing Material Request:
+					</div>
+					<div style='background-color: #fff3cd; border-left: 3px solid #ffc107; padding: 12px; margin-bottom: 16px; border-radius: 4px;'>
+						<ul style='margin: 0; padding-left: 20px; color: #856404;'>
+			"""
+			for item in items_without_mr:
+				error_msg += f"<li style='margin-bottom: 8px;'><strong>Row {item['idx']}:</strong> {item['item_code']}</li>"
+			error_msg += """
+						</ul>
+					</div>
+					<div style='color: #666; font-size: 12px; font-style: italic;'>
+						Please add Material Request to all items or contact a System Manager.
+					</div>
+				</div>
+			"""
+			
+			# Show error message
+			frappe.msgprint(
+				error_msg,
+				title=_("Material Request Required"),
+				indicator="red",
+				raise_exception=1
+			)
+		else:
+			print("[PO Validation] Validation passed - Material Request found")
 	
 	def validate_po_qty_against_mr(self):
 		"""

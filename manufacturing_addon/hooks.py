@@ -162,23 +162,13 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"manufacturing_addon.tasks.all"
-# 	],
-# 	"daily": [
-# 		"manufacturing_addon.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"manufacturing_addon.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"manufacturing_addon.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"manufacturing_addon.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"cron": {
+		"59 11 * * *": [
+			"manufacturing_addon.manufacturing_addon.daily_order_sheet_email.send_daily_active_order_sheet_email"
+		]
+	}
+}
 
 # Testing
 # -------
@@ -258,4 +248,3 @@ override_doctype_dashboards = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-

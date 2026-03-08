@@ -120,3 +120,36 @@ def make_delivery_note_with_all_items(source_name, target_doc=None):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

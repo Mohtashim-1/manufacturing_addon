@@ -37,8 +37,11 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 					<div class="col-md-3">
 						<label style="font-weight: 600; font-size: 13px; color: #495057; margin-bottom: 5px;">&nbsp;</label>
 						<div>
-							<button class="btn btn-primary btn-block" onclick="loadDashboardData()">
+							<button class="btn btn-primary btn-block mb-2" onclick="loadDashboardData()">
 								<i class="fa fa-refresh"></i> Refresh
+							</button>
+							<button class="btn btn-success btn-block" onclick="triggerDailyOrderSheetEmail()">
+								<i class="fa fa-envelope"></i> Send Email Now
 							</button>
 						</div>
 					</div>
@@ -66,8 +69,12 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 					<h4 style="margin: 0; color: #495057;">
 						<i class="fa fa-table"></i> Order Details
 					</h4>
-					<div style="width: 300px;">
-						<input type="text" id="table-search-input" class="form-control" placeholder="Search orders, items, sizes, colors..." style="font-size: 13px;" />
+					<div class="d-flex align-items-center" style="gap: 8px;">
+						<button class="btn btn-outline-secondary btn-sm" onclick="expandAllRows()">Expand All</button>
+						<button class="btn btn-outline-secondary btn-sm" onclick="collapseAllRows()">Collapse All</button>
+						<div style="width: 300px;">
+							<input type="text" id="table-search-input" class="form-control" placeholder="Search orders, items, sizes, colors..." style="font-size: 13px;" />
+						</div>
 					</div>
 				</div>
 				<div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
@@ -136,8 +143,6 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 			sales_order: $('#filter_sales_order_field').length,
 			order_sheet: $('#filter_order_sheet_field').length
 		});
-		// Reset initialization flag in case page was reloaded
-		window.link_fields_initialized = false;
 		try {
 			setupLinkFields();
 			console.log('[Order Tracking] setupLinkFields completed');
@@ -500,7 +505,29 @@ function setupLinkFields() {
 			sales_order: $('#filter_sales_order_field').children('.form-group').length,
 			order_sheet: $('#filter_order_sheet_field').children('.form-group').length
 		});
+
+		// Ensure each filter has only one visible text input.
+		enforceSingleVisibleInput('#filter_customer_field');
+		enforceSingleVisibleInput('#filter_sales_order_field');
+		enforceSingleVisibleInput('#filter_order_sheet_field');
 	}, 500);
+}
+
+function enforceSingleVisibleInput(containerSelector) {
+	const $container = $(containerSelector);
+	const $inputs = $container.find('input[type="text"]:visible');
+	if ($inputs.length <= 1) return;
+
+	// Keep the first visible input, remove the rest safely.
+	$inputs.slice(1).each(function() {
+		const $input = $(this);
+		const $removeTarget = $input.closest('.link-field, .control-input-wrapper, .form-group, .frappe-control');
+		if ($removeTarget.length) {
+			$removeTarget.remove();
+		} else {
+			$input.remove();
+		}
+	});
 }
 
 function loadDashboardData() {
@@ -544,6 +571,33 @@ function loadDashboardData() {
 	});
 }
 
+function triggerDailyOrderSheetEmail() {
+	frappe.confirm(
+		__('Send daily active order-sheet email now? This will send the report with previous-day data only.'),
+		function() {
+			frappe.call({
+				method: 'manufacturing_addon.manufacturing_addon.daily_order_sheet_email.trigger_daily_active_order_sheet_email',
+				freeze: true,
+				freeze_message: __('Sending order-sheet email...'),
+				callback: function(r) {
+					frappe.msgprint({
+						title: __('Email Queued'),
+						indicator: 'green',
+						message: __(r.message || 'Daily active order-sheet email has been queued.')
+					});
+				},
+				error: function() {
+					frappe.msgprint({
+						title: __('Error'),
+						indicator: 'red',
+						message: __('Unable to send email. Please check permissions and email queue.')
+					});
+				}
+			});
+		}
+	);
+}
+
 function renderDashboard(data) {
 	// Render Summary Cards
 	renderSummaryCards(data.summary || {});
@@ -557,7 +611,7 @@ function renderDashboard(data) {
 
 function renderSummaryCards(summary) {
 	const cardsHtml = `
-		<div class="col-md-3 mb-3">
+		<div class="col-lg-2 col-md-4 col-sm-6 mb-3">
 			<div class="card text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; border-radius: 10px;">
 				<div class="card-body">
 					<div class="d-flex justify-content-between align-items-center">
@@ -572,7 +626,7 @@ function renderSummaryCards(summary) {
 				</div>
 			</div>
 		</div>
-		<div class="col-md-3 mb-3">
+		<div class="col-lg-2 col-md-4 col-sm-6 mb-3">
 			<div class="card text-white" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border: none; border-radius: 10px;">
 				<div class="card-body">
 					<div class="d-flex justify-content-between align-items-center">
@@ -587,7 +641,7 @@ function renderSummaryCards(summary) {
 				</div>
 			</div>
 		</div>
-		<div class="col-md-3 mb-3">
+		<div class="col-lg-2 col-md-4 col-sm-6 mb-3">
 			<div class="card text-white" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border: none; border-radius: 10px;">
 				<div class="card-body">
 					<div class="d-flex justify-content-between align-items-center">
@@ -602,7 +656,22 @@ function renderSummaryCards(summary) {
 				</div>
 			</div>
 		</div>
-		<div class="col-md-3 mb-3">
+		<div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+			<div class="card text-white" style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); border: none; border-radius: 10px;">
+				<div class="card-body">
+					<div class="d-flex justify-content-between align-items-center">
+						<div>
+							<h6 class="card-subtitle mb-2" style="opacity: 0.9;">Stitching Progress</h6>
+							<h2 class="mb-0" style="font-weight: 700;">${formatPercentage(summary.stitching_progress || 0)}%</h2>
+						</div>
+						<div style="font-size: 40px; opacity: 0.5;">
+							<i class="fa fa-cogs"></i>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="col-lg-2 col-md-4 col-sm-6 mb-3">
 			<div class="card text-white" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); border: none; border-radius: 10px;">
 				<div class="card-body">
 					<div class="d-flex justify-content-between align-items-center">
@@ -694,18 +763,38 @@ function setupTableSearch() {
 		const searchTerm = $(this).val().toLowerCase();
 		filterTableRows(searchTerm);
 	});
+
+	// Parent row expand/collapse handler
+	$(document).on('click', '.os-parent-toggle', function() {
+		const $toggle = $(this);
+		const groupKey = $toggle.attr('data-group');
+		const isExpanded = $toggle.attr('data-expanded') === '1';
+		const $children = getChildRowsByGroup(groupKey);
+
+		if (isExpanded) {
+			$children.hide();
+			$toggle.attr('data-expanded', '0').find('.os-toggle-icon').text('▸');
+		} else {
+			$children.show();
+			$toggle.attr('data-expanded', '1').find('.os-toggle-icon').text('▾');
+		}
+	});
 }
 
 function filterTableRows(searchTerm) {
-	const rows = $('#order-details-body tr');
+	const rows = $('#order-details-body tr').not('.no-results');
 	
 	if (!searchTerm || searchTerm.trim() === '') {
-		// Show all rows if search is empty
+		$('#order-details-body tr.no-results').remove();
+		// Restore default collapsed state when search is cleared
 		rows.show();
+		applyDefaultCollapsedState();
 		return;
 	}
 	
 	let visibleCount = 0;
+	rows.hide();
+
 	rows.each(function() {
 		const $row = $(this);
 		const rowText = $row.text().toLowerCase();
@@ -714,6 +803,23 @@ function filterTableRows(searchTerm) {
 		if (rowText.includes(searchTerm)) {
 			$row.show();
 			visibleCount++;
+
+			// If child matched, show parent and keep group expanded
+			if ($row.hasClass('os-child-row')) {
+				const groupKey = $row.attr('data-parent-group');
+				const $parent = getParentRowByGroup(groupKey);
+				$parent.show();
+				setGroupExpanded(groupKey, true);
+			}
+
+			// If parent matched, show all its children for quick review
+			if ($row.hasClass('os-parent-row')) {
+				const groupKey = $row.attr('data-parent-group');
+				const $children = getChildRowsByGroup(groupKey);
+				$children.show();
+				visibleCount += $children.length;
+				setGroupExpanded(groupKey, true);
+			}
 		} else {
 			$row.hide();
 		}
@@ -735,6 +841,41 @@ function filterTableRows(searchTerm) {
 	} else {
 		$('#order-details-body tr.no-results').remove();
 	}
+}
+
+function applyDefaultCollapsedState() {
+	$('tr.os-child-row').hide();
+	$('.os-parent-toggle').attr('data-expanded', '0');
+	$('.os-parent-toggle .os-toggle-icon').text('▸');
+}
+
+function setGroupExpanded(groupKey, expanded) {
+	const $parentToggle = $(`.os-parent-toggle[data-group="${groupKey}"]`);
+	if (!$parentToggle.length) return;
+	$parentToggle.attr('data-expanded', expanded ? '1' : '0');
+	$parentToggle.find('.os-toggle-icon').text(expanded ? '▾' : '▸');
+}
+
+function getChildRowsByGroup(groupKey) {
+	return $('tr.os-child-row').filter(function() {
+		return $(this).attr('data-parent-group') === groupKey;
+	});
+}
+
+function getParentRowByGroup(groupKey) {
+	return $('tr.os-parent-row').filter(function() {
+		return $(this).attr('data-parent-group') === groupKey;
+	});
+}
+
+function expandAllRows() {
+	$('tr.os-child-row').show();
+	$('.os-parent-toggle').attr('data-expanded', '1');
+	$('.os-parent-toggle .os-toggle-icon').text('▾');
+}
+
+function collapseAllRows() {
+	applyDefaultCollapsedState();
 }
 
 function renderDetailedTable(details) {
@@ -761,11 +902,39 @@ function renderDetailedTable(details) {
 	
 	// Build a map of parent order_qty for bundle items
 	const parentOrderQtyMap = {};
+	const childCountMap = {};
+	const childAggregates = {};
 	details.forEach(function(row) {
 		if (row.is_parent === true) {
 			// Store parent's order_qty keyed by order_sheet and item
 			const key = `${row.order_sheet}||${row.item}`;
 			parentOrderQtyMap[key] = row.order_qty || 0;
+			if (!childCountMap[key]) {
+				childCountMap[key] = 0;
+			}
+		} else if (row.bundle_item && row.bundle_item !== null) {
+			const parentKey = `${row.order_sheet}||${row.item}`;
+			childCountMap[parentKey] = (childCountMap[parentKey] || 0) + 1;
+			if (!childAggregates[parentKey]) {
+				childAggregates[parentKey] = {
+					cutting_qty: 0,
+					cutting_finished: 0,
+					cutting_planned: 0,
+					cutting_finished_pcs: 0,
+					stitching_qty: 0,
+					stitching_finished: 0,
+					stitching_planned: 0,
+					stitching_finished_pcs: 0
+				};
+			}
+			childAggregates[parentKey].cutting_qty += (row.cutting_qty || 0);
+			childAggregates[parentKey].cutting_finished += (row.cutting_finished || 0);
+			childAggregates[parentKey].cutting_planned += (row.cutting_planned || 0);
+			childAggregates[parentKey].cutting_finished_pcs += (row.cutting_finished || 0) * (row.pcs || 1);
+			childAggregates[parentKey].stitching_qty += (row.stitching_qty || 0);
+			childAggregates[parentKey].stitching_finished += (row.stitching_finished || 0);
+			childAggregates[parentKey].stitching_planned += (row.stitching_planned || 0);
+			childAggregates[parentKey].stitching_finished_pcs += (row.stitching_finished || 0) * (row.pcs || 1);
 		}
 	});
 	
@@ -774,27 +943,53 @@ function renderDetailedTable(details) {
 		// Allow percentages above 100% if finished exceeds order qty
 		// For bundle items, use parent's order_qty
 		let orderQty = row.order_qty || 0;
+		const parentKey = `${row.order_sheet}||${row.item}`;
+		const parentAgg = childAggregates[parentKey] || null;
+		// Determine if this is a parent row (finished item) or child row (bundle item)
+		const isParent = row.is_parent === true;
+		const isBundleItem = row.bundle_item && row.bundle_item !== null;
+
 		if (row.bundle_item && row.bundle_item !== null) {
 			// For bundle items, get parent's order_qty
-			const parentKey = `${row.order_sheet}||${row.item}`;
 			orderQty = parentOrderQtyMap[parentKey] || 0;
+		}
+
+		let displayCuttingQty = row.cutting_qty || 0;
+		let displayCuttingFinished = row.cutting_finished || 0;
+		let displayCuttingPlanned = row.cutting_planned || 0;
+		let displayStitchingQty = row.stitching_qty || 0;
+		let displayStitchingFinished = row.stitching_finished || 0;
+		let displayStitchingPlanned = row.stitching_planned || 0;
+
+		// Parent row should show summed child values for cutting/stitching
+		if (isParent && parentAgg) {
+			displayCuttingQty = parentAgg.cutting_qty;
+			displayCuttingFinished = parentAgg.cutting_finished;
+			displayCuttingPlanned = parentAgg.cutting_planned || displayCuttingPlanned;
+			displayStitchingQty = parentAgg.stitching_qty;
+			displayStitchingFinished = parentAgg.stitching_finished;
+			displayStitchingPlanned = parentAgg.stitching_planned || displayStitchingPlanned;
 		}
 		
 		// For Cutting: For bundle items, multiply finished by PCS to get PCS value
 		// Cutting % = (Finished Cutting PCS / Order Qty) × 100
-		let cuttingFinished = row.cutting_finished || 0;
+		let cuttingFinished = displayCuttingFinished;
 		if (row.pcs && row.pcs > 0 && row.bundle_item) {
 			// For bundle items, multiply by PCS to get PCS value
 			cuttingFinished = cuttingFinished * row.pcs;
+		} else if (isParent && parentAgg) {
+			cuttingFinished = parentAgg.cutting_finished_pcs;
 		}
 		// Allow percentage above 100%
 		const cuttingPercent = orderQty > 0 ? (cuttingFinished / orderQty * 100) : 0;
 		
 		// For Stitching: Same logic as Cutting
-		let stitchingFinished = row.stitching_finished || 0;
+		let stitchingFinished = displayStitchingFinished;
 		if (row.pcs && row.pcs > 0 && row.bundle_item) {
 			// For bundle items, multiply by PCS to get PCS value
 			stitchingFinished = stitchingFinished * row.pcs;
+		} else if (isParent && parentAgg) {
+			stitchingFinished = parentAgg.stitching_finished_pcs;
 		}
 		// Allow percentage above 100%
 		const stitchingPercent = orderQty > 0 ? (stitchingFinished / orderQty * 100) : 0;
@@ -808,10 +1003,6 @@ function renderDetailedTable(details) {
 		const stitchingStatus = getStatusBadge(stitchingPercent);
 		const packingStatus = getStatusBadge(packingPercent);
 		
-		// Determine if this is a parent row (finished item) or child row (bundle item)
-		const isParent = row.is_parent === true;
-		const isBundleItem = row.bundle_item && row.bundle_item !== null;
-		
 		// Style for parent vs child rows
 		let rowClass = '';
 		let rowStyle = '';
@@ -824,12 +1015,23 @@ function renderDetailedTable(details) {
 		
 		// Display item name - show bundle item name if it's a bundle item
 		let displayItem = row.item || '';
+		const rowGroupKey = `${row.order_sheet}||${row.item}`;
+		const hasChildren = isParent && (childCountMap[rowGroupKey] || 0) > 0;
+
 		if (isBundleItem) {
 			displayItem = `  └─ ${row.bundle_item || ''}`;
+		} else if (hasChildren) {
+			displayItem = `
+				<span class="os-parent-toggle" data-group="${rowGroupKey}" data-expanded="0" style="cursor: pointer; user-select: none;">
+					<span class="os-toggle-icon">▸</span> ${displayItem}
+				</span>
+			`;
 		}
 		
 		const tr = $(`
-			<tr class="${rowClass}" style="${rowStyle}">
+			<tr class="${rowClass} ${isBundleItem ? 'os-child-row' : 'os-parent-row'}"
+				data-parent-group="${rowGroupKey}"
+				style="${rowStyle}${isBundleItem ? 'display: none;' : ''}">
 				<td>${isBundleItem ? '' : (row.order_sheet || '')}</td>
 				<td>${displayItem}</td>
 				<td>${isBundleItem ? '' : (row.size || '')}</td>
@@ -837,12 +1039,12 @@ function renderDetailedTable(details) {
 				<td class="text-right">${isBundleItem ? '' : formatNumber(row.order_qty || 0)}</td>
 				<td class="text-right">${isBundleItem ? '' : formatNumber(row.planned_qty || 0)}</td>
 				<td class="text-right">${formatNumber(row.pcs || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatNumber(row.cutting_qty || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatNumber(row.cutting_finished || 0)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatNumber(displayCuttingQty)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatNumber(displayCuttingFinished)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatPercentage(cuttingPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-info text-white'}">${cuttingStatus}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(row.stitching_qty || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(row.stitching_finished || 0)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(displayStitchingQty)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(displayStitchingFinished)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-warning text-white'}">${stitchingStatus}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatNumber(row.packing_qty || 0)}</td>
@@ -853,6 +1055,8 @@ function renderDetailedTable(details) {
 		`);
 		tbody.append(tr);
 	});
+
+	applyDefaultCollapsedState();
 }
 
 function getStatusBadge(percent) {

@@ -184,7 +184,7 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 						⚠️ Material Request Required
 					</div>
 					<div style='color: #333; font-size: 13px; margin-bottom: 16px; line-height: 1.6;'>
-						Purchase Order cannot be created without Material Request. The following item(s) are missing Material Request:
+						Purcha	se Order cannot be created without Material Request. The following item(s) are missing Material Request:
 					</div>
 					<div style='background-color: #fff3cd; border-left: 3px solid #ffc107; padding: 12px; margin-bottom: 16px; border-radius: 4px;'>
 						<ul style='margin: 0; padding-left: 20px; color: #856404;'>

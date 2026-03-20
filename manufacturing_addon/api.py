@@ -152,11 +152,12 @@ def add_parameter(doc, method):
         print(f"{'='*60}\n")
         return
     
-    # Clear existing custom_product_combo_item if any
+    # If custom_product_combo_item already has rows, do not overwrite
     existing_count = len(doc.custom_product_combo_item) if doc.custom_product_combo_item else 0
     if existing_count > 0:
-        print(f"[add_parameter] Clearing {existing_count} existing custom_product_combo_item rows")
-        doc.set("custom_product_combo_item", [])
+        print(f"[add_parameter] Skipping combo copy; {existing_count} existing custom_product_combo_item rows found")
+        print(f"{'='*60}\n")
+        return
     
     # Copy combo_detail to custom_product_combo_item
     copied_count = 0

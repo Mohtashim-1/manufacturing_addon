@@ -95,6 +95,10 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 		Exception: System Managers can create/edit PO without Material Request when in draft (docstatus = 0).
 		During submission/approval (docstatus = 1), System Manager must also follow validation.
 		"""
+		# If this PO is created from Production Plan workflow, relax MR requirement
+		if self._is_from_production_plan():
+			print("[PO Validation] Production Plan workflow detected - skipping Material Request validation")
+			return
 		# Check if user is System Manager
 		is_system_manager = "System Manager" in frappe.get_roles()
 		user_roles = frappe.get_roles()
@@ -164,15 +168,106 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 		items_without_mr = []
 		print(f"[PO Validation] Checking {len(self.items)} items for Material Request...")
 		for item in self.items:
-			print(f"[PO Validation] Item {item.idx}: item_code={item.item_code}, material_request={item.material_request}")
-			if not item.material_request:
+			print(
+				f"[PO Validation] Item {item.idx}: item_code={item.item_code}, "
+				f"material_request={item.material_request}, material_request_item={item.material_request_item}"
+			)
+			has_mr_link = bool(item.material_request or item.material_request_item)
+			if not has_mr_link and item.material_request_item:
+				# Defensive: if material_request_item exists, treat it as a valid MR link
+				has_mr_link = True
+
+			# Backfill from Production Plan Item if available
+			if not has_mr_link and item.production_plan_item:
+				pp_item = frappe.db.get_value(
+					"Production Plan Item",
+					item.production_plan_item,
+					["material_request", "material_request_item"],
+					as_dict=True,
+				)
+				if pp_item:
+					if not item.material_request and pp_item.material_request:
+						item.material_request = pp_item.material_request
+					if not item.material_request_item and pp_item.material_request_item:
+						item.material_request_item = pp_item.material_request_item
+					if item.material_request or item.material_request_item:
+						has_mr_link = True
+						print(
+							f"[PO Validation] Backfilled MR from Production Plan Item for item {item.idx}: "
+							f"mr={item.material_request}, mri={item.material_request_item}"
+						)
+
+			# Backfill via Production Plan Sub Assembly Item -> Production Plan Item
+			if not has_mr_link and item.production_plan_sub_assembly_item:
+				pp_item_name = frappe.db.get_value(
+					"Production Plan Sub Assembly Item",
+					item.production_plan_sub_assembly_item,
+					"production_plan_item",
+				)
+				if pp_item_name:
+					pp_item = frappe.db.get_value(
+						"Production Plan Item",
+						pp_item_name,
+						["material_request", "material_request_item"],
+						as_dict=True,
+					)
+					if pp_item:
+						if not item.material_request and pp_item.material_request:
+							item.material_request = pp_item.material_request
+						if not item.material_request_item and pp_item.material_request_item:
+							item.material_request_item = pp_item.material_request_item
+						if item.material_request or item.material_request_item:
+							has_mr_link = True
+							print(
+								f"[PO Validation] Backfilled MR via Sub Assembly Item for item {item.idx}: "
+								f"mr={item.material_request}, mri={item.material_request_item}"
+							)
+
+			# If only MR Item is set (common when created from Production Plan), backfill parent MR
+			if not item.material_request and item.material_request_item:
+				parent_mr = frappe.db.get_value(
+					"Material Request Item",
+					item.material_request_item,
+					"parent"
+				)
+				if parent_mr:
+					item.material_request = parent_mr
+					has_mr_link = True
+					print(f"[PO Validation] Backfilled material_request={parent_mr} for item {item.idx}")
+
+			# Final fallback: try to resolve MR item by Production Plan + Item Code
+			if not has_mr_link and item.production_plan and item.item_code:
+				mr_item_row = frappe.db.sql(
+					"""
+					SELECT mri.name, mri.parent
+					FROM `tabMaterial Request Item` mri
+					INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+					WHERE mri.production_plan = %s
+					  AND mri.item_code = %s
+					  AND mr.docstatus = 1
+					ORDER BY mr.transaction_date DESC, mr.creation DESC
+					LIMIT 1
+					""",
+					(item.production_plan, item.item_code),
+					as_dict=True,
+				)
+				if mr_item_row:
+					item.material_request_item = mr_item_row[0].name
+					item.material_request = mr_item_row[0].parent
+					has_mr_link = True
+					print(
+						f"[PO Validation] Backfilled MR via Production Plan lookup for item {item.idx}: "
+						f"mr={item.material_request}, mri={item.material_request_item}"
+					)
+
+			if not has_mr_link:
 				items_without_mr.append({
 					"idx": item.idx,
 					"item_code": item.item_code or "N/A"
 				})
 				print(f"[PO Validation] Item {item.idx} MISSING Material Request!")
 			else:
-				print(f"[PO Validation] Material Request found: {item.material_request} in item {item.idx}")
+				print(f"[PO Validation] Material Request link found in item {item.idx}")
 		
 		# If any item is missing Material Request, prevent save
 		if items_without_mr:
@@ -209,6 +304,19 @@ class PurchaseOrder(ERPNextPurchaseOrder):
 			)
 		else:
 			print("[PO Validation] Validation passed - Material Request found")
+
+	def _is_from_production_plan(self):
+		"""Detect PO created from Production Plan or Sub Assembly workflow."""
+		if getattr(self, "production_plan", None):
+			return True
+		for item in self.items or []:
+			if (
+				item.production_plan
+				or item.production_plan_item
+				or item.production_plan_sub_assembly_item
+			):
+				return True
+		return False
 	
 	def validate_po_qty_against_mr(self):
 		"""

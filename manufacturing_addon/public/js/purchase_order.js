@@ -248,22 +248,42 @@ frappe.ui.form.on("Purchase Order", {
 			return;
 		}
 		
+		// If PO is from Production Plan workflow, skip MR requirement
+		var is_from_production_plan = false;
+		if (frm.doc.production_plan) {
+			is_from_production_plan = true;
+		} else if (frm.doc.items && frm.doc.items.length) {
+			for (var k = 0; k < frm.doc.items.length; k++) {
+				var it = frm.doc.items[k];
+				if (it.production_plan || it.production_plan_item || it.production_plan_sub_assembly_item) {
+					is_from_production_plan = true;
+					break;
+				}
+			}
+		}
+		if (is_from_production_plan) {
+			console.log("[PO Validation] Production Plan workflow detected - skipping MR validation");
+			return;
+		}
+
 		// Check each item for Material Request - ALL items must have Material Request
 		var items_without_mr = [];
 		for (var i = 0; i < frm.doc.items.length; i++) {
 			var item = frm.doc.items[i];
 			console.log("[PO Validation] Item " + (i+1) + ":", {
 				item_code: item.item_code,
-				material_request: item.material_request
+				material_request: item.material_request,
+				material_request_item: item.material_request_item
 			});
-			if (!item.material_request) {
+			var has_mr_link = !!(item.material_request || item.material_request_item);
+			if (!has_mr_link) {
 				items_without_mr.push({
 					row: i + 1,
 					item_code: item.item_code || "N/A"
 				});
 				console.log("[PO Validation] Item " + (i+1) + " MISSING Material Request!");
 			} else {
-				console.log("[PO Validation] Material Request found in item " + (i+1));
+				console.log("[PO Validation] Material Request link found in item " + (i+1));
 			}
 		}
 		
@@ -342,22 +362,43 @@ frappe.ui.form.on("Purchase Order", {
 				return;
 			}
 			
+			// If PO is from Production Plan workflow, skip MR requirement
+			var is_from_production_plan = false;
+			if (frm.doc.production_plan) {
+				is_from_production_plan = true;
+			} else if (frm.doc.items && frm.doc.items.length) {
+				for (var k = 0; k < frm.doc.items.length; k++) {
+					var it = frm.doc.items[k];
+					if (it.production_plan || it.production_plan_item || it.production_plan_sub_assembly_item) {
+						is_from_production_plan = true;
+						break;
+					}
+				}
+			}
+			if (is_from_production_plan) {
+				console.log("[PO before_save] Production Plan workflow detected - skipping MR validation");
+				resolve();
+				return;
+			}
+
 			// Check each item for Material Request - ALL items must have Material Request
 			var items_without_mr = [];
 			for (var i = 0; i < frm.doc.items.length; i++) {
 				var item = frm.doc.items[i];
 				console.log("[PO before_save] Item " + (i+1) + ":", {
 					item_code: item.item_code,
-					material_request: item.material_request
+					material_request: item.material_request,
+					material_request_item: item.material_request_item
 				});
-				if (!item.material_request) {
+				var has_mr_link = !!(item.material_request || item.material_request_item);
+				if (!has_mr_link) {
 					items_without_mr.push({
 						row: i + 1,
 						item_code: item.item_code || "N/A"
 					});
 					console.log("[PO before_save] Item " + (i+1) + " MISSING Material Request!");
 				} else {
-					console.log("[PO before_save] Material Request found in item " + (i+1));
+					console.log("[PO before_save] Material Request link found in item " + (i+1));
 				}
 			}
 			
@@ -430,5 +471,3 @@ frappe.ui.form.on("Purchase Order", {
 		}, 500);
 	}
 });
-
-

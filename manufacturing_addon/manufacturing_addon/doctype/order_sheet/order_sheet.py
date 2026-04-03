@@ -411,7 +411,8 @@ def get_items_from_sales_order(sales_order):
 			"uom": item.uom,
 			"description": item.description,
 			"rate": item.rate,
-			"amount": item.amount
+			"amount": item.amount,
+			"custom_instructions": item.custom_instructions,
 		}
 		
 		# Fetch variant attributes from item

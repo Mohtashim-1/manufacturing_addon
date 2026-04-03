@@ -97,6 +97,7 @@
   {
    "fieldname": "qty_ctn",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Qty/ Ctn",
    "read_only": 1
   },
@@ -127,6 +128,7 @@
    "columns": 1,
    "fieldname": "order_qty",
    "fieldtype": "Float",
+   "hidden": 1,
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
@@ -138,6 +140,7 @@
    "columns": 1,
    "fieldname": "pcs",
    "fieldtype": "Float",
+   "hidden": 1,
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
@@ -149,6 +152,7 @@
    "columns": 1,
    "fieldname": "qty",
    "fieldtype": "Float",
+   "hidden": 1,
    "in_filter": 1,
    "in_global_search": 1,
    "in_list_view": 1,
@@ -161,6 +165,7 @@
    "columns": 1,
    "fieldname": "planned_qty",
    "fieldtype": "Float",
+   "hidden": 1,
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
@@ -176,7 +181,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Packaging Qty",
+   "label": "New Packaging Entry",
    "non_negative": 1
   },
   {
@@ -282,7 +287,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-16 00:02:15.496454",
+ "modified": "2026-04-04 02:45:20.598089",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Packing Report CT",

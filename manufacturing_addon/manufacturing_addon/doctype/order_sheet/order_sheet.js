@@ -164,6 +164,7 @@ frappe.ui.form.on("Order Sheet", {
 				row.order_qty = item.qty;
 				// Set planned_qty to same as order_qty initially
 				row.planned_qty = item.qty;
+				row.instructions = item.custom_instructions || "";
 				
 				// Map variant attributes to Order Sheet CT fields
 				if (item.design) {

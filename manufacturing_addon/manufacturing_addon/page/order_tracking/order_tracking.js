@@ -88,9 +88,9 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 								<th>Order Qty</th>
 								<th>Planned Qty</th>
 								<th>PCS</th>
-								<th colspan="4" class="text-center bg-info text-white">CUTTING</th>
-								<th colspan="4" class="text-center bg-warning text-white">STITCHING</th>
-								<th colspan="4" class="text-center bg-success text-white">PACKING</th>
+								<th colspan="5" class="text-center bg-info text-white">CUTTING</th>
+								<th colspan="5" class="text-center bg-warning text-white">STITCHING</th>
+								<th colspan="5" class="text-center bg-success text-white">PACKING</th>
 							</tr>
 							<tr>
 								<th></th>
@@ -102,21 +102,24 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 								<th></th>
 								<th class="bg-info text-white">Qty</th>
 								<th class="bg-info text-white">Finished</th>
-								<th class="bg-info text-white">%</th>
+								<th class="bg-info text-white">Planned %</th>
+								<th class="bg-info text-white">Qty %</th>
 								<th class="bg-info text-white">Status</th>
 								<th class="bg-warning text-white">Qty</th>
 								<th class="bg-warning text-white">Finished</th>
-								<th class="bg-warning text-white">%</th>
+								<th class="bg-warning text-white">Planned %</th>
+								<th class="bg-warning text-white">Qty %</th>
 								<th class="bg-warning text-white">Status</th>
 								<th class="bg-success text-white">Qty</th>
 								<th class="bg-success text-white">Finished</th>
-								<th class="bg-success text-white">%</th>
+								<th class="bg-success text-white">Planned %</th>
+								<th class="bg-success text-white">Qty %</th>
 								<th class="bg-success text-white">Status</th>
 							</tr>
 						</thead>
 						<tbody id="order-details-body">
 							<tr>
-								<td colspan="20" class="text-center text-muted" style="padding: 40px;">
+								<td colspan="23" class="text-center text-muted" style="padding: 40px;">
 									<i class="fa fa-spinner fa-spin fa-2x"></i><br>
 									Loading dashboard data...
 								</td>
@@ -831,7 +834,7 @@ function filterTableRows(searchTerm) {
 		if (tbody.find('tr.no-results').length === 0) {
 			tbody.append(`
 				<tr class="no-results">
-					<td colspan="20" class="text-center text-muted" style="padding: 40px;">
+					<td colspan="23" class="text-center text-muted" style="padding: 40px;">
 						<i class="fa fa-search fa-2x"></i><br>
 						No results found for "${searchTerm}"
 					</td>
@@ -891,7 +894,7 @@ function renderDetailedTable(details) {
 	if (details.length === 0) {
 		tbody.append(`
 			<tr>
-				<td colspan="20" class="text-center text-muted" style="padding: 40px;">
+				<td colspan="23" class="text-center text-muted" style="padding: 40px;">
 					<i class="fa fa-info-circle fa-2x"></i><br>
 					No data found for the selected filters
 				</td>
@@ -920,21 +923,21 @@ function renderDetailedTable(details) {
 					cutting_qty: 0,
 					cutting_finished: 0,
 					cutting_planned: 0,
-					cutting_finished_pcs: 0,
+					cutting_normalized_finished: 0,
 					stitching_qty: 0,
 					stitching_finished: 0,
 					stitching_planned: 0,
-					stitching_finished_pcs: 0
+					stitching_normalized_finished: 0
 				};
 			}
 			childAggregates[parentKey].cutting_qty += (row.cutting_qty || 0);
 			childAggregates[parentKey].cutting_finished += (row.cutting_finished || 0);
 			childAggregates[parentKey].cutting_planned += (row.cutting_planned || 0);
-			childAggregates[parentKey].cutting_finished_pcs += (row.cutting_finished || 0) * (row.pcs || 1);
+			childAggregates[parentKey].cutting_normalized_finished += (row.cutting_finished || 0) / ((row.pcs || 1) || 1);
 			childAggregates[parentKey].stitching_qty += (row.stitching_qty || 0);
 			childAggregates[parentKey].stitching_finished += (row.stitching_finished || 0);
 			childAggregates[parentKey].stitching_planned += (row.stitching_planned || 0);
-			childAggregates[parentKey].stitching_finished_pcs += (row.stitching_finished || 0) * (row.pcs || 1);
+			childAggregates[parentKey].stitching_normalized_finished += (row.stitching_finished || 0) / ((row.pcs || 1) || 1);
 		}
 	});
 	
@@ -971,37 +974,37 @@ function renderDetailedTable(details) {
 			displayStitchingPlanned = parentAgg.stitching_planned || displayStitchingPlanned;
 		}
 		
-		// For Cutting: For bundle items, multiply finished by PCS to get PCS value
-		// Cutting % = (Finished Cutting PCS / Order Qty) × 100
-		let cuttingFinished = displayCuttingFinished;
-		if (row.pcs && row.pcs > 0 && row.bundle_item) {
-			// For bundle items, multiply by PCS to get PCS value
-			cuttingFinished = cuttingFinished * row.pcs;
-		} else if (isParent && parentAgg) {
-			cuttingFinished = parentAgg.cutting_finished_pcs;
-		}
-		// Allow percentage above 100%
-		const cuttingPercent = orderQty > 0 ? (cuttingFinished / orderQty * 100) : 0;
-		
-		// For Stitching: Same logic as Cutting
-		let stitchingFinished = displayStitchingFinished;
-		if (row.pcs && row.pcs > 0 && row.bundle_item) {
-			// For bundle items, multiply by PCS to get PCS value
-			stitchingFinished = stitchingFinished * row.pcs;
-		} else if (isParent && parentAgg) {
-			stitchingFinished = parentAgg.stitching_finished_pcs;
-		}
-		// Allow percentage above 100%
-		const stitchingPercent = orderQty > 0 ? (stitchingFinished / orderQty * 100) : 0;
-		
-		// For Packing: Packing is at finished item level, so no PCS multiplication needed
-		// Packing % = (Finished Packing Qty / Order Qty) × 100
-		// Allow percentage above 100%
-		const packingPercent = orderQty > 0 ? ((row.packing_finished || 0) / orderQty * 100) : 0;
-		
-		const cuttingStatus = getStatusBadge(cuttingPercent);
-		const stitchingStatus = getStatusBadge(stitchingPercent);
-		const packingStatus = getStatusBadge(packingPercent);
+		// Percentage rule:
+		// Cutting/Stitching base qty = Finished / PCS
+		// Planned % = base qty / planned qty
+		// Qty % = base qty / order qty
+		const rowPcs = row.pcs || 1;
+		const cuttingBaseQty = isParent && parentAgg
+			? parentAgg.cutting_normalized_finished
+			: (displayCuttingFinished / (rowPcs || 1));
+		const stitchingBaseQty = isParent && parentAgg
+			? parentAgg.stitching_normalized_finished
+			: (displayStitchingFinished / (rowPcs || 1));
+		const packingBaseQty = row.packing_finished || 0;
+
+		const cuttingPlannedQty = isParent
+			? (row.planned_qty || displayCuttingPlanned || 0)
+			: (row.cutting_planned || row.planned_qty || 0);
+		const stitchingPlannedQty = isParent
+			? (row.planned_qty || displayStitchingPlanned || 0)
+			: (row.stitching_planned || row.planned_qty || 0);
+		const packingPlannedQty = row.planned_qty || row.packing_planned || 0;
+
+		const cuttingPlannedPercent = cuttingPlannedQty > 0 ? (cuttingBaseQty / cuttingPlannedQty * 100) : 0;
+		const cuttingQtyPercent = orderQty > 0 ? (cuttingBaseQty / orderQty * 100) : 0;
+		const stitchingPlannedPercent = stitchingPlannedQty > 0 ? (stitchingBaseQty / stitchingPlannedQty * 100) : 0;
+		const stitchingQtyPercent = orderQty > 0 ? (stitchingBaseQty / orderQty * 100) : 0;
+		const packingPlannedPercent = packingPlannedQty > 0 ? (packingBaseQty / packingPlannedQty * 100) : 0;
+		const packingQtyPercent = orderQty > 0 ? (packingBaseQty / orderQty * 100) : 0;
+
+		const cuttingStatus = getStatusBadge(cuttingQtyPercent);
+		const stitchingStatus = getStatusBadge(stitchingQtyPercent);
+		const packingStatus = getStatusBadge(packingQtyPercent);
 		
 		// Style for parent vs child rows
 		let rowClass = '';
@@ -1041,15 +1044,18 @@ function renderDetailedTable(details) {
 				<td class="text-right">${formatNumber(row.pcs || 0)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatNumber(displayCuttingQty)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatNumber(displayCuttingFinished)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatPercentage(cuttingPercent)}%</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatPercentage(cuttingPlannedPercent)}%</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatPercentage(cuttingQtyPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-info text-white'}">${cuttingStatus}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(displayStitchingQty)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(displayStitchingFinished)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingPercent)}%</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingPlannedPercent)}%</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingQtyPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-warning text-white'}">${stitchingStatus}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatNumber(row.packing_qty || 0)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatNumber(row.packing_finished || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatPercentage(packingPercent) + '%'}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatPercentage(packingPlannedPercent) + '%'}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatPercentage(packingQtyPercent) + '%'}</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : packingStatus}</td>
 			</tr>
 		`);

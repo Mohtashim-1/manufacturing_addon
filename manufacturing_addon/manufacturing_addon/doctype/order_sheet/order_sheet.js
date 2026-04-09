@@ -358,29 +358,32 @@ const orderSheetDashboard = {
 									<th>Order Qty</th>
 									<th>Planned Qty</th>
 									<th>PCS</th>
-									<th colspan="4" class="text-center bg-info text-white">CUTTING</th>
-									<th colspan="4" class="text-center bg-warning text-white">STITCHING</th>
-									<th colspan="4" class="text-center bg-success text-white">PACKING</th>
+									<th colspan="5" class="text-center bg-info text-white">CUTTING</th>
+									<th colspan="5" class="text-center bg-warning text-white">STITCHING</th>
+									<th colspan="5" class="text-center bg-success text-white">PACKING</th>
 								</tr>
 								<tr>
 									<th></th><th></th><th></th><th></th><th></th><th></th><th></th>
 									<th class="bg-info text-white">Qty</th>
 									<th class="bg-info text-white">Finished</th>
-									<th class="bg-info text-white">%</th>
+									<th class="bg-info text-white">Planned %</th>
+									<th class="bg-info text-white">Qty %</th>
 									<th class="bg-info text-white">Status</th>
 									<th class="bg-warning text-white">Qty</th>
 									<th class="bg-warning text-white">Finished</th>
-									<th class="bg-warning text-white">%</th>
+									<th class="bg-warning text-white">Planned %</th>
+									<th class="bg-warning text-white">Qty %</th>
 									<th class="bg-warning text-white">Status</th>
 									<th class="bg-success text-white">Qty</th>
 									<th class="bg-success text-white">Finished</th>
-									<th class="bg-success text-white">%</th>
+									<th class="bg-success text-white">Planned %</th>
+									<th class="bg-success text-white">Qty %</th>
 									<th class="bg-success text-white">Status</th>
 								</tr>
 							</thead>
 							<tbody id="os-order-details-body">
 								<tr>
-									<td colspan="20" class="text-center text-muted" style="padding: 40px;">
+									<td colspan="23" class="text-center text-muted" style="padding: 40px;">
 										<i class="fa fa-spinner fa-spin fa-2x"></i><br>
 										Loading dashboard data...
 									</td>
@@ -644,7 +647,7 @@ const orderSheetDashboard = {
 		if (!details || details.length === 0) {
 			tbody.append(`
 				<tr>
-					<td colspan="20" class="text-center text-muted" style="padding: 40px;">
+					<td colspan="23" class="text-center text-muted" style="padding: 40px;">
 						<i class="fa fa-info-circle fa-2x"></i><br>
 						No data found for the selected filters
 					</td>
@@ -654,36 +657,78 @@ const orderSheetDashboard = {
 		}
 
 		const parentOrderQtyMap = {};
+		const childAggregates = {};
 		details.forEach((row) => {
 			if (row.is_parent === true) {
 				const key = `${row.order_sheet}||${row.item}`;
 				parentOrderQtyMap[key] = row.order_qty || 0;
+			} else if (row.bundle_item && row.bundle_item !== null) {
+				const parentKey = `${row.order_sheet}||${row.item}`;
+				if (!childAggregates[parentKey]) {
+					childAggregates[parentKey] = {
+						cutting_qty: 0,
+						cutting_finished: 0,
+						stitching_qty: 0,
+						stitching_finished: 0,
+						cutting_normalized_finished: 0,
+						stitching_normalized_finished: 0
+					};
+				}
+				childAggregates[parentKey].cutting_qty += (row.cutting_qty || 0);
+				childAggregates[parentKey].cutting_finished += (row.cutting_finished || 0);
+				childAggregates[parentKey].stitching_qty += (row.stitching_qty || 0);
+				childAggregates[parentKey].stitching_finished += (row.stitching_finished || 0);
+				childAggregates[parentKey].cutting_normalized_finished += (row.cutting_finished || 0) / ((row.pcs || 1) || 1);
+				childAggregates[parentKey].stitching_normalized_finished += (row.stitching_finished || 0) / ((row.pcs || 1) || 1);
 			}
 		});
 
 		details.forEach((row) => {
+			const parentKey = `${row.order_sheet}||${row.item}`;
+			const parentAgg = childAggregates[parentKey] || null;
 			let orderQty = row.order_qty || 0;
 			if (row.bundle_item && row.bundle_item !== null) {
-				const parentKey = `${row.order_sheet}||${row.item}`;
 				orderQty = parentOrderQtyMap[parentKey] || 0;
 			}
 
-			let cuttingFinished = row.cutting_finished || 0;
-			if (row.pcs && row.pcs > 0 && row.bundle_item) {
-				cuttingFinished = cuttingFinished * row.pcs;
-			}
-			const cuttingPercent = orderQty > 0 ? (cuttingFinished / orderQty) * 100 : 0;
-
-			let stitchingFinished = row.stitching_finished || 0;
-			if (row.pcs && row.pcs > 0 && row.bundle_item) {
-				stitchingFinished = stitchingFinished * row.pcs;
-			}
-			const stitchingPercent = orderQty > 0 ? (stitchingFinished / orderQty) * 100 : 0;
-
-			const packingPercent = orderQty > 0 ? ((row.packing_finished || 0) / orderQty) * 100 : 0;
-
 			const isParent = row.is_parent === true;
 			const isBundleItem = row.bundle_item && row.bundle_item !== null;
+
+			let displayCuttingQty = row.cutting_qty || 0;
+			let displayCuttingFinished = row.cutting_finished || 0;
+			let displayStitchingQty = row.stitching_qty || 0;
+			let displayStitchingFinished = row.stitching_finished || 0;
+
+			if (isParent && parentAgg) {
+				displayCuttingQty = parentAgg.cutting_qty;
+				displayCuttingFinished = parentAgg.cutting_finished;
+				displayStitchingQty = parentAgg.stitching_qty;
+				displayStitchingFinished = parentAgg.stitching_finished;
+			}
+
+			const rowPcs = row.pcs || 1;
+			const cuttingBaseQty = isParent && parentAgg
+				? parentAgg.cutting_normalized_finished
+				: (displayCuttingFinished / (rowPcs || 1));
+			const stitchingBaseQty = isParent && parentAgg
+				? parentAgg.stitching_normalized_finished
+				: (displayStitchingFinished / (rowPcs || 1));
+			const packingBaseQty = row.packing_finished || 0;
+
+			const cuttingPlannedQty = isParent
+				? (row.planned_qty || 0)
+				: (row.cutting_planned || row.planned_qty || 0);
+			const stitchingPlannedQty = isParent
+				? (row.planned_qty || 0)
+				: (row.stitching_planned || row.planned_qty || 0);
+			const packingPlannedQty = row.planned_qty || row.packing_planned || 0;
+
+			const cuttingPlannedPercent = cuttingPlannedQty > 0 ? (cuttingBaseQty / cuttingPlannedQty) * 100 : 0;
+			const cuttingQtyPercent = orderQty > 0 ? (cuttingBaseQty / orderQty) * 100 : 0;
+			const stitchingPlannedPercent = stitchingPlannedQty > 0 ? (stitchingBaseQty / stitchingPlannedQty) * 100 : 0;
+			const stitchingQtyPercent = orderQty > 0 ? (stitchingBaseQty / orderQty) * 100 : 0;
+			const packingPlannedPercent = packingPlannedQty > 0 ? (packingBaseQty / packingPlannedQty) * 100 : 0;
+			const packingQtyPercent = orderQty > 0 ? (packingBaseQty / orderQty) * 100 : 0;
 
 			let rowClass = "";
 			let rowStyle = "";
@@ -708,18 +753,21 @@ const orderSheetDashboard = {
 					<td class="text-right">${isBundleItem ? "" : this.format_number(row.order_qty || 0)}</td>
 					<td class="text-right">${isBundleItem ? "" : this.format_number(row.planned_qty || 0)}</td>
 					<td class="text-right">${this.format_number(row.pcs || 0)}</td>
-					<td class="text-right ${isBundleItem ? "" : "bg-info text-white"}">${this.format_number(row.cutting_qty || 0)}</td>
-					<td class="text-right ${isBundleItem ? "" : "bg-info text-white"}">${this.format_number(row.cutting_finished || 0)}</td>
-					<td class="text-right ${isBundleItem ? "" : "bg-info text-white"}">${this.format_percentage(cuttingPercent)}%</td>
-					<td class="text-center ${isBundleItem ? "" : "bg-info text-white"}">${this.get_status_badge(cuttingPercent)}</td>
-					<td class="text-right ${isBundleItem ? "" : "bg-warning text-white"}">${this.format_number(row.stitching_qty || 0)}</td>
-					<td class="text-right ${isBundleItem ? "" : "bg-warning text-white"}">${this.format_number(row.stitching_finished || 0)}</td>
-					<td class="text-right ${isBundleItem ? "" : "bg-warning text-white"}">${this.format_percentage(stitchingPercent)}%</td>
-					<td class="text-center ${isBundleItem ? "" : "bg-warning text-white"}">${this.get_status_badge(stitchingPercent)}</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-info text-white"}">${this.format_number(displayCuttingQty)}</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-info text-white"}">${this.format_number(displayCuttingFinished)}</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-info text-white"}">${this.format_percentage(cuttingPlannedPercent)}%</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-info text-white"}">${this.format_percentage(cuttingQtyPercent)}%</td>
+					<td class="text-center ${isBundleItem ? "" : "bg-info text-white"}">${this.get_status_badge(cuttingQtyPercent)}</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-warning text-white"}">${this.format_number(displayStitchingQty)}</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-warning text-white"}">${this.format_number(displayStitchingFinished)}</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-warning text-white"}">${this.format_percentage(stitchingPlannedPercent)}%</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-warning text-white"}">${this.format_percentage(stitchingQtyPercent)}%</td>
+					<td class="text-center ${isBundleItem ? "" : "bg-warning text-white"}">${this.get_status_badge(stitchingQtyPercent)}</td>
 					<td class="text-right ${isBundleItem ? "" : "bg-success text-white"}">${isBundleItem ? "-" : this.format_number(row.packing_qty || 0)}</td>
 					<td class="text-right ${isBundleItem ? "" : "bg-success text-white"}">${isBundleItem ? "-" : this.format_number(row.packing_finished || 0)}</td>
-					<td class="text-right ${isBundleItem ? "" : "bg-success text-white"}">${isBundleItem ? "-" : this.format_percentage(packingPercent) + "%"}</td>
-					<td class="text-center ${isBundleItem ? "" : "bg-success text-white"}">${isBundleItem ? "-" : this.get_status_badge(packingPercent)}</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-success text-white"}">${isBundleItem ? "-" : this.format_percentage(packingPlannedPercent) + "%"}</td>
+					<td class="text-right ${isBundleItem ? "" : "bg-success text-white"}">${isBundleItem ? "-" : this.format_percentage(packingQtyPercent) + "%"}</td>
+					<td class="text-center ${isBundleItem ? "" : "bg-success text-white"}">${isBundleItem ? "-" : this.get_status_badge(packingQtyPercent)}</td>
 				</tr>
 			`);
 			tbody.append(tr);
@@ -752,7 +800,7 @@ const orderSheetDashboard = {
 			if (tbody.find("tr.no-results").length === 0) {
 				tbody.append(`
 					<tr class="no-results">
-						<td colspan="20" class="text-center text-muted" style="padding: 40px;">
+						<td colspan="23" class="text-center text-muted" style="padding: 40px;">
 							<i class="fa fa-search fa-2x"></i><br>
 							No results found for "${searchTerm}"
 						</td>

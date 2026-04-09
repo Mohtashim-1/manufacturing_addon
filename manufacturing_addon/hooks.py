@@ -165,8 +165,11 @@ doc_events = {
 
 scheduler_events = {
 	"cron": {
-		"59 11 * * *": [
-			"manufacturing_addon.manufacturing_addon.daily_order_sheet_email.send_daily_active_order_sheet_email"
+		"0 0 * * *": [
+			"manufacturing_addon.manufacturing_addon.daily_sales_order_production_email.send_daily_sales_order_production_email"
+		],
+		"0 12 * * *": [
+			"manufacturing_addon.manufacturing_addon.daily_sales_order_production_email.send_daily_sales_order_production_email"
 		]
 	}
 }

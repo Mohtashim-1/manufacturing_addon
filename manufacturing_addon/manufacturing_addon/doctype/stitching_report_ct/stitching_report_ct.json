@@ -116,7 +116,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total",
+   "label": "Total Stitching Till Now",
    "read_only": 1
   },
   {
@@ -239,7 +239,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-07 13:54:34.015899",
+ "modified": "2026-04-09 19:39:23.075580",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stitching Report CT",

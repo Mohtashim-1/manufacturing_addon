@@ -121,7 +121,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total",
+   "label": "Total Packing Till Now",
    "read_only": 1
   },
   {
@@ -286,7 +286,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-07 13:54:43.025210",
+ "modified": "2026-04-09 19:38:50.169516",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Packing Report CT",

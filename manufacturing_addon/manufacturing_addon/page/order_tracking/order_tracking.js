@@ -843,7 +843,7 @@ function filterTableRows(searchTerm) {
 		}
 	} else {
 		$('#order-details-body tr.no-results').remove();
-	}
+	}r
 }
 
 function applyDefaultCollapsedState() {

@@ -13,18 +13,23 @@
   "column_break_gbtz",
   "colour",
   "so_item",
+  "default_bom",
+  "active_bom",
+  "carton_item",
   "combo_item",
   "reverse_colour",
   "total_consumption",
   "column_break_ckmo",
   "stitching_article_no",
   "size",
+  "carton_dimension",
   "qty_ctn",
   "product_combo",
   "column_break_wcnu",
   "order_qty",
   "planned_qty",
   "total_cartoons",
+  "total_planned_ctn",
   "section_break_wwzm",
   "instructions"
  ],
@@ -126,6 +131,18 @@
    "width": "1"
   },
   {
+   "columns": 1,
+   "fieldname": "total_planned_ctn",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Planned Ctn",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
    "fieldname": "column_break_gbtz",
    "fieldtype": "Column Break"
   },
@@ -180,6 +197,33 @@
    "in_standard_filter": 1,
    "label": "SO Item",
    "options": "Item"
+  },
+  {
+   "fieldname": "default_bom",
+   "fieldtype": "Link",
+   "label": "Default BOM",
+   "options": "BOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "active_bom",
+   "fieldtype": "Link",
+   "label": "Active BOM",
+   "options": "BOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "carton_item",
+   "fieldtype": "Link",
+   "label": "Carton Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "carton_dimension",
+   "fieldtype": "Data",
+   "label": "Carton Dimension",
+   "read_only": 1
   },
   {
    "default": "0",

@@ -974,18 +974,18 @@ function renderDetailedTable(details) {
 			displayStitchingPlanned = parentAgg.stitching_planned || displayStitchingPlanned;
 		}
 		
-		// Percentage rule:
-		// Cutting/Stitching base qty = Finished / PCS
-		// Planned % = base qty / planned qty
-		// Qty % = base qty / order qty
-		const rowPcs = row.pcs || 1;
-		const cuttingBaseQty = isParent && parentAgg
-			? parentAgg.cutting_normalized_finished
-			: (displayCuttingFinished / (rowPcs || 1));
-		const stitchingBaseQty = isParent && parentAgg
-			? parentAgg.stitching_normalized_finished
-			: (displayStitchingFinished / (rowPcs || 1));
-		const packingBaseQty = row.packing_finished || 0;
+			// Percentage rule:
+			// Base qty (all stages) = Finished / PCS
+			// Planned % = base qty / planned qty
+			// Qty % = base qty / order qty
+			const rowPcs = row.pcs || 1;
+			const cuttingBaseQty = isParent && parentAgg
+				? parentAgg.cutting_normalized_finished
+				: (displayCuttingFinished / (rowPcs || 1));
+			const stitchingBaseQty = isParent && parentAgg
+				? parentAgg.stitching_normalized_finished
+				: (displayStitchingFinished / (rowPcs || 1));
+			const packingBaseQty = (row.packing_finished || 0) / (rowPcs || 1);
 
 		const cuttingPlannedQty = isParent
 			? (row.planned_qty || displayCuttingPlanned || 0)

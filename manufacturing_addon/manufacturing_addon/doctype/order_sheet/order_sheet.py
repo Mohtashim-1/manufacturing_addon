@@ -9,10 +9,30 @@ from frappe.utils import today, now_datetime
 
 class OrderSheet(Document):
 	def validate(self):
+		self.populate_bom_and_carton_details()
 		self.qty_per_cartoon()
 		self.total()
 		self.consumption()
 		# self.total_qty()
+
+	def populate_bom_and_carton_details(self):
+		"""Populate BOM and carton details for each Order Sheet row."""
+		for row in self.order_sheet_ct:
+			if not row.so_item:
+				row.default_bom = None
+				row.active_bom = None
+				row.carton_item = None
+				row.carton_dimension = None
+				continue
+
+			details = get_bom_carton_details(row.so_item)
+			row.default_bom = details.get("default_bom")
+			row.active_bom = details.get("active_bom")
+			row.carton_item = details.get("carton_item")
+			row.carton_dimension = details.get("carton_dimension")
+			# Keep qty_ctn user-editable: only auto-fill if empty/zero.
+			if not row.qty_ctn:
+				row.qty_ctn = details.get("qty_ctn") or row.qty_ctn
 	
 	def qty_per_cartoon(self):
 		for row in self.order_sheet_ct:
@@ -24,6 +44,7 @@ class OrderSheet(Document):
 				row.total_cartoons = planned_qty / qty_ctn
 			else:
 				row.total_cartoons = 0  # Set to 0 if total_cartoons is invalid
+			row.total_planned_ctn = planned_qty * qty_ctn
 
 
 
@@ -390,6 +411,127 @@ def find_or_create_size(size_value):
 		return None
 
 
+def get_bom_carton_details(item_code):
+	"""Get default BOM, active BOM, carton item and carton dimension for an item."""
+	if not item_code:
+		return {
+			"default_bom": None,
+			"active_bom": None,
+			"carton_item": None,
+			"carton_dimension": None,
+			"qty_ctn": None
+		}
+
+	default_bom = frappe.db.get_value(
+		"BOM",
+		{
+			"item": item_code,
+			"is_default": 1,
+			"is_active": 1,
+			"docstatus": 1
+		},
+		"name",
+		order_by="modified desc"
+	)
+
+	active_bom = frappe.db.get_value(
+		"BOM",
+		{
+			"item": item_code,
+			"is_active": 1,
+			"docstatus": 1
+		},
+		"name",
+		order_by="is_default desc, modified desc"
+	)
+
+	bom_for_carton = default_bom or active_bom
+	carton_item = None
+	carton_dimension = None
+	carton_qty = None
+	bom_qty = None
+	qty_ctn = None
+
+	if bom_for_carton:
+		bom_qty = frappe.db.get_value("BOM", bom_for_carton, "quantity")
+
+		carton_item_row = frappe.db.sql(
+			"""
+			SELECT bi.item_code, bi.qty
+			FROM `tabBOM Item` bi
+			LEFT JOIN `tabItem` i ON i.name = bi.item_code
+			WHERE bi.parent = %s
+			  AND (
+				UPPER(IFNULL(i.item_group, '')) LIKE 'CARTON%%'
+				OR UPPER(IFNULL(bi.item_code, '')) LIKE 'CARTON%%'
+				OR UPPER(IFNULL(bi.item_name, '')) LIKE 'CARTON%%'
+			  )
+			ORDER BY bi.idx ASC
+			LIMIT 1
+			""",
+			(bom_for_carton,),
+			as_dict=True
+		)
+
+		if carton_item_row:
+			carton_item = carton_item_row[0].item_code
+			carton_qty = carton_item_row[0].qty or 0
+			carton_dimension = frappe.db.get_value(
+				"Item Variant Attribute",
+				{
+					"parent": carton_item,
+					"attribute": "Carton Dimension"
+				},
+				"attribute_value"
+			)
+
+			if bom_qty and carton_qty:
+				try:
+					qty_ctn = float(bom_qty) / float(carton_qty)
+				except Exception:
+					qty_ctn = None
+
+	return {
+		"default_bom": default_bom,
+		"active_bom": active_bom,
+		"carton_item": carton_item,
+		"carton_dimension": carton_dimension,
+		"qty_ctn": qty_ctn
+	}
+
+
+@frappe.whitelist()
+def get_bom_carton_details_for_item(item_code):
+	return get_bom_carton_details(item_code)
+
+
+@frappe.whitelist()
+def backfill_order_sheet_bom_carton(order_sheet=None):
+	"""Backfill BOM/carton fields for existing Order Sheet CT rows."""
+	filters = {"parent": order_sheet} if order_sheet else {}
+	rows = frappe.get_all("Order Sheet CT", filters=filters, fields=["name", "so_item"])
+	updated = 0
+
+	for row in rows:
+		details = get_bom_carton_details(row.so_item)
+		current_qty_ctn = frappe.db.get_value("Order Sheet CT", row.name, "qty_ctn")
+		frappe.db.set_value(
+			"Order Sheet CT",
+			row.name,
+			{
+				"default_bom": details.get("default_bom"),
+				"active_bom": details.get("active_bom"),
+				"carton_item": details.get("carton_item"),
+				"carton_dimension": details.get("carton_dimension"),
+				"qty_ctn": (details.get("qty_ctn") if not current_qty_ctn else current_qty_ctn)
+			},
+			update_modified=False
+		)
+		updated += 1
+
+	return {"updated_rows": updated, "order_sheet": order_sheet}
+
+
 @frappe.whitelist()
 def get_items_from_sales_order(sales_order):
 	"""
@@ -414,6 +556,10 @@ def get_items_from_sales_order(sales_order):
 			"amount": item.amount,
 			"custom_instructions": item.custom_instructions,
 		}
+
+		# Populate BOM/carton details for direct row fill in Order Sheet CT
+		bom_carton_details = get_bom_carton_details(item.item_code)
+		item_data.update(bom_carton_details)
 		
 		# Fetch variant attributes from item
 		attributes = {}

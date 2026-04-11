@@ -4,6 +4,7 @@
 import frappe
 from frappe.model.document import Document
 from frappe import _
+from frappe.utils import flt
 
 
 class StitchingReport(Document):
@@ -451,17 +452,20 @@ class StitchingReport(Document):
 
     def total_qty(self):
         for i in self.stitching_report_ct:
-            i.total_copy1 = i.stitching_qty or 0
+            i.total_copy1 = (i.stitching_qty or 0) + (i.finished_cutting_qty or 0)
 
     def total_percentage(self):
         for i in self.stitching_report_ct:
-            qty = i.qty 
-            total = i.total_copy1
-            if qty and total:
-                percentage = (total / qty) * 100
-                i.percentage_copy = percentage
-            else:
-                i.percentage_copy = 0
+            entry_qty = flt(i.total_copy1)
+            pcs = flt(i.pcs) or 1
+            base_qty = entry_qty / pcs
+            planned_qty = flt(i.planned_qty)
+            order_qty = flt(i.order_qty)
+
+            i.planned_percentage_copy = (base_qty / planned_qty) * 100 if planned_qty else 0
+            i.qty_percentage_copy = (base_qty / order_qty) * 100 if order_qty else 0
+            # Backward-compatible field: keep showing Qty %
+            i.percentage_copy = i.qty_percentage_copy
 
     def total(self):
         total_qty = 0

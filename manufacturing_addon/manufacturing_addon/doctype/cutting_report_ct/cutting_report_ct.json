@@ -27,6 +27,8 @@
   "cutting_qty",
   "column_break_mbly",
   "total_copy1",
+  "planned_percentage_copy",
+  "qty_percentage_copy",
   "percentage_copy"
  ],
  "fields": [
@@ -115,7 +117,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total Stitching Till Now",
+   "label": "Total Cutting Till Now",
    "read_only": 1
   },
   {
@@ -158,7 +160,6 @@
    "columns": 1,
    "fieldname": "planned_qty",
    "fieldtype": "Float",
-   "hidden": 1,
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
@@ -199,7 +200,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Finished Cutting Qty",
+   "label": "Already Cutted Qty",
    "non_negative": 1,
    "read_only": 1
   },
@@ -210,6 +211,28 @@
   {
    "fieldname": "column_break_gplg",
    "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "planned_percentage_copy",
+   "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Planned %",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "qty_percentage_copy",
+   "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Qty %",
+   "read_only": 1
   },
   {
    "columns": 1,
@@ -226,7 +249,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-09 19:39:15.235815",
+ "modified": "2026-04-11 17:14:20.638690",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Cutting Report CT",

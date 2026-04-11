@@ -43,22 +43,34 @@ frappe.ui.form.on("Order Sheet", {
 			);
 		}
 
-		// Render embedded dashboard in the Dashboard tab
+		// Dashboard is temporarily disabled
 		if (frm.fields_dict.dashboard) {
-			if (!frm.doc.name) {
-				frm.fields_dict.dashboard.$wrapper.html(__("Save the Order Sheet to load the dashboard."));
-			} else if (frm.doc.docstatus !== 1) {
-				frm.fields_dict.dashboard.$wrapper.html(`
-					<div style="padding: 40px; text-align: center;">
-						<i class="fa fa-info-circle fa-3x" style="color: #6c757d; margin-bottom: 20px;"></i>
-						<h4 style="color: #495057; margin-bottom: 10px;">Dashboard Not Available</h4>
-						<p style="color: #6c757d;">Please submit the Order Sheet (docstatus = 1) to view the dashboard.</p>
-					</div>
-				`);
-			} else {
-				orderSheetDashboard.render(frm);
-			}
+			frm.fields_dict.dashboard.$wrapper.html(`
+				<div style="padding: 40px; text-align: center;">
+					<i class="fa fa-pause-circle fa-3x" style="color: #6c757d; margin-bottom: 20px;"></i>
+					<h4 style="color: #495057; margin-bottom: 10px;">Dashboard Disabled</h4>
+					<p style="color: #6c757d;">Order Sheet dashboard is temporarily disabled.</p>
+				</div>
+			`);
 		}
+	},
+
+	recalculate_total_cartoons(frm) {
+		if (!frm.doc.order_sheet_ct || !frm.doc.order_sheet_ct.length) return;
+		(frm.doc.order_sheet_ct || []).forEach((row) => {
+			if (!row.name) return;
+			update_total_cartoons_for_row(row.doctype || "Order Sheet CT", row.name);
+		});
+	},
+
+	sales_order(frm) {
+		if (!frm.doc.sales_order) return;
+		frappe.db.get_value("Sales Order", frm.doc.sales_order, ["customer", "delivery_date", "po_no"], function(r) {
+			if (!r) return;
+			if (r.customer) frm.set_value("customer", r.customer);
+			if (r.delivery_date) frm.set_value("shipment_date", r.delivery_date);
+			if (r.po_no) frm.set_value("order_no", r.po_no);
+		});
 	},
 
 	get_items_from_sales_order: function(frm) {
@@ -185,6 +197,13 @@ frappe.ui.form.on("Order Sheet", {
 				if (item.gsm) {
 					row.gsm = item.gsm;
 				}
+				row.default_bom = item.default_bom || "";
+				row.active_bom = item.active_bom || "";
+				row.carton_item = item.carton_item || "";
+				row.carton_dimension = item.carton_dimension || "";
+				if (item.qty_ctn) {
+					row.qty_ctn = item.qty_ctn;
+				}
 			});
 			frm.refresh_field("order_sheet_ct");
 			frappe.show_alert({
@@ -267,6 +286,61 @@ frappe.ui.form.on("Order Sheet", {
 		// Also try after a short delay to ensure grid is fully initialized
 		setTimeout(check_and_show, 300);
 		setTimeout(check_and_show, 1000);
+	}
+});
+
+function update_total_cartoons_for_row(cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+	if (!row) return;
+	const qtyCtn = frappe.utils.flt(row.qty_ctn);
+	const qty = frappe.utils.flt(row.planned_qty) || frappe.utils.flt(row.order_qty);
+	const plannedQty = frappe.utils.flt(row.planned_qty);
+	const total = qtyCtn > 0 ? (qty / qtyCtn) : 0;
+	frappe.model.set_value(cdt, cdn, "total_cartoons", total);
+	frappe.model.set_value(cdt, cdn, "total_planned_ctn", plannedQty * qtyCtn);
+}
+
+frappe.ui.form.on("Order Sheet CT", {
+	so_item(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (!row.so_item) {
+			frappe.model.set_value(cdt, cdn, "default_bom", "");
+			frappe.model.set_value(cdt, cdn, "active_bom", "");
+			frappe.model.set_value(cdt, cdn, "carton_item", "");
+			frappe.model.set_value(cdt, cdn, "carton_dimension", "");
+			update_total_cartoons_for_row(cdt, cdn);
+			return;
+		}
+
+		frappe.call({
+			method: "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.get_bom_carton_details_for_item",
+			args: {
+				item_code: row.so_item
+			},
+			callback: function(r) {
+				if (!r.message) return;
+				frappe.model.set_value(cdt, cdn, "default_bom", r.message.default_bom || "");
+				frappe.model.set_value(cdt, cdn, "active_bom", r.message.active_bom || "");
+				frappe.model.set_value(cdt, cdn, "carton_item", r.message.carton_item || "");
+				frappe.model.set_value(cdt, cdn, "carton_dimension", r.message.carton_dimension || "");
+				if (r.message.qty_ctn) {
+					frappe.model.set_value(cdt, cdn, "qty_ctn", r.message.qty_ctn);
+				}
+				update_total_cartoons_for_row(cdt, cdn);
+			}
+		});
+	},
+
+	planned_qty(frm, cdt, cdn) {
+		update_total_cartoons_for_row(cdt, cdn);
+	},
+
+	order_qty(frm, cdt, cdn) {
+		update_total_cartoons_for_row(cdt, cdn);
+	},
+
+	qty_ctn(frm, cdt, cdn) {
+		update_total_cartoons_for_row(cdt, cdn);
 	}
 });
 
@@ -713,7 +787,7 @@ const orderSheetDashboard = {
 			const stitchingBaseQty = isParent && parentAgg
 				? parentAgg.stitching_normalized_finished
 				: (displayStitchingFinished / (rowPcs || 1));
-			const packingBaseQty = row.packing_finished || 0;
+			const packingBaseQty = (row.packing_finished || 0) / (rowPcs || 1);
 
 			const cuttingPlannedQty = isParent
 				? (row.planned_qty || 0)

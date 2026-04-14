@@ -755,6 +755,51 @@ def get_items_from_sales_order(sales_order):
 
 
 @frappe.whitelist()
+def create_order_sheet_from_sales_order(sales_order):
+	"""Create Order Sheet from Sales Order and populate rows."""
+	if not sales_order:
+		frappe.throw("Sales Order is required")
+
+	so = frappe.get_doc("Sales Order", sales_order)
+	items = get_items_from_sales_order(sales_order)
+
+	order_sheet = frappe.get_doc(
+		{
+			"doctype": "Order Sheet",
+			"sales_order": so.name,
+			"customer": so.customer,
+			"shipment_date": so.delivery_date,
+			"order_no": so.po_no or so.name,
+			"instructions": so.custom_instructions or "",
+			"order_sheet_ct": []
+		}
+	)
+
+	for item in items:
+		row = order_sheet.append("order_sheet_ct", {})
+		row.so_item = item.get("item_code")
+		row.order_qty = item.get("qty")
+		row.planned_qty = item.get("qty")
+		row.instructions = item.get("custom_instructions") or ""
+		row.design = item.get("design")
+		row.ean = item.get("ean")
+		row.colour = item.get("colour")
+		row.stitching_article_no = item.get("stitching_article_no")
+		row.size = item.get("size")
+		row.gsm = item.get("gsm")
+		row.default_bom = item.get("default_bom")
+		row.active_bom = item.get("active_bom")
+		row.carton_item = item.get("carton_item")
+		row.carton_dimension = item.get("carton_dimension")
+		row.qty_ctn = item.get("qty_ctn")
+		row.so_item_weight_per_unit = item.get("so_item_weight_per_unit") or 0
+		row.carton_weight_per_unit = item.get("carton_weight_per_unit") or 0
+
+	order_sheet.insert(ignore_permissions=True)
+	return {"order_sheet": order_sheet.name}
+
+
+@frappe.whitelist()
 def create_production_plan_from_order_sheet(order_sheet):
 	"""
 	Create a Production Plan from Order Sheet

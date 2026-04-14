@@ -38,20 +38,26 @@ frappe.ui.form.on("Sales Order", {
     refresh: function(frm) {
         // Add custom button if Sales Order is already saved
         if (!frm.is_new()) {
-            frm.add_custom_button(__('Create Order Sheet'), function () {
+            frm.add_custom_button(__("Create Order Sheet"), function () {
                 frappe.call({
-                    method: "manufacturing_addon.api.create_order_sheet",
+                    method: "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.create_order_sheet_from_sales_order",
                     args: {
                         sales_order: frm.doc.name
                     },
+                    freeze: true,
+                    freeze_message: __("Creating Order Sheet..."),
                     callback: function (r) {
-                        if (r.message) {
-                            frappe.msgprint(__('Order Sheet {0} Created', [r.message]));
-                            // frappe.set_route('Form', 'Order Sheet', r.message); // Uncomment if navigation is desired
-                        }
+                        if (!r.message || !r.message.order_sheet) return;
+
+                        frappe.show_alert({
+                            message: __("Order Sheet {0} created", [r.message.order_sheet]),
+                            indicator: "green"
+                        }, 5);
+
+                        frappe.set_route("Form", "Order Sheet", r.message.order_sheet);
                     }
                 });
-            }, __("Actions"));
+            }, __("Create"));
             
             // Add Close button if Sales Order is submitted and not already closed
             if (frm.doc.docstatus === 1 && frm.doc.status !== "Closed") {

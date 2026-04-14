@@ -33,7 +33,7 @@ function render_layout(wrapper, state) {
 				<div class="pp-chart" style="min-height: 300px;"></div>
 			</div>
 			<div class="pp-detail-card" style="border:1px solid #e5e7eb; border-radius:8px; padding:10px; background:#fff;">
-				<h4 style="margin:0 0 8px 0; font-size:14px;">Item-wise Progress</h4>
+				<h4 style="margin:0 0 8px 0; font-size:14px;">Sales Order-wise Progress</h4>
 				<div class="pp-table-wrap" style="overflow:auto;"></div>
 			</div>
 		</div>
@@ -126,7 +126,7 @@ function refresh_data(state) {
 			const data = r.message || {};
 			const summary = data.summary || {};
 			render_summary(state, summary);
-			render_table(state, data.rows || []);
+			render_table(state, data.sales_order_rows || []);
 			state.$meta.text(`${data.from_date || from_date} to ${data.to_date || to_date}`);
 			await render_chart(state, summary);
 		},
@@ -237,19 +237,18 @@ function render_table(state, rows) {
 
 	let body = "";
 	rows.forEach((r) => {
+		const cut_pct = num(r.order_qty) ? (num(r.cutting_qty) / num(r.order_qty)) * 100 : 0;
+		const stitch_pct = num(r.order_qty) ? (num(r.stitching_qty) / num(r.order_qty)) * 100 : 0;
+		const pack_pct = num(r.order_qty) ? (num(r.packing_qty) / num(r.order_qty)) * 100 : 0;
 		body += `
 			<tr>
 				<td>${esc(r.sales_order)}</td>
 				<td>${esc(r.customer)}</td>
-				<td>${esc(r.order_sheet)}</td>
-				<td>${esc(r.so_item)}</td>
-				<td>${esc(r.colour)}</td>
-				<td>${esc(r.size)}</td>
 				<td style="text-align:right;">${fmt(r.order_qty, 2)}</td>
 				<td style="text-align:right;">${fmt(r.planned_qty, 2)}</td>
-				<td style="text-align:right;">${fmt(r.cutting_qty, 2)}</td>
-				<td style="text-align:right;">${fmt(r.stitching_qty, 2)}</td>
-				<td style="text-align:right;">${fmt(r.packing_qty, 2)}</td>
+				<td style="text-align:right;">${fmt(r.cutting_qty, 2)} (${fmt(cut_pct, 2)}%)</td>
+				<td style="text-align:right;">${fmt(r.stitching_qty, 2)} (${fmt(stitch_pct, 2)}%)</td>
+				<td style="text-align:right;">${fmt(r.packing_qty, 2)} (${fmt(pack_pct, 2)}%)</td>
 			</tr>
 		`;
 	});
@@ -260,15 +259,11 @@ function render_table(state, rows) {
 				<tr>
 					<th>${__("Sales Order")}</th>
 					<th>${__("Customer")}</th>
-					<th>${__("Order Sheet")}</th>
-					<th>${__("SO Item")}</th>
-					<th>${__("Colour")}</th>
-					<th>${__("Size")}</th>
 					<th style="text-align:right;">${__("Order Qty")}</th>
 					<th style="text-align:right;">${__("Planned Qty")}</th>
-					<th style="text-align:right;">${__("Cutting Qty")}</th>
-					<th style="text-align:right;">${__("Stitching Qty")}</th>
-					<th style="text-align:right;">${__("Packing Qty")}</th>
+					<th style="text-align:right;">${__("Cutting Progress")}</th>
+					<th style="text-align:right;">${__("Stitching Progress")}</th>
+					<th style="text-align:right;">${__("Packing Progress")}</th>
 				</tr>
 			</thead>
 			<tbody>${body}</tbody>

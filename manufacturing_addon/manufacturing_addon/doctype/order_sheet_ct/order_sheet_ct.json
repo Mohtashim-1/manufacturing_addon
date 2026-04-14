@@ -30,6 +30,11 @@
   "planned_qty",
   "total_cartoons",
   "total_planned_ctn",
+  "order_cbm",
+  "net_weight",
+  "gross_weight",
+  "so_item_weight_per_unit",
+  "carton_weight_per_unit",
   "section_break_wwzm",
   "instructions"
  ],
@@ -141,6 +146,50 @@
    "label": "Total Planned Ctn",
    "read_only": 1,
    "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "order_cbm",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Order CBM",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "net_weight",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Net Weight (KG)",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "gross_weight",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Gross Weight (KG)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "so_item_weight_per_unit",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "SO Item Weight Per Unit",
+   "read_only": 1
+  },
+  {
+   "fieldname": "carton_weight_per_unit",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Carton Weight Per Unit",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_gbtz",

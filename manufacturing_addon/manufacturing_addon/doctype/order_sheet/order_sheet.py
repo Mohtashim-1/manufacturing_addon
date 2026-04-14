@@ -4,13 +4,14 @@
 import frappe
 import re
 from frappe.model.document import Document
-from frappe.utils import today, now_datetime
+from frappe.utils import today, now_datetime, flt
 
 
 class OrderSheet(Document):
 	def validate(self):
 		self.populate_bom_and_carton_details()
 		self.qty_per_cartoon()
+		self.calculate_logistics_metrics()
 		self.total()
 		self.consumption()
 		# self.total_qty()
@@ -54,15 +55,49 @@ class OrderSheet(Document):
 		planned_quantity = 0
 		total_cartoons = 0
 		total_quantity_per_cartoon = 0
+		total_order_cbm = 0
+		total_net_weight = 0
+		total_gross_weight = 0
 		for i in self.order_sheet_ct:
 			order_quantity += i.order_qty or 0
 			planned_quantity += i.planned_qty or 0
 			total_cartoons += i.total_cartoons or 0
 			total_quantity_per_cartoon += i.qty_ctn or 0
+			total_order_cbm += i.order_cbm or 0
+			total_net_weight += i.net_weight or 0
+			total_gross_weight += i.gross_weight or 0
 		# Use planned_qty for total if available, otherwise use order_qty
 		self.total_quantity = planned_quantity if planned_quantity > 0 else order_quantity
 		self.total_cartoon = total_cartoons
 		self.total_quantity_per_cartoon = total_quantity_per_cartoon
+		self.total_order_cbm = total_order_cbm
+		self.total_net_weight = total_net_weight
+		self.total_gross_weight = total_gross_weight
+
+	def calculate_logistics_metrics(self):
+		"""Calculate row-level and header-level logistics metrics for Order Sheet."""
+		item_weight_cache = {}
+
+		for row in self.order_sheet_ct:
+			planned_qty = row.planned_qty if row.planned_qty else (row.order_qty or 0)
+			total_cartoons = flt(row.total_cartoons)
+
+			# CBM = number of cartons * (L * W * H in cm / 1,000,000)
+			lenght_cm, width_cm, height_cm = parse_carton_dimension(row.carton_dimension)
+			if lenght_cm and width_cm and height_cm and total_cartoons:
+				row.order_cbm = (lenght_cm * width_cm * height_cm / 1000000.0) * total_cartoons
+			else:
+				row.order_cbm = 0
+
+			# Net weight = planned pcs * finished good weight_per_unit (kg)
+			so_weight_per_unit = get_item_weight_per_unit(row.so_item, item_weight_cache)
+			row.so_item_weight_per_unit = so_weight_per_unit
+			row.net_weight = flt(planned_qty) * so_weight_per_unit
+
+			# Gross weight = net weight + (cartons * carton weight_per_unit)
+			carton_weight_per_unit = get_item_weight_per_unit(row.carton_item, item_weight_cache)
+			row.carton_weight_per_unit = carton_weight_per_unit
+			row.gross_weight = row.net_weight + (total_cartoons * carton_weight_per_unit)
 
 	def consumption(self):
 		total_consumption = 0
@@ -411,6 +446,35 @@ def find_or_create_size(size_value):
 		return None
 
 
+def parse_carton_dimension(dimension_text):
+	"""Parse carton dimension text and return length, width, height in cm."""
+	if not dimension_text:
+		return (None, None, None)
+
+	match = re.search(
+		r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)",
+		str(dimension_text)
+	)
+	if not match:
+		return (None, None, None)
+
+	return (flt(match.group(1)), flt(match.group(2)), flt(match.group(3)))
+
+
+def get_item_weight_per_unit(item_code, cache=None):
+	"""Get Item.weight_per_unit in KG, defaulting to zero."""
+	if not item_code:
+		return 0
+
+	if cache is not None and item_code in cache:
+		return cache[item_code]
+
+	weight = flt(frappe.db.get_value("Item", item_code, "weight_per_unit") or 0)
+	if cache is not None:
+		cache[item_code] = weight
+	return weight
+
+
 def get_bom_carton_details(item_code):
 	"""Get default BOM, active BOM, carton item and carton dimension for an item."""
 	if not item_code:
@@ -419,7 +483,9 @@ def get_bom_carton_details(item_code):
 			"active_bom": None,
 			"carton_item": None,
 			"carton_dimension": None,
-			"qty_ctn": None
+			"qty_ctn": None,
+			"so_item_weight_per_unit": 0,
+			"carton_weight_per_unit": 0
 		}
 
 	default_bom = frappe.db.get_value(
@@ -496,7 +562,9 @@ def get_bom_carton_details(item_code):
 		"active_bom": active_bom,
 		"carton_item": carton_item,
 		"carton_dimension": carton_dimension,
-		"qty_ctn": qty_ctn
+		"qty_ctn": qty_ctn,
+		"so_item_weight_per_unit": get_item_weight_per_unit(item_code),
+		"carton_weight_per_unit": get_item_weight_per_unit(carton_item)
 	}
 
 
@@ -523,7 +591,9 @@ def backfill_order_sheet_bom_carton(order_sheet=None):
 				"active_bom": details.get("active_bom"),
 				"carton_item": details.get("carton_item"),
 				"carton_dimension": details.get("carton_dimension"),
-				"qty_ctn": (details.get("qty_ctn") if not current_qty_ctn else current_qty_ctn)
+				"qty_ctn": (details.get("qty_ctn") if not current_qty_ctn else current_qty_ctn),
+				"so_item_weight_per_unit": details.get("so_item_weight_per_unit") or 0,
+				"carton_weight_per_unit": details.get("carton_weight_per_unit") or 0
 			},
 			update_modified=False
 		)

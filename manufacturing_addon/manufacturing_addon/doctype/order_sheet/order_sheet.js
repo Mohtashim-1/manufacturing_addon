@@ -201,6 +201,8 @@ frappe.ui.form.on("Order Sheet", {
 				row.active_bom = item.active_bom || "";
 				row.carton_item = item.carton_item || "";
 				row.carton_dimension = item.carton_dimension || "";
+				row.so_item_weight_per_unit = item.so_item_weight_per_unit || 0;
+				row.carton_weight_per_unit = item.carton_weight_per_unit || 0;
 				if (item.qty_ctn) {
 					row.qty_ctn = item.qty_ctn;
 				}
@@ -296,8 +298,30 @@ function update_total_cartoons_for_row(cdt, cdn) {
 	const qty = frappe.utils.flt(row.planned_qty) || frappe.utils.flt(row.order_qty);
 	const plannedQty = frappe.utils.flt(row.planned_qty);
 	const total = qtyCtn > 0 ? (qty / qtyCtn) : 0;
+	const dimensions = parse_carton_dimensions(row.carton_dimension);
+	const soWeightPerUnit = frappe.utils.flt(row.so_item_weight_per_unit);
+	const cartonWeightPerUnit = frappe.utils.flt(row.carton_weight_per_unit);
+	const perCartonCbm = dimensions ? (dimensions.length * dimensions.width * dimensions.height) / 1000000 : 0;
+	const orderCbm = perCartonCbm * total;
+	const netWeight = qty * soWeightPerUnit;
+	const grossWeight = netWeight + (total * cartonWeightPerUnit);
+
 	frappe.model.set_value(cdt, cdn, "total_cartoons", total);
 	frappe.model.set_value(cdt, cdn, "total_planned_ctn", plannedQty * qtyCtn);
+	frappe.model.set_value(cdt, cdn, "order_cbm", orderCbm);
+	frappe.model.set_value(cdt, cdn, "net_weight", netWeight);
+	frappe.model.set_value(cdt, cdn, "gross_weight", grossWeight);
+}
+
+function parse_carton_dimensions(dimensionText) {
+	if (!dimensionText) return null;
+	const match = String(dimensionText).match(/(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/);
+	if (!match) return null;
+	return {
+		length: frappe.utils.flt(match[1]),
+		width: frappe.utils.flt(match[2]),
+		height: frappe.utils.flt(match[3])
+	};
 }
 
 frappe.ui.form.on("Order Sheet CT", {
@@ -308,6 +332,8 @@ frappe.ui.form.on("Order Sheet CT", {
 			frappe.model.set_value(cdt, cdn, "active_bom", "");
 			frappe.model.set_value(cdt, cdn, "carton_item", "");
 			frappe.model.set_value(cdt, cdn, "carton_dimension", "");
+			frappe.model.set_value(cdt, cdn, "so_item_weight_per_unit", 0);
+			frappe.model.set_value(cdt, cdn, "carton_weight_per_unit", 0);
 			update_total_cartoons_for_row(cdt, cdn);
 			return;
 		}
@@ -323,6 +349,8 @@ frappe.ui.form.on("Order Sheet CT", {
 				frappe.model.set_value(cdt, cdn, "active_bom", r.message.active_bom || "");
 				frappe.model.set_value(cdt, cdn, "carton_item", r.message.carton_item || "");
 				frappe.model.set_value(cdt, cdn, "carton_dimension", r.message.carton_dimension || "");
+				frappe.model.set_value(cdt, cdn, "so_item_weight_per_unit", r.message.so_item_weight_per_unit || 0);
+				frappe.model.set_value(cdt, cdn, "carton_weight_per_unit", r.message.carton_weight_per_unit || 0);
 				if (r.message.qty_ctn) {
 					frappe.model.set_value(cdt, cdn, "qty_ctn", r.message.qty_ctn);
 				}

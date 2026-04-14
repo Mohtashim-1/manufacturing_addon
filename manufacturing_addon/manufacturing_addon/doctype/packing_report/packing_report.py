@@ -625,7 +625,7 @@ class PackingReport(Document):
 
     def total_qty(self):
         for i in self.packing_report_ct:
-            i.total_copy1 = (i.packaging_qty or 0) + (i.finished_stitching_qty or 0)
+            i.total_copy1 = (i.packaging_qty or 0) + (i.finished_packaging_qty or 0)
 
     def total_percentage(self):
         for i in self.packing_report_ct:

@@ -1,0 +1,19 @@
+{
+ "content": null,
+ "creation": "2026-04-14 19:13:20.920655",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-04-14 19:13:20.920655",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "production-progress",
+ "owner": "Administrator",
+ "page_name": "production-progress",
+ "roles": [],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Production Progress"
+}

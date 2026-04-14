@@ -166,10 +166,12 @@ doc_events = {
 scheduler_events = {
 	"cron": {
 		"0 0 * * *": [
-			"manufacturing_addon.manufacturing_addon.daily_sales_order_production_email.send_daily_sales_order_production_email"
+			"manufacturing_addon.manufacturing_addon.daily_sales_order_production_email.send_daily_sales_order_production_email",
+			"manufacturing_addon.manufacturing_addon.page.production_progress.production_progress.send_scheduled_production_progress_email",
 		],
 		"0 12 * * *": [
-			"manufacturing_addon.manufacturing_addon.daily_sales_order_production_email.send_daily_sales_order_production_email"
+			"manufacturing_addon.manufacturing_addon.daily_sales_order_production_email.send_daily_sales_order_production_email",
+			"manufacturing_addon.manufacturing_addon.page.production_progress.production_progress.send_scheduled_production_progress_email",
 		]
 	}
 }

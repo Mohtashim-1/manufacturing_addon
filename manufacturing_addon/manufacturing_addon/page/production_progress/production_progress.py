@@ -221,9 +221,55 @@ def _build_attachment_csv(rows):
 	return buffer.getvalue()
 
 
-def _build_email_html(from_date, to_date, summary, dashboard_url):
+def _build_email_html(from_date, to_date, summary, sales_order_rows, dashboard_url):
 	def fmt(value):
 		return f"{flt(value):,.2f}"
+
+	def pct(stage_qty, base_qty):
+		base_qty = flt(base_qty)
+		if not base_qty:
+			return "0.00%"
+		return f"{(flt(stage_qty) / base_qty) * 100:.2f}%"
+
+	so_table_rows = []
+	for row in sales_order_rows:
+		so_table_rows.append(
+			f"""
+			<tr>
+				<td style="padding: 6px 10px; border: 1px solid #ddd;">{frappe.utils.escape_html(row.get('sales_order') or '')}</td>
+				<td style="padding: 6px 10px; border: 1px solid #ddd;">{frappe.utils.escape_html(row.get('customer') or '')}</td>
+				<td style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">{fmt(row.get('order_qty'))}</td>
+				<td style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">{fmt(row.get('planned_qty'))}</td>
+				<td style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">{fmt(row.get('cutting_qty'))} ({pct(row.get('cutting_qty'), row.get('order_qty'))})</td>
+				<td style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">{fmt(row.get('stitching_qty'))} ({pct(row.get('stitching_qty'), row.get('order_qty'))})</td>
+				<td style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">{fmt(row.get('packing_qty'))} ({pct(row.get('packing_qty'), row.get('order_qty'))})</td>
+			</tr>
+			"""
+		)
+
+	so_rows_html = "".join(so_table_rows)
+	if not so_rows_html:
+		so_rows_html = '<tr><td colspan="7" style="padding:8px; border:1px solid #ddd; color:#6b7280;">No sales order rows found.</td></tr>'
+
+	sales_order_summary_html = f"""
+	<h4 style="margin: 14px 0 8px 0;">Sales Order-wise Summary</h4>
+	<table style="border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 14px;">
+		<thead>
+			<tr style="background: #f8fafc;">
+				<th style="padding: 6px 10px; border: 1px solid #ddd; text-align:left;">Sales Order</th>
+				<th style="padding: 6px 10px; border: 1px solid #ddd; text-align:left;">Customer</th>
+				<th style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">Order Qty</th>
+				<th style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">Planned Qty</th>
+				<th style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">Cutting Progress</th>
+				<th style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">Stitching Progress</th>
+				<th style="padding: 6px 10px; border: 1px solid #ddd; text-align:right;">Packing Progress</th>
+			</tr>
+		</thead>
+		<tbody>
+			{so_rows_html}
+		</tbody>
+	</table>
+	"""
 
 	return f"""
 	<p>Dear System Managers,</p>
@@ -237,6 +283,7 @@ def _build_email_html(from_date, to_date, summary, dashboard_url):
 		<tr><td style="padding: 6px 10px; border: 1px solid #ddd;"><b>Stitching</b></td><td style="padding: 6px 10px; border: 1px solid #ddd;">{fmt(summary.get("total_stitching_qty", 0))}</td></tr>
 		<tr><td style="padding: 6px 10px; border: 1px solid #ddd;"><b>Packing</b></td><td style="padding: 6px 10px; border: 1px solid #ddd;">{fmt(summary.get("total_packing_qty", 0))}</td></tr>
 	</table>
+	{sales_order_summary_html}
 	<p>Detailed item-wise progress is attached as CSV.</p>
 	<p>Regards,<br>ERP System</p>
 	"""
@@ -251,10 +298,11 @@ def _send_production_progress_email(from_date=None, to_date=None):
 	stage_rows = _get_stage_rows(from_date, to_date)
 	rows = _build_rows(stage_rows)
 	summary = _build_summary(rows)
+	sales_order_rows = _build_sales_order_rows(rows)
 	dashboard_url = get_url("/app/page/production-progress")
 
 	subject = f"Production Progress Summary - {from_date} to {to_date}"
-	message = _build_email_html(from_date, to_date, summary, dashboard_url)
+	message = _build_email_html(from_date, to_date, summary, sales_order_rows, dashboard_url)
 	attachments = [
 		{
 			"fname": f"production_progress_{from_date}_to_{to_date}.csv",

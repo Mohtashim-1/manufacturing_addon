@@ -1,6 +1,7 @@
 # Copyright (c) 2025, Manufacturing Addon and contributors
 # For license information, please see license.txt
 
+import re
 import frappe
 from frappe.model.document import Document
 from frappe import _
@@ -59,6 +60,19 @@ if not hasattr(frappe, '_stock_entry_rate_patch_applied'):
 
 
 class PackingReport(Document):
+    @staticmethod
+    def _parse_carton_dimension(dimension_text):
+        """Parse dimension text like '60x40x30' into (L, W, H) in cm."""
+        if not dimension_text:
+            return (0.0, 0.0, 0.0)
+        match = re.search(
+            r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)",
+            str(dimension_text),
+        )
+        if not match:
+            return (0.0, 0.0, 0.0)
+        return (flt(match.group(1)), flt(match.group(2)), flt(match.group(3)))
+
     @frappe.whitelist()
     def get_data1(self):
         print(f"\n{'='*60}")
@@ -388,6 +402,7 @@ class PackingReport(Document):
             print(f"{'='*60}\n")
 
     def validate(self):
+        self.set_cost_center_from_sales_order()
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
         self.calculate_finished_quality_qty()
@@ -398,10 +413,36 @@ class PackingReport(Document):
         self.total()
     
     def before_save(self):
+        self.set_cost_center_from_sales_order()
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
         self.calculate_finished_quality_qty()
         self.calculate_finished_packaging_qty()
+
+    def set_cost_center_from_sales_order(self):
+        """Fetch cost center from linked Sales Order via Order Sheet."""
+        if not self.order_sheet:
+            return
+
+        sales_order = frappe.db.get_value("Order Sheet", self.order_sheet, "sales_order")
+        if not sales_order:
+            return
+
+        # Prefer parent-level cost center on Sales Order.
+        sales_order_cost_center = frappe.db.get_value("Sales Order", sales_order, "cost_center")
+        if sales_order_cost_center:
+            self.cost_center = sales_order_cost_center
+            return
+
+        # Fallback: first available Sales Order Item cost center.
+        item_cost_center = frappe.db.get_value(
+            "Sales Order Item",
+            {"parent": sales_order},
+            "cost_center",
+            order_by="idx asc",
+        )
+        if item_cost_center:
+            self.cost_center = item_cost_center
 
     def calculate_finished_cutting_qty(self):
         """Get finished cutting qty from Cutting Reports"""
@@ -624,8 +665,28 @@ class PackingReport(Document):
                 )
 
     def total_qty(self):
+        carton_dimensions = {}
+        if self.order_sheet:
+            order_sheet_rows = frappe.get_all(
+                "Order Sheet CT",
+                filters={"parent": self.order_sheet},
+                fields=["so_item", "combo_item", "carton_dimension"],
+            )
+            for row in order_sheet_rows:
+                carton_dimensions[(row.so_item, row.combo_item or "")] = row.carton_dimension
+
         for i in self.packing_report_ct:
             i.total_copy1 = (i.packaging_qty or 0) + (i.finished_packaging_qty or 0)
+            qty_ctn = flt(i.qty_ctn)
+            total_copy = flt(i.total_copy1)
+            i.ready_cartoons_copy = (total_copy / qty_ctn) if qty_ctn else 0
+
+            carton_dimension = carton_dimensions.get((i.so_item, i.combo_item or "")) or carton_dimensions.get(
+                (i.so_item, "")
+            )
+            length_cm, width_cm, height_cm = self._parse_carton_dimension(carton_dimension)
+            per_carton_cbm = (length_cm * width_cm * height_cm / 1000000.0) if (length_cm and width_cm and height_cm) else 0
+            i.ready_cbm_copy = per_carton_cbm * flt(i.ready_cartoons_copy)
 
     def total_percentage(self):
         for i in self.packing_report_ct:

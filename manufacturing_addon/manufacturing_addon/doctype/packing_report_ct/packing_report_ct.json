@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2025-01-20 00:00:00",
+ "creation": "2026-04-11 17:44:16.407728",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -34,6 +34,7 @@
   "qty_percentage_copy",
   "percentage_copy",
   "ready_cartoons_copy",
+  "ready_cbm_copy",
   "section_break_hohu",
   "bundle_items"
  ],
@@ -214,7 +215,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Already Cutting Qty",
+   "label": "Already Cutted Qty",
    "non_negative": 1,
    "read_only": 1
   },
@@ -226,7 +227,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Already Stitching Qty",
+   "label": "Already Stitched Qty",
    "non_negative": 1,
    "read_only": 1
   },
@@ -250,7 +251,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Already Packaging Qty",
+   "label": "Already Packed Qty",
    "non_negative": 1,
    "read_only": 1
   },
@@ -281,13 +282,14 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Qty %",
+   "label": "Order %",
    "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "percentage_copy",
    "fieldtype": "Percent",
+   "hidden": 1,
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
@@ -297,8 +299,14 @@
   },
   {
    "fieldname": "ready_cartoons_copy",
-   "fieldtype": "Data",
+   "fieldtype": "Float",
    "label": "Ready Cartoons",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ready_cbm_copy",
+   "fieldtype": "Float",
+   "label": "Ready CBM",
    "read_only": 1
   },
   {
@@ -309,7 +317,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-11 17:13:29.478547",
+ "modified": "2026-04-15 18:19:23.386513",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Packing Report CT",

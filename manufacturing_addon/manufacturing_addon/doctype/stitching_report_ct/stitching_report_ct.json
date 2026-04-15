@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2025-01-20 00:00:00",
+ "creation": "2026-04-11 17:44:13.983063",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -244,13 +244,14 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Qty %",
+   "label": "Order %",
    "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "percentage_copy",
    "fieldtype": "Percent",
+   "hidden": 1,
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
@@ -262,7 +263,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-11 17:13:23.778219",
+ "modified": "2026-04-15 18:17:33.513474",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stitching Report CT",

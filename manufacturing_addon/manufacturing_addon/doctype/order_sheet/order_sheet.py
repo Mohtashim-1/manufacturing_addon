@@ -39,13 +39,14 @@ class OrderSheet(Document):
 		for row in self.order_sheet_ct:
 			# Use planned_qty for calculations, fallback to order_qty if planned_qty is not set
 			planned_qty = row.planned_qty if row.planned_qty else (row.order_qty or 0)
+			order_qty = row.order_qty or 0
 			qty_ctn = row.qty_ctn or 0 
 
 			if qty_ctn > 0:  # Prevent division by zero
-				row.total_cartoons = planned_qty / qty_ctn
+				row.total_cartoons = order_qty / qty_ctn
 			else:
 				row.total_cartoons = 0  # Set to 0 if total_cartoons is invalid
-			row.total_planned_ctn = planned_qty * qty_ctn
+			row.total_planned_ctn = planned_qty / qty_ctn
 
 
 
@@ -81,6 +82,7 @@ class OrderSheet(Document):
 		for row in self.order_sheet_ct:
 			planned_qty = row.planned_qty if row.planned_qty else (row.order_qty or 0)
 			total_cartoons = flt(row.total_cartoons)
+			total_planned_ctn = flt(row.total_planned_ctn)
 
 			# CBM = number of cartons * (L * W * H in cm / 1,000,000)
 			lenght_cm, width_cm, height_cm = parse_carton_dimension(row.carton_dimension)
@@ -88,6 +90,10 @@ class OrderSheet(Document):
 				row.order_cbm = (lenght_cm * width_cm * height_cm / 1000000.0) * total_cartoons
 			else:
 				row.order_cbm = 0
+			if lenght_cm and width_cm and height_cm and total_planned_ctn:
+				row.planned_cbm = (lenght_cm * width_cm * height_cm / 1000000.0) * total_planned_ctn
+			else:
+				row.planned_cbm = 0
 
 			# Net weight = planned pcs * finished good weight_per_unit (kg)
 			so_weight_per_unit = get_item_weight_per_unit(row.so_item, item_weight_cache)

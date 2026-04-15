@@ -2,6 +2,28 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on("Packing Report", {
+    order_sheet(frm) {
+        if (!frm.doc.order_sheet) {
+            frm.set_value("cost_center", "");
+            return;
+        }
+
+        frappe.db.get_value("Order Sheet", frm.doc.order_sheet, "sales_order")
+            .then((r) => {
+                const sales_order = r && r.message ? r.message.sales_order : null;
+                if (!sales_order) {
+                    frm.set_value("cost_center", "");
+                    return;
+                }
+
+                return frappe.db.get_value("Sales Order", sales_order, "cost_center");
+            })
+            .then((r) => {
+                if (!r || !r.message) return;
+                frm.set_value("cost_center", r.message.cost_center || "");
+            });
+    },
+
     get_data(frm){
         console.log("[Packing Report JS] get_data called");
         console.log("[Packing Report JS] Order Sheet:", frm.doc.order_sheet);

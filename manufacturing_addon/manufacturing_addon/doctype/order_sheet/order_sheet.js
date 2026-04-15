@@ -65,11 +65,14 @@ frappe.ui.form.on("Order Sheet", {
 
 	sales_order(frm) {
 		if (!frm.doc.sales_order) return;
-		frappe.db.get_value("Sales Order", frm.doc.sales_order, ["customer", "delivery_date", "po_no"], function(r) {
+		frappe.db.get_value("Sales Order", frm.doc.sales_order, ["customer", "delivery_date", "po_no", "custom_instructions"], function(r) {
 			if (!r) return;
 			if (r.customer) frm.set_value("customer", r.customer);
 			if (r.delivery_date) frm.set_value("shipment_date", r.delivery_date);
 			if (r.po_no) frm.set_value("order_no", r.po_no);
+			if (!frm.doc.instructions && r.custom_instructions) {
+				frm.set_value("instructions", r.custom_instructions);
+			}
 		});
 	},
 
@@ -295,20 +298,24 @@ function update_total_cartoons_for_row(cdt, cdn) {
 	const row = locals[cdt] && locals[cdt][cdn];
 	if (!row) return;
 	const qtyCtn = frappe.utils.flt(row.qty_ctn);
-	const qty = frappe.utils.flt(row.planned_qty) || frappe.utils.flt(row.order_qty);
+	const orderQty = frappe.utils.flt(row.order_qty);
 	const plannedQty = frappe.utils.flt(row.planned_qty);
-	const total = qtyCtn > 0 ? (qty / qtyCtn) : 0;
+	const qtyForPlanned = plannedQty || orderQty;
+	const total = qtyCtn > 0 ? (orderQty / qtyCtn) : 0;
+	const totalPlanned = qtyCtn > 0 ? (qtyForPlanned / qtyCtn) : 0;
 	const dimensions = parse_carton_dimensions(row.carton_dimension);
 	const soWeightPerUnit = frappe.utils.flt(row.so_item_weight_per_unit);
 	const cartonWeightPerUnit = frappe.utils.flt(row.carton_weight_per_unit);
 	const perCartonCbm = dimensions ? (dimensions.length * dimensions.width * dimensions.height) / 1000000 : 0;
 	const orderCbm = perCartonCbm * total;
-	const netWeight = qty * soWeightPerUnit;
+	const plannedCbm = perCartonCbm * totalPlanned;
+	const netWeight = qtyForPlanned * soWeightPerUnit;
 	const grossWeight = netWeight + (total * cartonWeightPerUnit);
 
 	frappe.model.set_value(cdt, cdn, "total_cartoons", total);
-	frappe.model.set_value(cdt, cdn, "total_planned_ctn", plannedQty * qtyCtn);
+	frappe.model.set_value(cdt, cdn, "total_planned_ctn", totalPlanned);
 	frappe.model.set_value(cdt, cdn, "order_cbm", orderCbm);
+	frappe.model.set_value(cdt, cdn, "planned_cbm", plannedCbm);
 	frappe.model.set_value(cdt, cdn, "net_weight", netWeight);
 	frappe.model.set_value(cdt, cdn, "gross_weight", grossWeight);
 }

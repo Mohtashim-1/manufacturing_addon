@@ -28,9 +28,10 @@
   "column_break_wcnu",
   "order_qty",
   "planned_qty",
-  "total_cartoons",
+  "total_carton",
   "total_planned_ctn",
   "order_cbm",
+  "planned_cbm",
   "net_weight",
   "gross_weight",
   "so_item_weight_per_unit",
@@ -122,17 +123,6 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Qty/ Ctn",
-   "width": "1"
-  },
-  {
-   "columns": 1,
-   "fieldname": "total_cartoons",
-   "fieldtype": "Float",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
-   "in_standard_filter": 1,
-   "label": "Total Cartoons",
    "width": "1"
   },
   {
@@ -301,12 +291,33 @@
    "fieldname": "instructions",
    "fieldtype": "Text Editor",
    "label": "Instructions"
+  },
+  {
+   "columns": 1,
+   "fieldname": "total_carton",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Order Carton",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "planned_cbm",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Planned CBM",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-04 02:57:54.146184",
+ "modified": "2026-04-15 17:58:11.047867",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet CT",

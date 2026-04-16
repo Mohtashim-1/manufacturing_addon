@@ -312,7 +312,7 @@ function update_total_cartoons_for_row(cdt, cdn) {
 	const netWeight = qtyForPlanned * soWeightPerUnit;
 	const grossWeight = netWeight + (total * cartonWeightPerUnit);
 
-	frappe.model.set_value(cdt, cdn, "total_cartoons", total);
+	frappe.model.set_value(cdt, cdn, "total_carton", total);
 	frappe.model.set_value(cdt, cdn, "total_planned_ctn", totalPlanned);
 	frappe.model.set_value(cdt, cdn, "order_cbm", orderCbm);
 	frappe.model.set_value(cdt, cdn, "planned_cbm", plannedCbm);

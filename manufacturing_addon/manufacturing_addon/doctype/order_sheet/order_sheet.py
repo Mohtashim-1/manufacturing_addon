@@ -43,9 +43,9 @@ class OrderSheet(Document):
 			qty_ctn = row.qty_ctn or 0 
 
 			if qty_ctn > 0:  # Prevent division by zero
-				row.total_cartoons = order_qty / qty_ctn
+				row.total_carton = order_qty / qty_ctn
 			else:
-				row.total_cartoons = 0  # Set to 0 if total_cartoons is invalid
+				row.total_carton = 0  # Set to 0 if total_carton is invalid
 			row.total_planned_ctn = planned_qty / qty_ctn
 
 
@@ -62,7 +62,7 @@ class OrderSheet(Document):
 		for i in self.order_sheet_ct:
 			order_quantity += i.order_qty or 0
 			planned_quantity += i.planned_qty or 0
-			total_cartoons += i.total_cartoons or 0
+			total_cartoons += i.total_carton or 0
 			total_quantity_per_cartoon += i.qty_ctn or 0
 			total_order_cbm += i.order_cbm or 0
 			total_net_weight += i.net_weight or 0
@@ -81,7 +81,7 @@ class OrderSheet(Document):
 
 		for row in self.order_sheet_ct:
 			planned_qty = row.planned_qty if row.planned_qty else (row.order_qty or 0)
-			total_cartoons = flt(row.total_cartoons)
+			total_cartoons = flt(row.total_carton)
 			total_planned_ctn = flt(row.total_planned_ctn)
 
 			# CBM = number of cartons * (L * W * H in cm / 1,000,000)

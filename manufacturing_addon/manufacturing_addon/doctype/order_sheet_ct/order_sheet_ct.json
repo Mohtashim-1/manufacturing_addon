@@ -50,6 +50,7 @@
    "in_standard_filter": 1,
    "label": "Design",
    "options": "Stitching Design",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -62,6 +63,7 @@
    "in_standard_filter": 1,
    "label": "Colour",
    "options": "Stitching Colour",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -70,6 +72,7 @@
    "fieldtype": "Link",
    "label": "Reverse Colour",
    "options": "Stitching Colour",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -82,6 +85,7 @@
    "in_standard_filter": 1,
    "label": "Size",
    "options": "Stitching Size",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -89,6 +93,7 @@
    "fieldtype": "Link",
    "label": "EAN",
    "options": "Ean Code",
+   "read_only": 1,
    "width": "0"
   },
   {
@@ -100,6 +105,7 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Order Qty",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -123,6 +129,7 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Qty/ Ctn",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -202,18 +209,21 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Article",
-   "options": "Stitching Article No"
+   "options": "Stitching Article No",
+   "read_only": 1
   },
   {
    "fetch_from": "size.consumption",
    "fieldname": "consumption",
    "fieldtype": "Float",
-   "label": "Consumption Per Piece"
+   "label": "Consumption Per Piece",
+   "read_only": 1
   },
   {
    "fieldname": "total_consumption",
    "fieldtype": "Float",
-   "label": "Total Consumption"
+   "label": "Total Consumption",
+   "read_only": 1
   },
   {
    "columns": 1,
@@ -224,6 +234,7 @@
    "in_standard_filter": 1,
    "label": "GSM",
    "options": "GSM",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -235,7 +246,8 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "SO Item",
-   "options": "Item"
+   "options": "Item",
+   "read_only": 1
   },
   {
    "fieldname": "default_bom",
@@ -268,7 +280,8 @@
    "default": "0",
    "fieldname": "product_combo",
    "fieldtype": "Check",
-   "label": "Product Combo"
+   "label": "Product Combo",
+   "read_only": 1
   },
   {
    "columns": 1,
@@ -280,6 +293,7 @@
    "in_standard_filter": 1,
    "label": "Combo Item",
    "options": "Item",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -301,6 +315,7 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Order Carton",
+   "read_only": 1,
    "width": "1"
   },
   {
@@ -317,7 +332,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-15 17:58:11.047867",
+ "modified": "2026-04-16 21:13:29.730964",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet CT",

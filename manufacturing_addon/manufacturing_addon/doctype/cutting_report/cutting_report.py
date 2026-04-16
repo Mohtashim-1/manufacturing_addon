@@ -149,10 +149,10 @@ class CuttingReport(Document):
                                     "qty_ctn": r.get("qty_ctn"),
                                     "article": r.get("stitching_article_no"),
                                     "ean": r.get("ean"),
-                                    "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
+                                    "order_qty": order_qty * combo_pcs,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                     "pcs": combo_pcs,
                                     "qty": calculated_qty,  # planned_qty * pcs
-                                    "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                                    "planned_qty": planned_qty * combo_pcs,  # Original planned_qty from Order Sheet CT
                                     "so_item": so_item,
                                     "combo_item": combo_item_code,
                                 })

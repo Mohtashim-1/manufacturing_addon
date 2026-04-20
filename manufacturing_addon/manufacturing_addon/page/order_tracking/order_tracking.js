@@ -906,7 +906,6 @@ function renderDetailedTable(details) {
 	// Build a map of parent order_qty for bundle items
 	const parentOrderQtyMap = {};
 	const childCountMap = {};
-	const childAggregates = {};
 	details.forEach(function(row) {
 		if (row.is_parent === true) {
 			// Store parent's order_qty keyed by order_sheet and item
@@ -918,26 +917,6 @@ function renderDetailedTable(details) {
 		} else if (row.bundle_item && row.bundle_item !== null) {
 			const parentKey = `${row.order_sheet}||${row.item}`;
 			childCountMap[parentKey] = (childCountMap[parentKey] || 0) + 1;
-			if (!childAggregates[parentKey]) {
-				childAggregates[parentKey] = {
-					cutting_qty: 0,
-					cutting_finished: 0,
-					cutting_planned: 0,
-					cutting_normalized_finished: 0,
-					stitching_qty: 0,
-					stitching_finished: 0,
-					stitching_planned: 0,
-					stitching_normalized_finished: 0
-				};
-			}
-			childAggregates[parentKey].cutting_qty += (row.cutting_qty || 0);
-			childAggregates[parentKey].cutting_finished += (row.cutting_finished || 0);
-			childAggregates[parentKey].cutting_planned += (row.cutting_planned || 0);
-			childAggregates[parentKey].cutting_normalized_finished += (row.cutting_finished || 0) / ((row.pcs || 1) || 1);
-			childAggregates[parentKey].stitching_qty += (row.stitching_qty || 0);
-			childAggregates[parentKey].stitching_finished += (row.stitching_finished || 0);
-			childAggregates[parentKey].stitching_planned += (row.stitching_planned || 0);
-			childAggregates[parentKey].stitching_normalized_finished += (row.stitching_finished || 0) / ((row.pcs || 1) || 1);
 		}
 	});
 	
@@ -947,7 +926,6 @@ function renderDetailedTable(details) {
 		// For bundle items, use parent's order_qty
 		let orderQty = row.order_qty || 0;
 		const parentKey = `${row.order_sheet}||${row.item}`;
-		const parentAgg = childAggregates[parentKey] || null;
 		// Determine if this is a parent row (finished item) or child row (bundle item)
 		const isParent = row.is_parent === true;
 		const isBundleItem = row.bundle_item && row.bundle_item !== null;
@@ -963,29 +941,14 @@ function renderDetailedTable(details) {
 		let displayStitchingQty = row.stitching_qty || 0;
 		let displayStitchingFinished = row.stitching_finished || 0;
 		let displayStitchingPlanned = row.stitching_planned || 0;
-
-		// Parent row should show summed child values for cutting/stitching
-		if (isParent && parentAgg) {
-			displayCuttingQty = parentAgg.cutting_qty;
-			displayCuttingFinished = parentAgg.cutting_finished;
-			displayCuttingPlanned = parentAgg.cutting_planned || displayCuttingPlanned;
-			displayStitchingQty = parentAgg.stitching_qty;
-			displayStitchingFinished = parentAgg.stitching_finished;
-			displayStitchingPlanned = parentAgg.stitching_planned || displayStitchingPlanned;
-		}
 		
-			// Percentage rule:
-			// Base qty (all stages) = Finished / PCS
-			// Planned % = base qty / planned qty
-			// Qty % = base qty / order qty
-			const rowPcs = row.pcs || 1;
-			const cuttingBaseQty = isParent && parentAgg
-				? parentAgg.cutting_normalized_finished
-				: (displayCuttingFinished / (rowPcs || 1));
-			const stitchingBaseQty = isParent && parentAgg
-				? parentAgg.stitching_normalized_finished
-				: (displayStitchingFinished / (rowPcs || 1));
-			const packingBaseQty = (row.packing_finished || 0) / (rowPcs || 1);
+		// Percentage rule:
+		// Parent rows already come in finished-item units from the backend.
+		// Bundle rows stay normalized by their own PCS.
+		const rowPcs = row.pcs || 1;
+		const cuttingBaseQty = isParent ? displayCuttingFinished : (displayCuttingFinished / (rowPcs || 1));
+		const stitchingBaseQty = isParent ? displayStitchingFinished : (displayStitchingFinished / (rowPcs || 1));
+		const packingBaseQty = isParent ? (row.packing_finished || 0) : ((row.packing_finished || 0) / (rowPcs || 1));
 
 		const cuttingPlannedQty = isParent
 			? (row.planned_qty || displayCuttingPlanned || 0)

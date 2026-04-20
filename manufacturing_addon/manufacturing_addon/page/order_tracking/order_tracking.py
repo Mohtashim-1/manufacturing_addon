@@ -5,6 +5,91 @@ import frappe
 from frappe import _
 
 
+def _get_bundle_items_for_so_item(so_item):
+	"""Return bundle item definitions as [{'item': code, 'pcs': qty}, ...]."""
+	if not so_item:
+		return []
+
+	bundle_items = []
+
+	try:
+		item_doc = frappe.get_doc("Item", so_item)
+		combo_items = getattr(item_doc, "custom_product_combo_item", []) or []
+		if combo_items:
+			for row in combo_items:
+				if row.item:
+					bundle_items.append({"item": row.item, "pcs": row.pcs or 1})
+			if bundle_items:
+				return bundle_items
+	except Exception:
+		pass
+
+	size_value = None
+	variant_attrs = frappe.get_all(
+		"Item Variant Attribute",
+		filters={"parent": so_item},
+		fields=["attribute", "attribute_value"],
+	)
+	for attr in variant_attrs:
+		if attr.attribute and attr.attribute.upper() == "SIZE":
+			size_value = attr.attribute_value
+			break
+
+	if not size_value:
+		return []
+
+	stitching_size = frappe.db.get_value("Stitching Size", size_value, "name")
+	if not stitching_size:
+		return []
+
+	try:
+		stitching_size_doc = frappe.get_doc("Stitching Size", stitching_size)
+		for row in (stitching_size_doc.combo_detail or []):
+			if row.item:
+				bundle_items.append({"item": row.item, "pcs": row.pcs or 1})
+	except Exception:
+		return []
+
+	return bundle_items
+
+
+def _get_finished_item_stage_info(stage_data, order_sheet, so_item, bundle_items, default_planned_qty=0):
+	"""
+	Convert bundle-stage data back to finished-item equivalents.
+	For finished-item rows, use the highest normalized component qty/finished.
+	"""
+	finished_key = f"{order_sheet}||{so_item}||"
+	finished_info = stage_data.get(finished_key)
+
+	if not bundle_items:
+		return finished_info or {"qty": 0, "finished": 0, "planned": default_planned_qty or 0}
+
+	normalized_rows = []
+	for bundle_item in bundle_items:
+		combo_item_code = bundle_item.get("item")
+		pcs = bundle_item.get("pcs") or 1
+		bundle_key = f"{order_sheet}||{so_item}||{combo_item_code}"
+		info = stage_data.get(bundle_key)
+		if not info:
+			continue
+		normalized_rows.append(
+			{
+				"qty": (info.get("qty") or 0) / pcs,
+				"finished": (info.get("finished") or 0) / pcs,
+				"planned": default_planned_qty or info.get("planned") or 0,
+			}
+		)
+
+	if not normalized_rows:
+		return finished_info or {"qty": 0, "finished": 0, "planned": default_planned_qty or 0}
+
+	return {
+		"qty": max(row["qty"] for row in normalized_rows),
+		"finished": max(row["finished"] for row in normalized_rows),
+		"planned": default_planned_qty or max(row["planned"] for row in normalized_rows),
+	}
+
+
 @frappe.whitelist()
 def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 	"""
@@ -199,52 +284,12 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		total_packing_planned = 0
 		total_packing_finished = 0
 		
-		# For PCS-based progress calculation
-		# Calculate total finished PCS (finished qty * pcs for each bundle item)
-		total_cutting_finished_pcs = 0
-		total_stitching_finished_pcs = 0
-		
 		for row in order_sheet_ct:
 			so_item = row.so_item
 			order_sheet = row.parent
 			
 			# Get bundle items for this finished item
-			bundle_items = []
-			try:
-				item_doc = frappe.get_doc("Item", so_item)
-				combo_items = getattr(item_doc, 'custom_product_combo_item', [])
-				
-				if combo_items and len(combo_items) > 0:
-					for ci in combo_items:
-						bundle_items.append({
-							"item": ci.item,
-							"pcs": ci.pcs or 1
-						})
-				else:
-					# Try Stitching Size
-					size_value = None
-					variant_attrs = frappe.get_all(
-						"Item Variant Attribute",
-						filters={"parent": so_item},
-						fields=["attribute", "attribute_value"]
-					)
-					for attr in variant_attrs:
-						if attr.attribute and attr.attribute.upper() == "SIZE":
-							size_value = attr.attribute_value
-							break
-					
-					if size_value:
-						stitching_size = frappe.db.get_value("Stitching Size", size_value, "name")
-						if stitching_size:
-							stitching_size_doc = frappe.get_doc("Stitching Size", stitching_size)
-							if stitching_size_doc.combo_detail and len(stitching_size_doc.combo_detail) > 0:
-								for ci in stitching_size_doc.combo_detail:
-									bundle_items.append({
-										"item": ci.item,
-										"pcs": ci.pcs or 1
-									})
-			except Exception as e:
-				frappe.log_error(f"Error getting bundle items for {so_item}: {str(e)}", "Order Tracking Bundle Items")
+			bundle_items = _get_bundle_items_for_so_item(so_item)
 			
 			# If no bundle items found, add finished item as main item
 			if not bundle_items:
@@ -265,8 +310,12 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 			print(f"  - Finished Key: '{finished_key}'")
 			print(f"  - Available packing_data keys: {list(packing_data.keys())}")
 			
-			cutting_info_finished = cutting_data.get(finished_key, {"qty": 0, "finished": 0, "planned": 0})
-			stitching_info_finished = stitching_data.get(finished_key, {"qty": 0, "finished": 0, "planned": 0})
+			cutting_info_finished = _get_finished_item_stage_info(
+				cutting_data, order_sheet, so_item, bundle_items if bundle_items and bundle_items[0]["item"] != so_item else [], row.planned_qty or 0
+			)
+			stitching_info_finished = _get_finished_item_stage_info(
+				stitching_data, order_sheet, so_item, bundle_items if bundle_items and bundle_items[0]["item"] != so_item else [], row.planned_qty or 0
+			)
 			# Packing is done at finished item level, so combo_item is always empty
 			packing_info_finished = packing_data.get(finished_key, {"qty": 0, "finished": 0, "planned": 0})
 			
@@ -309,6 +358,11 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 				"packing_planned": packing_info_finished["planned"],
 				"is_parent": True
 			})
+
+			total_cutting_planned += cutting_info_finished["planned"]
+			total_cutting_finished += cutting_info_finished["finished"]
+			total_stitching_planned += stitching_info_finished["planned"]
+			total_stitching_finished += stitching_info_finished["finished"]
 			
 			# Add bundle items as child rows
 			# Get Order Sheet planned_qty for this finished item (to use as fallback)
@@ -364,28 +418,6 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 					"is_parent": False
 				})
 				
-				# Add bundle item totals for cutting and stitching only
-				# Packing totals will come from finished item
-				total_cutting_planned += cutting_info["planned"]
-				total_cutting_finished += cutting_info["finished"]
-				total_stitching_planned += stitching_info["planned"]
-				total_stitching_finished += stitching_info["finished"]
-				
-				# Calculate finished PCS: finished qty * pcs for each bundle item
-				print(f"\n[Progress Calc] Bundle Item: {combo_item_code}, PCS: {bundle_pcs}")
-				print(f"  - Cutting: finished={cutting_info['finished']}, planned={cutting_info['planned']}")
-				print(f"  - Stitching: finished={stitching_info['finished']}, planned={stitching_info['planned']}")
-				
-				# Total Finished Cutting PCS = sum of (finished qty * pcs) for each bundle item
-				cutting_finished_pcs = cutting_info["finished"] * bundle_pcs
-				total_cutting_finished_pcs += cutting_finished_pcs
-				print(f"  - Cutting Finished PCS: {cutting_info['finished']} * {bundle_pcs} = {cutting_finished_pcs:.2f}")
-				
-				# Total Finished Stitching PCS = sum of (finished qty * pcs) for each bundle item
-				stitching_finished_pcs = stitching_info["finished"] * bundle_pcs
-				total_stitching_finished_pcs += stitching_finished_pcs
-				print(f"  - Stitching Finished PCS: {stitching_info['finished']} * {bundle_pcs} = {stitching_finished_pcs:.2f}")
-			
 			# Add packing totals from finished item (packing is done at finished item level)
 			total_packing_planned += packing_info_finished["planned"]
 			total_packing_finished += packing_info_finished["finished"]
@@ -403,31 +435,27 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		print(f"[Progress Calc] FINAL SUMMARY CALCULATIONS:")
 		print(f"{'='*80}")
 		print(f"\n[Cutting Progress]")
-		print(f"  - Total Cutting Finished PCS: {total_cutting_finished_pcs:.2f}")
 		print(f"  - Total Order Qty: {total_order_qty}")
 		print(f"  - Total Cutting Planned (qty): {total_cutting_planned}")
 		print(f"  - Total Cutting Finished (qty): {total_cutting_finished}")
 		
-		# Cutting % = (Total Finished Cutting PCS / Order qty) × 100
-		# Allow percentage above 100% if finished exceeds order qty
+		# Cutting % = (Finished finished-item qty / order qty) × 100
 		if total_order_qty > 0:
-			cutting_progress = (total_cutting_finished_pcs / total_order_qty) * 100
-			print(f"  - Calculation: ({total_cutting_finished_pcs:.2f} / {total_order_qty}) * 100 = {cutting_progress:.1f}%")
+			cutting_progress = (total_cutting_finished / total_order_qty) * 100
+			print(f"  - Calculation: ({total_cutting_finished:.2f} / {total_order_qty}) * 100 = {cutting_progress:.1f}%")
 		else:
 			cutting_progress = 0
 			print(f"  - No order qty, progress = 0%")
 		
 		print(f"\n[Stitching Progress]")
-		print(f"  - Total Stitching Finished PCS: {total_stitching_finished_pcs:.2f}")
 		print(f"  - Total Order Qty: {total_order_qty}")
 		print(f"  - Total Stitching Planned (qty): {total_stitching_planned}")
 		print(f"  - Total Stitching Finished (qty): {total_stitching_finished}")
 		
-		# Stitching % = (Total Finished Stitching PCS / order qty) × 100
-		# Allow percentage above 100% if finished exceeds order qty
+		# Stitching % = (Finished finished-item qty / order qty) × 100
 		if total_order_qty > 0:
-			stitching_progress = (total_stitching_finished_pcs / total_order_qty) * 100
-			print(f"  - Calculation: ({total_stitching_finished_pcs:.2f} / {total_order_qty}) * 100 = {stitching_progress:.1f}%")
+			stitching_progress = (total_stitching_finished / total_order_qty) * 100
+			print(f"  - Calculation: ({total_stitching_finished:.2f} / {total_order_qty}) * 100 = {stitching_progress:.1f}%")
 		else:
 			stitching_progress = 0
 			print(f"  - No order qty, progress = 0%")
@@ -488,4 +516,3 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Order Tracking Dashboard Error")
 		frappe.throw(_("Error loading dashboard data: {0}").format(str(e)))
-

@@ -73,6 +73,86 @@ class PackingReport(Document):
             return (0.0, 0.0, 0.0)
         return (flt(match.group(1)), flt(match.group(2)), flt(match.group(3)))
 
+    def _get_bundle_items_for_so_item(self, so_item):
+        """Return bundle item definitions as [{'item': code, 'pcs': qty}, ...]."""
+        if not so_item:
+            return []
+
+        bundle_items = []
+
+        try:
+            item_doc = frappe.get_doc("Item", so_item)
+            combo_items = getattr(item_doc, "custom_product_combo_item", []) or []
+            if combo_items:
+                for row in combo_items:
+                    if row.item:
+                        bundle_items.append({"item": row.item, "pcs": flt(row.pcs) or 1})
+                if bundle_items:
+                    return bundle_items
+        except Exception:
+            pass
+
+        size_value = None
+        variant_attrs = frappe.get_all(
+            "Item Variant Attribute",
+            filters={"parent": so_item},
+            fields=["attribute", "attribute_value"],
+        )
+        for attr in variant_attrs:
+            if attr.attribute and attr.attribute.upper() == "SIZE":
+                size_value = attr.attribute_value
+                break
+
+        if not size_value:
+            return []
+
+        stitching_size = frappe.db.get_value("Stitching Size", size_value, "name")
+        if not stitching_size:
+            return []
+
+        try:
+            stitching_size_doc = frappe.get_doc("Stitching Size", stitching_size)
+            for row in (stitching_size_doc.combo_detail or []):
+                if row.item:
+                    bundle_items.append({"item": row.item, "pcs": flt(row.pcs) or 1})
+        except Exception:
+            return []
+
+        return bundle_items
+
+    def _get_finished_bundle_equivalent_qty(self, report_table, child_table, qty_field, row, use_highest=False):
+        """
+        For finished-item packing rows, convert bundle-component totals back to
+        finished-set equivalent from bundle components.
+        """
+        bundle_items = self._get_bundle_items_for_so_item(row.so_item)
+        if not bundle_items:
+            return None
+
+        query = f"""
+            SELECT child.combo_item, SUM(IFNULL(child.{qty_field}, 0)) AS total_qty
+            FROM `tab{child_table}` AS child
+            LEFT JOIN `tab{report_table}` AS parent ON child.parent = parent.name
+            WHERE parent.order_sheet = %s
+                AND child.so_item = %s
+                AND parent.docstatus = 1
+                AND IFNULL(child.combo_item, '') != ''
+            GROUP BY child.combo_item
+        """
+        component_totals = frappe.db.sql(query, (self.order_sheet, row.so_item), as_dict=True)
+        total_map = {d.combo_item: flt(d.total_qty) for d in component_totals if d.combo_item}
+
+        normalized_totals = []
+        for bundle_item in bundle_items:
+            combo_item = bundle_item.get("item")
+            pcs = flt(bundle_item.get("pcs")) or 1
+            normalized_totals.append(flt(total_map.get(combo_item, 0)) / pcs)
+
+        if not normalized_totals:
+            return 0
+
+        return max(normalized_totals) if use_highest else min(normalized_totals)
+
     @frappe.whitelist()
     def get_data1(self):
         print(f"\n{'='*60}")
@@ -464,14 +544,19 @@ class PackingReport(Document):
                     """
                     params = (self.order_sheet, row.so_item, row.combo_item)
                 else:
-                    # If combo_item is None (finished item), sum up ALL combo items for this finished item
-                    # In Cutting/Stitching Reports, combo_item is always set, so we sum all of them
+                    finished_qty = self._get_finished_bundle_equivalent_qty(
+                        "Cutting Report", "Cutting Report CT", "cutting_qty", row, use_highest=True
+                    )
+                    if finished_qty is not None:
+                        cutting_totals[(row.so_item, row.combo_item or '')] = finished_qty
+                        continue
+
                     query = """
                         SELECT SUM(crct.cutting_qty) AS total_cutting
                         FROM `tabCutting Report CT` AS crct 
                         LEFT JOIN `tabCutting Report` AS cr 
                         ON crct.parent = cr.name
-                        WHERE cr.order_sheet = %s AND crct.so_item = %s AND cr.docstatus = 1
+                        WHERE cr.order_sheet = %s AND crct.so_item = %s AND (crct.combo_item IS NULL OR crct.combo_item = '') AND cr.docstatus = 1
                         GROUP BY crct.so_item
                     """
                     params = (self.order_sheet, row.so_item)
@@ -505,14 +590,19 @@ class PackingReport(Document):
                     """
                     params = (self.order_sheet, row.so_item, row.combo_item)
                 else:
-                    # If combo_item is None (finished item), sum up ALL combo items for this finished item
-                    # In Cutting/Stitching Reports, combo_item is always set, so we sum all of them
+                    finished_qty = self._get_finished_bundle_equivalent_qty(
+                        "Stitching Report", "Stitching Report CT", "stitching_qty", row, use_highest=True
+                    )
+                    if finished_qty is not None:
+                        stitching_totals[(row.so_item, row.combo_item or '')] = finished_qty
+                        continue
+
                     query = """
                         SELECT SUM(srct.stitching_qty) AS total_stitching
                         FROM `tabStitching Report CT` AS srct 
                         LEFT JOIN `tabStitching Report` AS sr 
                         ON srct.parent = sr.name
-                        WHERE sr.order_sheet = %s AND srct.so_item = %s AND sr.docstatus = 1
+                        WHERE sr.order_sheet = %s AND srct.so_item = %s AND (srct.combo_item IS NULL OR srct.combo_item = '') AND sr.docstatus = 1
                         GROUP BY srct.so_item
                     """
                     params = (self.order_sheet, row.so_item)
@@ -647,8 +737,10 @@ class PackingReport(Document):
             # Total packaging = already packaged (from other documents) + current packaging qty
             total_packaging = finished_packaging_qty + current_packaging_qty
 
-            # Only validate if stitching_qty > 0 (if stitching_qty is 0, allow any packaging qty)
-            if stitching_qty > 0:
+            # Only block rows that are trying to add new packing in this document.
+            # This keeps get_data1()/zero-qty saves usable even when historical data
+            # is already out of balance and needs manual reconciliation.
+            if current_packaging_qty > 0 and stitching_qty > 0:
                 # Check if total packaging (already packaged + current) exceeds stitching qty
                 if total_packaging > stitching_qty:
                     frappe.throw(

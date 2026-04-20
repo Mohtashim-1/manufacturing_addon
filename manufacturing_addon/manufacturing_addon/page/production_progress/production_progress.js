@@ -254,9 +254,9 @@ function render_table(state, rows, detail_rows) {
 					<span class="pp-so-toggle" data-target="${row_id}" style="cursor:pointer; margin-right:6px; color:#0f766e; font-size:11px; user-select:none;">&#9654;</span>${esc(r.sales_order)}
 				</td>
 				<td>${esc(r.customer)}</td>
-				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.cutting_qty)} (${fmtPct(cut_pct)}%)</span></td>
-				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.stitching_qty)} (${fmtPct(stitch_pct)}%)</span></td>
-				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.packing_qty)} (${fmtPct(pack_pct)}%)</span></td>
+				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.cutting_qty)} </span></td>
+				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.stitching_qty)} </span></td>
+				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.packing_qty)} </span></td>
 			</tr>
 			<tr id="${row_id}" class="pp-so-detail-row" style="display:none; background:#f9fafb;">
 				<td colspan="5" style="padding:0;">${build_so_detail_html(items)}</td>

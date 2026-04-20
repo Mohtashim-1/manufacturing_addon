@@ -149,10 +149,10 @@ class StitchingReport(Document):
                                     "qty_ctn": r.get("qty_ctn"),
                                     "article": r.get("stitching_article_no"),
                                     "ean": r.get("ean"),
-                                    "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
+                                    "order_qty": order_qty * combo_pcs,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                     "pcs": combo_pcs,
                                     "qty": calculated_qty,  # planned_qty * pcs
-                                    "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                                    "planned_qty": planned_qty * combo_pcs,  # Original planned_qty from Order Sheet CT
                                     "so_item": so_item,
                                     "combo_item": combo_item_code,
                                 })
@@ -401,7 +401,10 @@ class StitchingReport(Document):
                 stitching_totals[(row.so_item, row.combo_item or '')] = result[0].total_stitching if result else 0
 
             for row in self.stitching_report_ct:
-                row.finished_stitched_qty = stitching_totals.get((row.so_item, row.combo_item or ''), 0)
+                pcs = flt(row.pcs) or 1
+                row.finished_stitched_qty = flt(
+                    stitching_totals.get((row.so_item, row.combo_item or ''), 0)
+                ) * pcs
 
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Finished Stitching Quantity Calculation Failed")
@@ -435,8 +438,10 @@ class StitchingReport(Document):
                     title=_("Validation Error")
                 )
 
-            # Check if total stitching (already stitched + current) exceeds cutting qty
-            if total_stitching > cutting_qty:
+            # Only block rows that are trying to add new stitching in this document.
+            # This keeps get_data1()/zero-qty saves usable even when historical data
+            # is already out of balance and needs manual reconciliation.
+            if current_stitching_qty > 0 and total_stitching > cutting_qty:
                 frappe.throw(
                     _("Total Stitching Qty ({0} = Finished Stitched Qty {1} + Current Stitching Qty {2}) cannot be greater than Finished Cutting Qty ({3}) for row {4} (Item: {5}, Combo Item: {6}). Please reduce the Stitching Qty.").format(
                         total_stitching,
@@ -452,18 +457,16 @@ class StitchingReport(Document):
 
     def total_qty(self):
         for i in self.stitching_report_ct:
-            i.total_copy1 = (i.stitching_qty or 0) + (i.finished_stitched_qty or 0)
+            i.total_copy1 = flt(i.stitching_qty) + flt(i.finished_stitched_qty)
 
     def total_percentage(self):
         for i in self.stitching_report_ct:
             entry_qty = flt(i.total_copy1)
-            pcs = flt(i.pcs) or 1
-            base_qty = entry_qty / pcs
             planned_qty = flt(i.planned_qty)
             order_qty = flt(i.order_qty)
 
-            i.planned_percentage_copy = (base_qty / planned_qty) * 100 if planned_qty else 0
-            i.qty_percentage_copy = (base_qty / order_qty) * 100 if order_qty else 0
+            i.planned_percentage_copy = (entry_qty / planned_qty) * 100 if planned_qty else 0
+            i.qty_percentage_copy = (entry_qty / order_qty) * 100 if order_qty else 0
             # Backward-compatible field: keep showing Qty %
             i.percentage_copy = i.qty_percentage_copy
 

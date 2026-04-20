@@ -152,7 +152,7 @@ class CuttingReport(Document):
                                     "order_qty": order_qty * combo_pcs,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                     "pcs": combo_pcs,
                                     "qty": calculated_qty,  # planned_qty * pcs
-                                    "planned_qty": planned_qty * combo_pcs,  # Original planned_qty from Order Sheet CT
+                                    "planned_qty": planned_qty * combo_pcs  ,  # Original planned_qty from Order Sheet CT
                                     "so_item": so_item,
                                     "combo_item": combo_item_code,
                                 })
@@ -358,8 +358,8 @@ class CuttingReport(Document):
             planned_qty = flt(i.planned_qty)
             order_qty = flt(i.order_qty)
 
-            i.planned_percentage_copy = (base_qty / planned_qty) * 100 if planned_qty else 0
-            i.qty_percentage_copy = (base_qty / order_qty) * 100 if order_qty else 0
+            i.planned_percentage_copy = (base_qty / planned_qty) * 100 * pcs if planned_qty else 0
+            i.qty_percentage_copy = (base_qty / order_qty) * 100 * pcs if order_qty else 0
             # Backward-compatible field: keep showing Qty %
             i.percentage_copy = i.qty_percentage_copy
 

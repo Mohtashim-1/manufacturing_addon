@@ -1,7 +1,7 @@
 frappe.pages["production-progress"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: "Production Progress",
+		title: "Total Daily Production",
 		single_column: true,
 	});
 
@@ -126,7 +126,7 @@ function refresh_data(state) {
 			const data = r.message || {};
 			const summary = data.summary || {};
 			render_summary(state, summary);
-			render_table(state, data.sales_order_rows || []);
+			render_table(state, data.sales_order_rows || [], data.rows || []);
 			state.$meta.text(`${data.from_date || from_date} to ${data.to_date || to_date}`);
 			await render_chart(state, summary);
 		},
@@ -208,9 +208,6 @@ function load_apexcharts() {
 
 function render_summary(state, summary) {
 	const cards = [
-		{ label: __("Rows"), value: fmt(summary.rows_count) },
-		{ label: __("Order Qty"), value: fmt(summary.total_order_qty, 2) },
-		{ label: __("Planned Qty"), value: fmt(summary.total_planned_qty, 2) },
 		{ label: __("Cutting"), value: fmt(summary.total_cutting_qty, 2) },
 		{ label: __("Stitching"), value: fmt(summary.total_stitching_qty, 2) },
 		{ label: __("Packing"), value: fmt(summary.total_packing_qty, 2) },
@@ -229,26 +226,40 @@ function render_summary(state, summary) {
 	state.$summary.html(html);
 }
 
-function render_table(state, rows) {
+function render_table(state, rows, detail_rows) {
 	if (!rows.length) {
 		state.$table.html(`<div style="padding:10px; color:#6b7280;">${__("No production rows found for selected dates.")}</div>`);
 		return;
 	}
 
+	// Build SO → detail items map
+	const so_detail_map = {};
+	(detail_rows || []).forEach((r) => {
+		const so = r.sales_order || "Not Linked";
+		if (!so_detail_map[so]) so_detail_map[so] = [];
+		so_detail_map[so].push(r);
+	});
+
 	let body = "";
-	rows.forEach((r) => {
+	rows.forEach((r, idx) => {
 		const cut_pct = num(r.order_qty) ? (num(r.cutting_qty) / num(r.order_qty)) * 100 : 0;
 		const stitch_pct = num(r.order_qty) ? (num(r.stitching_qty) / num(r.order_qty)) * 100 : 0;
 		const pack_pct = num(r.order_qty) ? (num(r.packing_qty) / num(r.order_qty)) * 100 : 0;
+		const row_id = `pp-so-detail-${idx}`;
+		const items = so_detail_map[r.sales_order] || [];
+
 		body += `
 			<tr>
-				<td>${esc(r.sales_order)}</td>
+				<td>
+					<span class="pp-so-toggle" data-target="${row_id}" style="cursor:pointer; margin-right:6px; color:#0f766e; font-size:11px; user-select:none;">&#9654;</span>${esc(r.sales_order)}
+				</td>
 				<td>${esc(r.customer)}</td>
-				<td style="text-align:right;">${fmt(r.order_qty, 2)}</td>
-				<td style="text-align:right;">${fmt(r.planned_qty, 2)}</td>
-				<td style="text-align:right;">${fmt(r.cutting_qty, 2)} (${fmt(cut_pct, 2)}%)</td>
-				<td style="text-align:right;">${fmt(r.stitching_qty, 2)} (${fmt(stitch_pct, 2)}%)</td>
-				<td style="text-align:right;">${fmt(r.packing_qty, 2)} (${fmt(pack_pct, 2)}%)</td>
+				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.cutting_qty)} (${fmtPct(cut_pct)}%)</span></td>
+				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.stitching_qty)} (${fmtPct(stitch_pct)}%)</span></td>
+				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.packing_qty)} (${fmtPct(pack_pct)}%)</span></td>
+			</tr>
+			<tr id="${row_id}" class="pp-so-detail-row" style="display:none; background:#f9fafb;">
+				<td colspan="5" style="padding:0;">${build_so_detail_html(items)}</td>
 			</tr>
 		`;
 	});
@@ -259,16 +270,90 @@ function render_table(state, rows) {
 				<tr>
 					<th>${__("Sales Order")}</th>
 					<th>${__("Customer")}</th>
-					<th style="text-align:right;">${__("Order Qty")}</th>
-					<th style="text-align:right;">${__("Planned Qty")}</th>
-					<th style="text-align:right;">${__("Cutting Progress")}</th>
-					<th style="text-align:right;">${__("Stitching Progress")}</th>
-					<th style="text-align:right;">${__("Packing Progress")}</th>
+					<th style="text-align:right; white-space:nowrap;">${__("Cutting ")}</th>
+					<th style="text-align:right; white-space:nowrap;">${__("Stitching ")}</th>
+					<th style="text-align:right; white-space:nowrap;">${__("Packing")}</th>
 				</tr>
 			</thead>
 			<tbody>${body}</tbody>
 		</table>
 	`);
+
+	// Toggle expand/collapse
+	state.$table.find(".pp-so-toggle").on("click", function () {
+		const $detail = state.$table.find(`#${$(this).data("target")}`);
+		const opening = !$detail.is(":visible");
+		$detail.toggle();
+		$(this).html(opening ? "&#9660;" : "&#9654;");
+	});
+
+	// Stage tab switching
+	state.$table.on("click", ".pp-stage-tab", function () {
+		const $this = $(this);
+		const $content = $this.closest(".pp-so-detail-content");
+		$content.find(".pp-stage-tab").removeClass("pp-tab-active").css({ background: "#fff", fontWeight: "normal", borderBottom: "2px solid transparent" });
+		$this.addClass("pp-tab-active").css({ background: "#f0fdf4", fontWeight: "600", borderBottom: "2px solid #0f766e" });
+		const stage = $this.data("stage");
+		$content.find(".pp-stage-panel").hide();
+		$content.find(`.pp-stage-panel[data-stage="${stage}"]`).show();
+	});
+}
+
+function build_so_detail_html(items) {
+	const stages = [
+		{ key: "cutting", label: "Cutting", field: "cutting_qty" },
+		{ key: "stitching", label: "Stitching", field: "stitching_qty" },
+		{ key: "packing", label: "Packing", field: "packing_qty" },
+	];
+
+	let tabs_html = "";
+	let panels_html = "";
+
+	stages.forEach((stage, i) => {
+		const stage_items = items.filter((r) => num(r[stage.field]) > 0);
+		const is_first = i === 0;
+
+		tabs_html += `
+			<button class="pp-stage-tab${is_first ? " pp-tab-active" : ""}" data-stage="${stage.key}"
+				style="padding:5px 16px; border:1px solid #e5e7eb; border-radius:4px 4px 0 0; cursor:pointer;
+					background:${is_first ? "#f0fdf4" : "#fff"}; font-weight:${is_first ? "600" : "normal"};
+					border-bottom:${is_first ? "2px solid #0f766e" : "2px solid transparent"}; font-size:12px; margin-right:2px;">
+				${__(stage.label)} (${stage_items.length})
+			</button>`;
+
+		let rows_html = "";
+		if (stage_items.length) {
+			stage_items.forEach((r) => {
+				rows_html += `
+					<tr>
+						<td style="padding:4px 8px;">${esc(r.so_item)}</td>
+						
+						<td style="padding:4px 8px; text-align:right;">${fmtNum(r[stage.field])}</td>
+					</tr>`;
+			});
+		} else {
+			rows_html = `<tr><td colspan="4" style="padding:8px; color:#6b7280;">No ${stage.label.toLowerCase()} records found.</td></tr>`;
+		}
+
+		panels_html += `
+			<div class="pp-stage-panel" data-stage="${stage.key}" style="display:${is_first ? "block" : "none"};">
+				<table style="width:100%; font-size:11px; border-collapse:collapse;">
+					<thead>
+						<tr style="background:#f1f5f9;">
+							<th style="padding:4px 8px; text-align:left; border-bottom:1px solid #e5e7eb;">${__("Item")}</th>
+							<th style="padding:4px 8px; text-align:right; border-bottom:1px solid #e5e7eb;">${__("Qty")}</th>
+						</tr>
+					</thead>
+					<tbody>${rows_html}</tbody>
+				</table>
+			</div>`;
+	});
+
+	return `
+		<div class="pp-so-detail-content" style="padding:10px 14px;">
+			<div style="display:flex; gap:2px; margin-bottom:0;">${tabs_html}</div>
+			<div style="border:1px solid #e5e7eb; border-top:none; background:#fff;">${panels_html}</div>
+		</div>`;
 }
 
 function num(value) {
@@ -281,4 +366,12 @@ function fmt(value, precision = 0) {
 
 function esc(v) {
 	return frappe.utils.escape_html(v || "");
+}
+
+function fmtNum(value) {
+	return Number(value || 0).toLocaleString("en");
+}
+
+function fmtPct(value) {
+	return Number(value || 0).toFixed(2);
 }

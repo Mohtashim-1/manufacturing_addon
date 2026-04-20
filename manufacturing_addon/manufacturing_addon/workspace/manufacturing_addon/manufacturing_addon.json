@@ -155,7 +155,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Report",
-   "link_count": 4,
+   "link_count": 5,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -202,9 +202,19 @@
    "onboard": 0,
    "report_ref_doctype": "Packing Report",
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Total Daily Production",
+   "link_count": 0,
+   "link_to": "production-progress",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-03-08 23:25:12.988649",
+ "modified": "2026-04-20 15:19:11.665022",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Addon",

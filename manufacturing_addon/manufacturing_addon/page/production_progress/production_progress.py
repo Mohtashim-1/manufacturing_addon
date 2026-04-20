@@ -157,6 +157,34 @@ def _build_summary(rows):
 	}
 
 
+def _build_item_rows(rows):
+	item_map = {}
+	for row in rows:
+		key = (row.get("so_item") or "", row.get("colour") or "", row.get("size") or "")
+		bucket = item_map.setdefault(
+			key,
+			{
+				"so_item": row.get("so_item") or "",
+				"colour": row.get("colour") or "",
+				"size": row.get("size") or "",
+				"order_qty": 0.0,
+				"planned_qty": 0.0,
+				"cutting_qty": 0.0,
+				"stitching_qty": 0.0,
+				"packing_qty": 0.0,
+			},
+		)
+		bucket["order_qty"] += flt(row.get("order_qty"))
+		bucket["planned_qty"] += flt(row.get("planned_qty"))
+		bucket["cutting_qty"] += flt(row.get("cutting_qty"))
+		bucket["stitching_qty"] += flt(row.get("stitching_qty"))
+		bucket["packing_qty"] += flt(row.get("packing_qty"))
+
+	item_rows = list(item_map.values())
+	item_rows.sort(key=lambda d: (d.get("so_item") or "", d.get("colour") or "", d.get("size") or ""))
+	return item_rows
+
+
 def _build_sales_order_rows(rows):
 	so_map = {}
 	for row in rows:
@@ -326,12 +354,14 @@ def get_production_progress_data(from_date=None, to_date=None):
 	stage_rows = _get_stage_rows(from_date, to_date)
 	rows = _build_rows(stage_rows)
 	sales_order_rows = _build_sales_order_rows(rows)
+	item_rows = _build_item_rows(rows)
 	return {
 		"from_date": from_date,
 		"to_date": to_date,
 		"summary": _build_summary(rows),
 		"rows": rows,
 		"sales_order_rows": sales_order_rows,
+		"item_rows": item_rows,
 	}
 
 

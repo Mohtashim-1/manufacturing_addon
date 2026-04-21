@@ -91,6 +91,104 @@ def _get_finished_item_stage_info(stage_data, order_sheet, so_item, bundle_items
 
 
 @frappe.whitelist()
+def get_stage_voucher_details(stage, order_sheet, so_item, bundle_item=None):
+	stage = (stage or "").strip().lower()
+	if stage not in {"cutting", "stitching", "packing"}:
+		frappe.throw(_("Invalid stage"))
+
+	order_sheet = (order_sheet or "").strip()
+	so_item = (so_item or "").strip()
+	bundle_item = (bundle_item or "").strip()
+
+	if not order_sheet or not so_item:
+		frappe.throw(_("Order Sheet and Item are required"))
+
+	stage_config = {
+		"cutting": {
+			"parent_doctype": "Cutting Report",
+			"child_doctype": "Cutting Report CT",
+			"parent_alias": "p",
+			"child_alias": "c",
+			"date_field": "date",
+			"qty_field": "cutting_qty",
+			"total_label": "Total Cutting Till Now",
+		},
+		"stitching": {
+			"parent_doctype": "Stitching Report",
+			"child_doctype": "Stitching Report CT",
+			"parent_alias": "p",
+			"child_alias": "c",
+			"date_field": "date",
+			"qty_field": "stitching_qty",
+			"total_label": "Total Stitching Till Now",
+		},
+		"packing": {
+			"parent_doctype": "Packing Report",
+			"child_doctype": "Packing Report CT",
+			"parent_alias": "p",
+			"child_alias": "c",
+			"date_field": "date",
+			"qty_field": "packaging_qty",
+			"total_label": "Total Packing Till Now",
+		},
+	}[stage]
+
+	combo_condition = ""
+	query_values = {
+		"order_sheet": order_sheet,
+		"so_item": so_item,
+	}
+
+	if stage in {"cutting", "stitching"}:
+		if bundle_item:
+			combo_condition = "AND IFNULL(c.combo_item, '') = %(bundle_item)s"
+			query_values["bundle_item"] = bundle_item
+	else:
+		combo_condition = ""
+
+	rows = frappe.db.sql(
+		f"""
+		SELECT
+			p.name AS voucher,
+			p.{stage_config["date_field"]} AS voucher_date,
+			c.name AS child_row_name,
+			c.idx AS child_row_idx,
+			c.parentfield,
+			c.so_item,
+			IFNULL(c.combo_item, '') AS combo_item,
+			IFNULL(c.colour, '') AS colour,
+			IFNULL(c.finished_size, '') AS finished_size,
+			IFNULL(c.pcs, 0) AS pcs,
+			IFNULL(c.order_qty, 0) AS order_qty,
+			IFNULL(c.planned_qty, 0) AS planned_qty,
+			IFNULL(c.{stage_config["qty_field"]}, 0) AS qty
+		FROM `tab{stage_config["child_doctype"]}` c
+		INNER JOIN `tab{stage_config["parent_doctype"]}` p ON c.parent = p.name
+		WHERE p.docstatus = 1
+			AND p.order_sheet = %(order_sheet)s
+			AND c.so_item = %(so_item)s
+			AND IFNULL(c.{stage_config["qty_field"]}, 0) > 0
+			{combo_condition}
+		ORDER BY p.{stage_config["date_field"]}, p.name, c.idx
+		""",
+		query_values,
+		as_dict=True,
+	)
+
+	return {
+		"stage": stage.title(),
+		"order_sheet": order_sheet,
+		"so_item": so_item,
+		"bundle_item": bundle_item,
+		"parent_doctype": stage_config["parent_doctype"],
+		"child_doctype": stage_config["child_doctype"],
+		"qty_field": stage_config["qty_field"],
+		"total_label": stage_config["total_label"],
+		"rows": rows,
+	}
+
+
+@frappe.whitelist()
 def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 	"""
 	Get dashboard data for Order Tracking page

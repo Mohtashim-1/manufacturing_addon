@@ -88,9 +88,9 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 								<th>Order Qty</th>
 								<th>Planned Qty</th>
 								<th>PCS</th>
-								<th colspan="5" class="text-center bg-info text-white">CUTTING</th>
-								<th colspan="5" class="text-center bg-warning text-white">STITCHING</th>
-								<th colspan="5" class="text-center bg-success text-white">PACKING</th>
+								<th colspan="4" class="text-center bg-info text-white">CUTTING</th>
+								<th colspan="4" class="text-center bg-warning text-white">STITCHING</th>
+								<th colspan="4" class="text-center bg-success text-white">PACKING</th>
 							</tr>
 							<tr>
 								<th></th>
@@ -100,18 +100,15 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 								<th></th>
 								<th></th>
 								<th></th>
-								<th class="bg-info text-white">Qty</th>
-								<th class="bg-info text-white">Finished</th>
+								<th class="bg-info text-white">Total Cutting</th>
 								<th class="bg-info text-white">Planned %</th>
 								<th class="bg-info text-white">Qty %</th>
 								<th class="bg-info text-white">Status</th>
-								<th class="bg-warning text-white">Qty</th>
-								<th class="bg-warning text-white">Finished</th>
+								<th class="bg-warning text-white">Total Stitching</th>
 								<th class="bg-warning text-white">Planned %</th>
 								<th class="bg-warning text-white">Qty %</th>
 								<th class="bg-warning text-white">Status</th>
-								<th class="bg-success text-white">Qty</th>
-								<th class="bg-success text-white">Finished</th>
+								<th class="bg-success text-white">Total Packing</th>
 								<th class="bg-success text-white">Planned %</th>
 								<th class="bg-success text-white">Qty %</th>
 								<th class="bg-success text-white">Status</th>
@@ -119,7 +116,7 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 						</thead>
 						<tbody id="order-details-body">
 							<tr>
-								<td colspan="23" class="text-center text-muted" style="padding: 40px;">
+								<td colspan="19" class="text-center text-muted" style="padding: 40px;">
 									<i class="fa fa-spinner fa-spin fa-2x"></i><br>
 									Loading dashboard data...
 								</td>
@@ -894,7 +891,7 @@ function renderDetailedTable(details) {
 	if (details.length === 0) {
 		tbody.append(`
 			<tr>
-				<td colspan="23" class="text-center text-muted" style="padding: 40px;">
+				<td colspan="19" class="text-center text-muted" style="padding: 40px;">
 					<i class="fa fa-info-circle fa-2x"></i><br>
 					No data found for the selected filters
 				</td>
@@ -1005,27 +1002,268 @@ function renderDetailedTable(details) {
 				<td class="text-right">${isBundleItem ? '' : formatNumber(row.order_qty || 0)}</td>
 				<td class="text-right">${isBundleItem ? '' : formatNumber(row.planned_qty || 0)}</td>
 				<td class="text-right">${formatNumber(row.pcs || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatNumber(displayCuttingQty)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatNumber(displayCuttingFinished)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'} os-audit-cell os-audit-cutting" style="cursor:pointer; text-decoration:underline;">${formatNumber(displayCuttingFinished)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatPercentage(cuttingPlannedPercent)}%</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatPercentage(cuttingQtyPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-info text-white'}">${cuttingStatus}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(displayStitchingQty)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatNumber(displayStitchingFinished)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'} os-audit-cell os-audit-stitching" style="cursor:pointer; text-decoration:underline;">${formatNumber(displayStitchingFinished)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingPlannedPercent)}%</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingQtyPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-warning text-white'}">${stitchingStatus}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatNumber(row.packing_qty || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatNumber(row.packing_finished || 0)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'} ${isBundleItem ? '' : 'os-audit-cell os-audit-packing'}" style="${isBundleItem ? '' : 'cursor:pointer; text-decoration:underline;'}">${isBundleItem ? '-' : formatNumber(row.packing_finished || 0)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatPercentage(packingPlannedPercent) + '%'}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatPercentage(packingQtyPercent) + '%'}</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : packingStatus}</td>
 			</tr>
 		`);
+
+		tr.find('.os-audit-cutting').data('audit', {
+			stage: 'Cutting',
+			order_sheet: row.order_sheet || '',
+			group_item: row.item || '',
+			bundle_item: row.bundle_item || '',
+			item: row.bundle_item || row.item || '',
+			order_qty: orderQty || 0,
+			planned_qty: cuttingPlannedQty || 0,
+			total_qty: displayCuttingFinished || 0,
+			base_qty: cuttingBaseQty || 0,
+			qty_percent: cuttingQtyPercent || 0,
+			planned_percent: cuttingPlannedPercent || 0,
+			pcs: rowPcs || 0,
+			is_bundle_item: !!isBundleItem,
+		});
+		tr.find('.os-audit-stitching').data('audit', {
+			stage: 'Stitching',
+			order_sheet: row.order_sheet || '',
+			group_item: row.item || '',
+			bundle_item: row.bundle_item || '',
+			item: row.bundle_item || row.item || '',
+			order_qty: orderQty || 0,
+			planned_qty: stitchingPlannedQty || 0,
+			total_qty: displayStitchingFinished || 0,
+			base_qty: stitchingBaseQty || 0,
+			qty_percent: stitchingQtyPercent || 0,
+			planned_percent: stitchingPlannedPercent || 0,
+			pcs: rowPcs || 0,
+			is_bundle_item: !!isBundleItem,
+		});
+		tr.find('.os-audit-packing').data('audit', {
+			stage: 'Packing',
+			order_sheet: row.order_sheet || '',
+			group_item: row.item || '',
+			bundle_item: row.bundle_item || '',
+			item: row.item || '',
+			order_qty: orderQty || 0,
+			planned_qty: packingPlannedQty || 0,
+			total_qty: row.packing_finished || 0,
+			base_qty: packingBaseQty || 0,
+			qty_percent: packingQtyPercent || 0,
+			planned_percent: packingPlannedPercent || 0,
+			pcs: rowPcs || 0,
+			is_bundle_item: !!isBundleItem,
+		});
 		tbody.append(tr);
 	});
 
+	tbody.off('click', '.os-audit-cell').on('click', '.os-audit-cell', function() {
+		const audit = $(this).data('audit');
+		if (!audit) return;
+		frappe.call({
+			method: 'manufacturing_addon.manufacturing_addon.page.order_tracking.order_tracking.get_stage_voucher_details',
+			args: {
+				stage: (audit.stage || '').toLowerCase(),
+				order_sheet: audit.order_sheet || '',
+				so_item: audit.group_item || '',
+				bundle_item: audit.bundle_item || ''
+			},
+			freeze: true,
+			freeze_message: __('Loading voucher-wise details...'),
+			callback: function(r) {
+				showAuditDrilldown(audit, r.message || {});
+			}
+		});
+	});
+
 	applyDefaultCollapsedState();
+}
+
+function showAuditDrilldown(audit, voucherData) {
+	const itemLabel = audit.is_bundle_item ? `${audit.item} (Bundle Item)` : audit.item;
+	const auditRows = getAuditRowsForStage(audit);
+	const rowsHtml = auditRows.length
+		? auditRows.map((row) => `
+			<tr>
+				<td>${frappe.utils.escape_html(row.item_label)}</td>
+				<td class="text-right">${formatNumber(row.pcs)}</td>
+				<td class="text-right">${formatNumber(row.order_qty)}</td>
+				<td class="text-right">${formatNumber(row.planned_qty)}</td>
+				<td class="text-right">${formatNumber(row.total_qty)}</td>
+				<td class="text-right">${formatNumber(row.base_qty)}</td>
+				<td class="text-right">${formatPercentage(row.planned_percent)}%</td>
+				<td class="text-right">${formatPercentage(row.qty_percent)}%</td>
+			</tr>
+		`).join('')
+		: `<tr><td colspan="8" class="text-center text-muted">${__('No matching rows found')}</td></tr>`;
+	const voucherRows = voucherData.rows || [];
+	const groupedVoucherRows = voucherRows.reduce((acc, row) => {
+		const key = row.combo_item || row.so_item || __('Unknown');
+		if (!acc[key]) acc[key] = [];
+		acc[key].push(row);
+		return acc;
+	}, {});
+	const voucherSectionHtml = voucherRows.length
+		? Object.entries(groupedVoucherRows).map(([againstItem, rows]) => {
+			const rowsHtml = rows.map((row) => `
+				<tr>
+					<td>
+						<a href="/app/Form/${encodeURIComponent(voucherData.parent_doctype || '')}/${encodeURIComponent(row.voucher || '')}" target="_blank" rel="noopener noreferrer">
+							${frappe.utils.escape_html(row.voucher || '')}
+						</a>
+					</td>
+					<td>${frappe.utils.escape_html(row.child_row_name || '')}</td>
+					<td class="text-right">${formatNumber(row.qty || 0)}</td>
+				</tr>
+			`).join('');
+			const totals = rows.reduce((acc, row) => {
+				acc.qty += Number(row.qty || 0);
+				return acc;
+			}, { qty: 0 });
+
+			return `
+				<div style="margin-top:12px;">
+					<h6 style="margin:0 0 6px 0;">${__('Against Item')}: ${frappe.utils.escape_html(againstItem)}</h6>
+					<table class="table table-bordered" style="margin:0; font-size:12px;">
+						<thead>
+							<tr>
+								<th>${__('Voucher')}</th>
+								<th>${__('Child Row Name')}</th>
+								<th class="text-right">${__('Qty Value')}</th>
+							</tr>
+						</thead>
+						<tbody>
+							${rowsHtml}
+							<tr style="font-weight:600; background:#f8fafc;">
+								<td colspan="2">${__('Total')}</td>
+								<td class="text-right">${formatNumber(totals.qty)}</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			`;
+		}).join('')
+		: `<table class="table table-bordered" style="margin:0; font-size:12px;"><tbody><tr><td class="text-center text-muted">${__('No voucher-wise rows found')}</td></tr></tbody></table>`;
+	const overallVoucherTotals = voucherRows.reduce((acc, row) => {
+		acc.qty += Number(row.qty || 0);
+		return acc;
+	}, { qty: 0 });
+
+	frappe.msgprint({
+		title: __(`${audit.stage} Audit Drill-Down`),
+		wide: true,
+		message: `
+			<table class="table table-bordered" style="margin:0; font-size:12px;">
+				<tr><th style="width:180px;">${__('Order Sheet')}</th><td>${frappe.utils.escape_html(audit.order_sheet || '')}</td></tr>
+				<tr><th>${__('Item')}</th><td>${frappe.utils.escape_html(itemLabel || '')}</td></tr>
+				<tr><th>${__('PCS')}</th><td>${formatNumber(audit.pcs || 0)}</td></tr>
+				<tr><th>${__('Order Qty')}</th><td>${formatNumber(audit.order_qty || 0)}</td></tr>
+				<tr><th>${__('Planned Qty')}</th><td>${formatNumber(audit.planned_qty || 0)}</td></tr>
+				<tr><th>${__('Total Qty')}</th><td>${formatNumber(audit.total_qty || 0)}</td></tr>
+				<tr><th>${__('Base Qty For %')}</th><td>${formatNumber(audit.base_qty || 0)}</td></tr>
+				<tr><th>${__('Planned %')}</th><td>${formatPercentage(audit.planned_percent || 0)}%</td></tr>
+				<tr><th>${__('Qty %')}</th><td>${formatPercentage(audit.qty_percent || 0)}%</td></tr>
+			</table>
+			<div style="margin-top:16px;">
+				<h5 style="margin:0 0 8px 0;">${__('Row-wise Data')}</h5>
+				<table class="table table-bordered" style="margin:0; font-size:12px;">
+					<thead>
+						<tr>
+							<th>${__('Row')}</th>
+							<th class="text-right">${__('PCS')}</th>
+							<th class="text-right">${__('Order Qty')}</th>
+							<th class="text-right">${__('Planned Qty')}</th>
+							<th class="text-right">${__('Total Qty')}</th>
+							<th class="text-right">${__('Base Qty')}</th>
+							<th class="text-right">${__('Planned %')}</th>
+							<th class="text-right">${__('Qty %')}</th>
+						</tr>
+					</thead>
+					<tbody>${rowsHtml}</tbody>
+				</table>
+			</div>
+			<div style="margin-top:16px;">
+				<h5 style="margin:0 0 8px 0;">${__('Voucher-wise Source Rows')}</h5>
+				${voucherSectionHtml}
+				${voucherRows.length ? `
+					<table class="table table-bordered" style="margin-top:12px; font-size:12px;">
+						<tbody>
+							<tr style="font-weight:600; background:#eef2ff;">
+								<td colspan="2">${__('Grand Total')}</td>
+								<td class="text-right">${formatNumber(overallVoucherTotals.qty)}</td>
+							</tr>
+						</tbody>
+					</table>
+				` : ''}
+			</div>
+		`,
+	});
+}
+
+function getAuditRowsForStage(audit) {
+	const rows = (originalTableDetails || []).filter((row) => {
+		if ((row.order_sheet || '') !== (audit.order_sheet || '')) return false;
+		if ((row.item || '') !== (audit.group_item || '')) return false;
+		if (audit.bundle_item) {
+			return (row.bundle_item || '') === audit.bundle_item;
+		}
+		return true;
+	});
+
+	const parentOrderQtyMap = {};
+	(originalTableDetails || []).forEach((row) => {
+		if (row.is_parent === true) {
+			parentOrderQtyMap[`${row.order_sheet}||${row.item}`] = row.order_qty || 0;
+		}
+	});
+
+	return rows.map((row) => {
+		const isParent = row.is_parent === true;
+		const isBundleItem = row.bundle_item && row.bundle_item !== null;
+		const rowPcs = row.pcs || 1;
+		const parentKey = `${row.order_sheet}||${row.item}`;
+		const orderQty = isBundleItem ? (parentOrderQtyMap[parentKey] || 0) : (row.order_qty || 0);
+
+		let totalQty = 0;
+		let plannedQty = 0;
+		let baseQty = 0;
+
+		if (audit.stage === 'Cutting') {
+			totalQty = row.cutting_finished || 0;
+			plannedQty = isParent ? (row.planned_qty || row.cutting_planned || 0) : (row.cutting_planned || row.planned_qty || 0);
+			baseQty = isParent ? totalQty : (totalQty / (rowPcs || 1));
+		} else if (audit.stage === 'Stitching') {
+			totalQty = row.stitching_finished || 0;
+			plannedQty = isParent ? (row.planned_qty || row.stitching_planned || 0) : (row.stitching_planned || row.planned_qty || 0);
+			baseQty = isParent ? totalQty : (totalQty / (rowPcs || 1));
+		} else {
+			totalQty = row.packing_finished || 0;
+			plannedQty = row.planned_qty || row.packing_planned || 0;
+			baseQty = isParent ? totalQty : (totalQty / (rowPcs || 1));
+		}
+
+		const plannedPercent = plannedQty > 0 ? (baseQty / plannedQty) * 100 : 0;
+		const qtyPercent = orderQty > 0 ? (baseQty / orderQty) * 100 : 0;
+
+		return {
+			item_label: isBundleItem ? `└─ ${row.bundle_item || ''}` : (row.item || ''),
+			pcs: rowPcs,
+			order_qty: orderQty,
+			planned_qty: plannedQty,
+			total_qty: totalQty,
+			base_qty: baseQty,
+			planned_percent: plannedPercent,
+			qty_percent: qtyPercent,
+		};
+	});
 }
 
 function getStatusBadge(percent) {

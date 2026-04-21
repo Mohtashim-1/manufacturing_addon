@@ -126,14 +126,6 @@ function refresh_data(state) {
 		callback: async (r) => {
 			const data = r.message || {};
 			const summary = data.summary || {};
-			console.log("[production-progress] API response", {
-				from_date: data.from_date,
-				to_date: data.to_date,
-				sales_order_rows: (data.sales_order_rows || []).length,
-				rows: (data.rows || []).length,
-				stage_rows: (data.stage_rows || []).length,
-				summary,
-			});
 			render_summary(state, summary);
 			render_table(state, data.sales_order_rows || [], data.rows || [], data.stage_rows || []);
 			state.$meta.text(`${data.from_date || from_date} to ${data.to_date || to_date}`);
@@ -236,12 +228,6 @@ function render_summary(state, summary) {
 }
 
 function render_table(state, rows, detail_rows, stage_rows) {
-	console.log("[production-progress] render_table:start", {
-		sales_orders: rows.length,
-		detail_rows: detail_rows.length,
-		stage_rows: stage_rows.length,
-	});
-
 	if (!rows.length) {
 		state.$table.html(`<div style="padding:10px; color:#6b7280;">${__("No production rows found for selected dates.")}</div>`);
 		return;
@@ -278,8 +264,6 @@ function render_table(state, rows, detail_rows, stage_rows) {
 
 		combo_bucket[combo_key].qty += num(r.qty);
 	});
-
-	console.log("[production-progress] combo map", so_combo_map);
 
 	let body = "";
 	rows.forEach((r, idx) => {
@@ -368,15 +352,6 @@ function build_so_detail_html(items, combo_map, row_index) {
 				const combo_items = Object.values((combo_map[stage.key] || {})[item_key] || {}).sort((a, b) =>
 					cstr(a.combo_item).localeCompare(cstr(b.combo_item))
 				);
-				console.log("[production-progress] stage item", {
-					stage: stage.key,
-					order_sheet: r.order_sheet,
-					so_item: r.so_item,
-					colour: r.colour,
-					size: r.size,
-					item_key,
-					combo_items,
-				});
 				const has_combo_items = combo_items.length > 0;
 				const combo_html = has_combo_items ? build_inline_combo_html(combo_items, r) : "";
 

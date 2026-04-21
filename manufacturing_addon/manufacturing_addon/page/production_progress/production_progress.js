@@ -126,6 +126,14 @@ function refresh_data(state) {
 		callback: async (r) => {
 			const data = r.message || {};
 			const summary = data.summary || {};
+			console.log("[production-progress] API response", {
+				from_date: data.from_date,
+				to_date: data.to_date,
+				sales_order_rows: (data.sales_order_rows || []).length,
+				rows: (data.rows || []).length,
+				stage_rows: (data.stage_rows || []).length,
+				summary,
+			});
 			render_summary(state, summary);
 			render_table(state, data.sales_order_rows || [], data.rows || [], data.stage_rows || []);
 			state.$meta.text(`${data.from_date || from_date} to ${data.to_date || to_date}`);
@@ -228,6 +236,12 @@ function render_summary(state, summary) {
 }
 
 function render_table(state, rows, detail_rows, stage_rows) {
+	console.log("[production-progress] render_table:start", {
+		sales_orders: rows.length,
+		detail_rows: detail_rows.length,
+		stage_rows: stage_rows.length,
+	});
+
 	if (!rows.length) {
 		state.$table.html(`<div style="padding:10px; color:#6b7280;">${__("No production rows found for selected dates.")}</div>`);
 		return;
@@ -264,6 +278,8 @@ function render_table(state, rows, detail_rows, stage_rows) {
 
 		combo_bucket[combo_key].qty += num(r.qty);
 	});
+
+	console.log("[production-progress] combo map", so_combo_map);
 
 	let body = "";
 	rows.forEach((r, idx) => {
@@ -321,26 +337,6 @@ function render_table(state, rows, detail_rows, stage_rows) {
 		$content.find(`.pp-stage-panel[data-stage="${stage}"]`).show();
 	});
 
-	state.$table.on("click", ".pp-item-toggle", function () {
-		toggle_item_detail(state, $(this).data("target"));
-	});
-
-	state.$table.on("click", ".pp-item-parent-row", function (e) {
-		if ($(e.target).closest(".pp-item-toggle").length) return;
-		toggle_item_detail(state, $(this).data("target"));
-	});
-}
-
-function toggle_item_detail(state, target) {
-	if (!target) return;
-	const $detail = state.$table.find(`#${target}`);
-	if (!$detail.length) return;
-
-	const opening = !$detail.is(":visible");
-	$detail.toggle();
-	state.$table
-		.find(`.pp-item-parent-row[data-target="${target}"] .pp-item-toggle`)
-		.html(opening ? "&#9660;" : "&#9654;");
 }
 
 function build_so_detail_html(items, combo_map, row_index) {
@@ -372,25 +368,25 @@ function build_so_detail_html(items, combo_map, row_index) {
 				const combo_items = Object.values((combo_map[stage.key] || {})[item_key] || {}).sort((a, b) =>
 					cstr(a.combo_item).localeCompare(cstr(b.combo_item))
 				);
-				const detail_id = `pp-item-detail-${row_index}-${stage.key}-${item_index}`;
+				console.log("[production-progress] stage item", {
+					stage: stage.key,
+					order_sheet: r.order_sheet,
+					so_item: r.so_item,
+					colour: r.colour,
+					size: r.size,
+					item_key,
+					combo_items,
+				});
 				const has_combo_items = combo_items.length > 0;
-				const expanded_by_default = has_combo_items;
+				const combo_html = has_combo_items ? build_inline_combo_html(combo_items, r) : "";
 
 				rows_html += `
-					<tr class="${has_combo_items ? "pp-item-parent-row" : ""}" ${has_combo_items ? `data-target="${detail_id}" style="cursor:pointer;"` : ""}>
+					<tr>
 						<td style="padding:4px 8px;">
-							${has_combo_items ? `<span class="pp-item-toggle" data-target="${detail_id}" style="cursor:pointer; margin-right:6px; color:#0f766e; font-size:11px; user-select:none;">${expanded_by_default ? "&#9660;" : "&#9654;"}</span>` : `<span style="display:inline-block; width:12px; margin-right:6px;"></span>`}
-							${build_item_label(r)}
+							${has_combo_items ? combo_html : build_item_label(r)}
 						</td>
 						<td style="padding:4px 8px; text-align:right;">${fmtNum(r[stage.field])}</td>
 					</tr>`;
-
-				if (has_combo_items) {
-					rows_html += `
-						<tr id="${detail_id}" class="pp-item-detail-row" style="display:${expanded_by_default ? "table-row" : "none"}; background:#f8fafc;">
-							<td colspan="2" style="padding:0;">${build_combo_detail_html(combo_items)}</td>
-						</tr>`;
-				}
 			});
 		} else {
 			rows_html = `<tr><td colspan="2" style="padding:8px; color:#6b7280;">No ${stage.label.toLowerCase()} records found.</td></tr>`;
@@ -417,7 +413,7 @@ function build_so_detail_html(items, combo_map, row_index) {
 		</div>`;
 }
 
-function build_combo_detail_html(combo_items) {
+function build_inline_combo_html(combo_items, row) {
 	const rows_html = combo_items
 		.map(
 			(r) => `
@@ -429,17 +425,23 @@ function build_combo_detail_html(combo_items) {
 		.join("");
 
 	return `
-		<div style="padding:8px 12px;">
-			<table style="width:100%; font-size:11px; border-collapse:collapse; background:#fff;">
-				<thead>
-					<tr style="background:#ecfeff;">
-						<th style="padding:4px 8px; text-align:left; border-bottom:1px solid #e5e7eb;">${__("Combo Item")}</th>
-						<th style="padding:4px 8px; text-align:right; border-bottom:1px solid #e5e7eb;">${__("Qty")}</th>
-					</tr>
-				</thead>
-				<tbody>${rows_html}</tbody>
-			</table>
-		</div>`;
+		<details style="margin:0;">
+			<summary style="cursor:pointer; list-style:none; display:flex; align-items:flex-start; gap:6px;">
+				<span style="color:#0f766e; font-size:11px; line-height:18px;">&#9654;</span>
+				<span>${build_item_label(row)}</span>
+			</summary>
+			<div style="margin-top:6px; margin-left:18px; border-left:2px solid #d1fae5; padding-left:8px;">
+				<table style="width:100%; font-size:11px; border-collapse:collapse; background:#fff;">
+					<thead>
+						<tr style="background:#ecfeff;">
+							<th style="padding:4px 8px; text-align:left; border-bottom:1px solid #e5e7eb;">${__("Combo Item")}</th>
+							<th style="padding:4px 8px; text-align:right; border-bottom:1px solid #e5e7eb;">${__("Qty")}</th>
+						</tr>
+					</thead>
+					<tbody>${rows_html}</tbody>
+				</table>
+			</div>
+		</details>`;
 }
 
 function build_item_label(row) {

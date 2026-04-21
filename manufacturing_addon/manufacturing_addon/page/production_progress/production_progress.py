@@ -2,7 +2,7 @@ import csv
 import io
 
 import frappe
-from frappe.utils import flt, get_url, nowdate
+from frappe.utils import add_days, flt, get_url, nowdate
 
 
 def _validate_dates(from_date=None, to_date=None):
@@ -38,6 +38,7 @@ def _get_stage_rows(from_date, to_date):
 			os.customer,
 			os.name AS order_sheet,
 			stage_rows.so_item,
+			stage_rows.combo_item,
 			stage_rows.colour,
 			stage_rows.size,
 			stage_rows.stage,
@@ -49,6 +50,7 @@ def _get_stage_rows(from_date, to_date):
 				'cutting' AS stage,
 				cr.order_sheet,
 				crct.so_item,
+				IFNULL(crct.combo_item, '') AS combo_item,
 				IFNULL(crct.colour, '') AS colour,
 				IFNULL(crct.finished_size, '') AS size,
 				SUM(IFNULL(crct.cutting_qty, 0)) AS qty
@@ -56,7 +58,7 @@ def _get_stage_rows(from_date, to_date):
 			INNER JOIN `tabCutting Report CT` crct ON crct.parent = cr.name
 			WHERE cr.docstatus = 1
 				AND cr.date BETWEEN %(from_date)s AND %(to_date)s
-			GROUP BY cr.order_sheet, crct.so_item, IFNULL(crct.colour, ''), IFNULL(crct.finished_size, '')
+			GROUP BY cr.order_sheet, crct.so_item, IFNULL(crct.combo_item, ''), IFNULL(crct.colour, ''), IFNULL(crct.finished_size, '')
 
 			UNION ALL
 
@@ -64,6 +66,7 @@ def _get_stage_rows(from_date, to_date):
 				'stitching' AS stage,
 				sr.order_sheet,
 				srct.so_item,
+				IFNULL(srct.combo_item, '') AS combo_item,
 				IFNULL(srct.colour, '') AS colour,
 				IFNULL(srct.finished_size, '') AS size,
 				SUM(IFNULL(srct.stitching_qty, 0)) AS qty
@@ -71,7 +74,7 @@ def _get_stage_rows(from_date, to_date):
 			INNER JOIN `tabStitching Report CT` srct ON srct.parent = sr.name
 			WHERE sr.docstatus = 1
 				AND sr.date BETWEEN %(from_date)s AND %(to_date)s
-			GROUP BY sr.order_sheet, srct.so_item, IFNULL(srct.colour, ''), IFNULL(srct.finished_size, '')
+			GROUP BY sr.order_sheet, srct.so_item, IFNULL(srct.combo_item, ''), IFNULL(srct.colour, ''), IFNULL(srct.finished_size, '')
 
 			UNION ALL
 
@@ -79,6 +82,7 @@ def _get_stage_rows(from_date, to_date):
 				'packing' AS stage,
 				pr.order_sheet,
 				prct.so_item,
+				'' AS combo_item,
 				IFNULL(prct.colour, '') AS colour,
 				IFNULL(prct.finished_size, '') AS size,
 				SUM(IFNULL(prct.packaging_qty, 0)) AS qty
@@ -359,6 +363,7 @@ def get_production_progress_data(from_date=None, to_date=None):
 		"from_date": from_date,
 		"to_date": to_date,
 		"summary": _build_summary(rows),
+		"stage_rows": stage_rows,
 		"rows": rows,
 		"sales_order_rows": sales_order_rows,
 		"item_rows": item_rows,
@@ -373,6 +378,6 @@ def send_production_progress_email(from_date=None, to_date=None):
 
 
 def send_scheduled_production_progress_email():
-	# As requested, auto-send for current date at scheduled times.
-	today = nowdate()
-	_send_production_progress_email(today, today)
+	# Send the previous day's report at scheduled time.
+	previous_day = add_days(nowdate(), -1)
+	_send_production_progress_email(previous_day, previous_day)

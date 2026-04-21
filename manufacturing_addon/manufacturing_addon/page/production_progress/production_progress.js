@@ -85,15 +85,16 @@ function setup_actions(state) {
 	state.page.set_primary_action(__("Refresh"), () => refresh_data(state), "refresh");
 
 	state.page.add_inner_button(__("Email System Managers"), () => {
-		const from_date = state.controls.from_date.get_value();
-		const to_date = state.controls.to_date.get_value();
+		const previous_day = frappe.datetime.add_days(frappe.datetime.get_today(), -1);
+		const from_date = previous_day;
+		const to_date = previous_day;
 		if (!from_date || !to_date) {
 			frappe.msgprint(__("Please select both From Date and To Date."));
 			return;
 		}
 
 		frappe.confirm(
-			__("Send production progress email to all System Managers for {0} to {1}?", [from_date, to_date]),
+			__("Send production progress email to all System Managers for previous day report: {0} to {1}?", [from_date, to_date]),
 			() => {
 				frappe.call({
 					method: "manufacturing_addon.manufacturing_addon.page.production_progress.production_progress.send_production_progress_email",
@@ -126,7 +127,7 @@ function refresh_data(state) {
 			const data = r.message || {};
 			const summary = data.summary || {};
 			render_summary(state, summary);
-			render_table(state, data.sales_order_rows || [], data.rows || []);
+			render_table(state, data.sales_order_rows || [], data.rows || [], data.stage_rows || []);
 			state.$meta.text(`${data.from_date || from_date} to ${data.to_date || to_date}`);
 			await render_chart(state, summary);
 		},
@@ -226,13 +227,13 @@ function render_summary(state, summary) {
 	state.$summary.html(html);
 }
 
-function render_table(state, rows, detail_rows) {
+function render_table(state, rows, detail_rows, stage_rows) {
 	if (!rows.length) {
 		state.$table.html(`<div style="padding:10px; color:#6b7280;">${__("No production rows found for selected dates.")}</div>`);
 		return;
 	}
 
-	// Build SO → detail items map
+	// Build SO -> detail items map
 	const so_detail_map = {};
 	(detail_rows || []).forEach((r) => {
 		const so = r.sales_order || "Not Linked";
@@ -240,13 +241,35 @@ function render_table(state, rows, detail_rows) {
 		so_detail_map[so].push(r);
 	});
 
+	// Build SO -> stage -> item -> combo rows map
+	const so_combo_map = {};
+	(stage_rows || []).forEach((r) => {
+		const so = r.sales_order || "Not Linked";
+		const stage = (r.stage || "").toLowerCase();
+		const combo_item = r.combo_item || "";
+		if (!combo_item || !stage || !["cutting", "stitching"].includes(stage) || num(r.qty) <= 0) return;
+
+		const item_key = get_item_key(r);
+		const so_bucket = (so_combo_map[so] = so_combo_map[so] || {});
+		const stage_bucket = (so_bucket[stage] = so_bucket[stage] || {});
+		const combo_bucket = (stage_bucket[item_key] = stage_bucket[item_key] || {});
+		const combo_key = combo_item;
+
+		if (!combo_bucket[combo_key]) {
+			combo_bucket[combo_key] = {
+				combo_item,
+				qty: 0,
+			};
+		}
+
+		combo_bucket[combo_key].qty += num(r.qty);
+	});
+
 	let body = "";
 	rows.forEach((r, idx) => {
-		const cut_pct = num(r.order_qty) ? (num(r.cutting_qty) / num(r.order_qty)) * 100 : 0;
-		const stitch_pct = num(r.order_qty) ? (num(r.stitching_qty) / num(r.order_qty)) * 100 : 0;
-		const pack_pct = num(r.order_qty) ? (num(r.packing_qty) / num(r.order_qty)) * 100 : 0;
 		const row_id = `pp-so-detail-${idx}`;
 		const items = so_detail_map[r.sales_order] || [];
+		const combo_map = so_combo_map[r.sales_order] || {};
 
 		body += `
 			<tr>
@@ -259,7 +282,7 @@ function render_table(state, rows, detail_rows) {
 				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.packing_qty)} </span></td>
 			</tr>
 			<tr id="${row_id}" class="pp-so-detail-row" style="display:none; background:#f9fafb;">
-				<td colspan="5" style="padding:0;">${build_so_detail_html(items)}</td>
+				<td colspan="5" style="padding:0;">${build_so_detail_html(items, combo_map, idx)}</td>
 			</tr>
 		`;
 	});
@@ -297,9 +320,30 @@ function render_table(state, rows, detail_rows) {
 		$content.find(".pp-stage-panel").hide();
 		$content.find(`.pp-stage-panel[data-stage="${stage}"]`).show();
 	});
+
+	state.$table.on("click", ".pp-item-toggle", function () {
+		toggle_item_detail(state, $(this).data("target"));
+	});
+
+	state.$table.on("click", ".pp-item-parent-row", function (e) {
+		if ($(e.target).closest(".pp-item-toggle").length) return;
+		toggle_item_detail(state, $(this).data("target"));
+	});
 }
 
-function build_so_detail_html(items) {
+function toggle_item_detail(state, target) {
+	if (!target) return;
+	const $detail = state.$table.find(`#${target}`);
+	if (!$detail.length) return;
+
+	const opening = !$detail.is(":visible");
+	$detail.toggle();
+	state.$table
+		.find(`.pp-item-parent-row[data-target="${target}"] .pp-item-toggle`)
+		.html(opening ? "&#9660;" : "&#9654;");
+}
+
+function build_so_detail_html(items, combo_map, row_index) {
 	const stages = [
 		{ key: "cutting", label: "Cutting", field: "cutting_qty" },
 		{ key: "stitching", label: "Stitching", field: "stitching_qty" },
@@ -323,16 +367,33 @@ function build_so_detail_html(items) {
 
 		let rows_html = "";
 		if (stage_items.length) {
-			stage_items.forEach((r) => {
+			stage_items.forEach((r, item_index) => {
+				const item_key = get_item_key(r);
+				const combo_items = Object.values((combo_map[stage.key] || {})[item_key] || {}).sort((a, b) =>
+					cstr(a.combo_item).localeCompare(cstr(b.combo_item))
+				);
+				const detail_id = `pp-item-detail-${row_index}-${stage.key}-${item_index}`;
+				const has_combo_items = combo_items.length > 0;
+				const expanded_by_default = has_combo_items;
+
 				rows_html += `
-					<tr>
-						<td style="padding:4px 8px;">${esc(r.so_item)}</td>
-						
+					<tr class="${has_combo_items ? "pp-item-parent-row" : ""}" ${has_combo_items ? `data-target="${detail_id}" style="cursor:pointer;"` : ""}>
+						<td style="padding:4px 8px;">
+							${has_combo_items ? `<span class="pp-item-toggle" data-target="${detail_id}" style="cursor:pointer; margin-right:6px; color:#0f766e; font-size:11px; user-select:none;">${expanded_by_default ? "&#9660;" : "&#9654;"}</span>` : `<span style="display:inline-block; width:12px; margin-right:6px;"></span>`}
+							${build_item_label(r)}
+						</td>
 						<td style="padding:4px 8px; text-align:right;">${fmtNum(r[stage.field])}</td>
 					</tr>`;
+
+				if (has_combo_items) {
+					rows_html += `
+						<tr id="${detail_id}" class="pp-item-detail-row" style="display:${expanded_by_default ? "table-row" : "none"}; background:#f8fafc;">
+							<td colspan="2" style="padding:0;">${build_combo_detail_html(combo_items)}</td>
+						</tr>`;
+				}
 			});
 		} else {
-			rows_html = `<tr><td colspan="4" style="padding:8px; color:#6b7280;">No ${stage.label.toLowerCase()} records found.</td></tr>`;
+			rows_html = `<tr><td colspan="2" style="padding:8px; color:#6b7280;">No ${stage.label.toLowerCase()} records found.</td></tr>`;
 		}
 
 		panels_html += `
@@ -356,8 +417,49 @@ function build_so_detail_html(items) {
 		</div>`;
 }
 
+function build_combo_detail_html(combo_items) {
+	const rows_html = combo_items
+		.map(
+			(r) => `
+				<tr>
+					<td style="padding:4px 8px;">${esc(r.combo_item)}</td>
+					<td style="padding:4px 8px; text-align:right;">${fmtNum(r.qty)}</td>
+				</tr>`
+		)
+		.join("");
+
+	return `
+		<div style="padding:8px 12px;">
+			<table style="width:100%; font-size:11px; border-collapse:collapse; background:#fff;">
+				<thead>
+					<tr style="background:#ecfeff;">
+						<th style="padding:4px 8px; text-align:left; border-bottom:1px solid #e5e7eb;">${__("Combo Item")}</th>
+						<th style="padding:4px 8px; text-align:right; border-bottom:1px solid #e5e7eb;">${__("Qty")}</th>
+					</tr>
+				</thead>
+				<tbody>${rows_html}</tbody>
+			</table>
+		</div>`;
+}
+
+function build_item_label(row) {
+	const parts = [];
+	if (row.colour) parts.push(row.colour);
+	if (row.size) parts.push(row.size);
+
+	return `${esc(row.so_item)}${parts.length ? `<div style="font-size:10px; color:#6b7280; margin-top:2px;">${esc(parts.join(" / "))}</div>` : ""}`;
+}
+
+function get_item_key(row) {
+	return [row.order_sheet || "", row.so_item || "", row.colour || "", row.size || ""].join("||");
+}
+
 function num(value) {
 	return Number(value || 0);
+}
+
+function cstr(value) {
+	return value == null ? "" : String(value);
 }
 
 function fmt(value, precision = 0) {

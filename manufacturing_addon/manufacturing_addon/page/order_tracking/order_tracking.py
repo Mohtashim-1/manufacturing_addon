@@ -56,7 +56,8 @@ def _get_bundle_items_for_so_item(so_item):
 def _get_finished_item_stage_info(stage_data, order_sheet, so_item, bundle_items, default_planned_qty=0):
 	"""
 	Convert bundle-stage data back to finished-item equivalents.
-	For finished-item rows, use the highest normalized component qty/finished.
+	For finished-item rows, use the lowest normalized component qty/finished.
+	A finished set is limited by the least-complete combo item.
 	"""
 	finished_key = f"{order_sheet}||{so_item}||"
 	finished_info = stage_data.get(finished_key)
@@ -84,9 +85,9 @@ def _get_finished_item_stage_info(stage_data, order_sheet, so_item, bundle_items
 		return finished_info or {"qty": 0, "finished": 0, "planned": default_planned_qty or 0}
 
 	return {
-		"qty": max(row["qty"] for row in normalized_rows),
-		"finished": max(row["finished"] for row in normalized_rows),
-		"planned": default_planned_qty or max(row["planned"] for row in normalized_rows),
+		"qty": min(row["qty"] for row in normalized_rows),
+		"finished": min(row["finished"] for row in normalized_rows),
+		"planned": default_planned_qty or min(row["planned"] for row in normalized_rows),
 	}
 
 
@@ -484,14 +485,15 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 					cutting_info["planned"] = order_sheet_planned_qty
 					print(f"  - ⚠️ Fixed Cutting planned_qty for {combo_item_code}: {cutting_info['planned']} -> {order_sheet_planned_qty} (using Order Sheet planned_qty)")
 				
-				# For Stitching: If planned_qty is 0, use Cutting's planned_qty (they should be the same)
-				if stitching_info["planned"] == 0:
+				# For Stitching: if planned_qty is 0 or inflated by repeated voucher rows,
+				# use the finished-item planned qty instead of the summed voucher planned qty.
+				if stitching_info["planned"] == 0 or stitching_info["planned"] > order_sheet_planned_qty:
 					if cutting_info["planned"] > 0:
 						stitching_info["planned"] = cutting_info["planned"]
-						print(f"  - ⚠️ Fixed Stitching planned_qty for {combo_item_code}: 0 -> {cutting_info['planned']} (using Cutting planned_qty)")
+						print(f"  - ⚠️ Fixed Stitching planned_qty for {combo_item_code}: {stitching_info['planned']} -> {cutting_info['planned']} (using Cutting planned_qty)")
 					elif order_sheet_planned_qty > 0:
 						stitching_info["planned"] = order_sheet_planned_qty
-						print(f"  - ⚠️ Fixed Stitching planned_qty for {combo_item_code}: 0 -> {order_sheet_planned_qty} (using Order Sheet planned_qty)")
+						print(f"  - ⚠️ Fixed Stitching planned_qty for {combo_item_code}: {stitching_info['planned']} -> {order_sheet_planned_qty} (using Order Sheet planned_qty)")
 				# Packing is done at finished item level, not bundle item level
 				# So bundle items don't have packing data
 				

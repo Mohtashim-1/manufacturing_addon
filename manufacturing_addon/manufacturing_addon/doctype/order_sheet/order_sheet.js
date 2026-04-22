@@ -374,6 +374,7 @@ frappe.ui.form.on("Order Sheet CT", {
 
 const orderSheetDashboard = {
 	_originalDetails: [],
+	_setup_done_for: null,
 
 	render(frm) {
 		if (frm.doc.docstatus !== 1) {
@@ -384,10 +385,19 @@ const orderSheetDashboard = {
 					<p style="color: #6c757d;">Please submit the Order Sheet to view the dashboard.</p>
 				</div>
 			`);
+			this._setup_done_for = null;
 			return;
 		}
 
 		const $wrapper = frm.fields_dict.dashboard.$wrapper;
+
+		// Guard: only build layout+filters once per document name
+		if (this._setup_done_for === frm.doc.name) {
+			this._load_data(frm, $wrapper);
+			return;
+		}
+		this._setup_done_for = frm.doc.name;
+
 		this._originalDetails = [];
 		$wrapper.empty().append(this._get_layout_html());
 		this._setup_filters(frm, $wrapper);
@@ -474,16 +484,33 @@ const orderSheetDashboard = {
 	_setup_filters(frm, $wrapper) {
 		const self = this;
 
-		this._customer_field = frappe.ui.form.make_control({
-			df: { fieldtype: "Link", fieldname: "customer", options: "Customer", label: __("Customer"), placeholder: "Select Customer" },
-			parent: $wrapper.find("#osd-customer-field"),
-			render_input: true,
-		});
-		this._customer_field.make_input();
-		if (frm.doc.customer) this._customer_field.set_value(frm.doc.customer);
+		const make_link = (container, df, initial_value) => {
+			// Clear container first to avoid duplicates from repeated make_control calls
+			container.empty();
+			const label = $(`<label style="font-weight:600;font-size:13px;color:#495057;margin-bottom:5px;">${df.label}</label>`);
+			const input_wrap = $(`<div></div>`);
+			container.append(label).append(input_wrap);
 
-		this._so_field = frappe.ui.form.make_control({
-			df: {
+			const ctrl = frappe.ui.form.make_control({
+				df: { ...df, label: "" },
+				parent: input_wrap,
+				render_input: true,
+				only_input: true,
+			});
+			// render_input:true already calls make_input() internally — do NOT call it again
+			if (initial_value) ctrl.set_value(initial_value);
+			return ctrl;
+		};
+
+		this._customer_field = make_link(
+			$wrapper.find("#osd-customer-field"),
+			{ fieldtype: "Link", fieldname: "customer", options: "Customer", label: __("Customer"), placeholder: "Select Customer" },
+			frm.doc.customer
+		);
+
+		this._so_field = make_link(
+			$wrapper.find("#osd-so-field"),
+			{
 				fieldtype: "Link", fieldname: "sales_order", options: "Sales Order", label: __("Sales Order"), placeholder: "Select Sales Order",
 				get_query: () => {
 					const c = self._customer_field ? self._customer_field.get_value() : "";
@@ -492,25 +519,20 @@ const orderSheetDashboard = {
 					return { filters: f };
 				}
 			},
-			parent: $wrapper.find("#osd-so-field"),
-			render_input: true,
-		});
-		this._so_field.make_input();
-		if (frm.doc.sales_order) this._so_field.set_value(frm.doc.sales_order);
+			frm.doc.sales_order
+		);
 
-		this._os_field = frappe.ui.form.make_control({
-			df: {
+		this._os_field = make_link(
+			$wrapper.find("#osd-os-field"),
+			{
 				fieldtype: "Link", fieldname: "order_sheet", options: "Order Sheet", label: __("Order Sheet"), placeholder: "Select Order Sheet",
 				get_query: () => {
 					const so = self._so_field ? self._so_field.get_value() : "";
 					return { filters: so ? { sales_order: so } : {} };
 				}
 			},
-			parent: $wrapper.find("#osd-os-field"),
-			render_input: true,
-		});
-		this._os_field.make_input();
-		if (frm.doc.name) this._os_field.set_value(frm.doc.name);
+			frm.doc.name
+		);
 
 		$wrapper.find(".osd-refresh-btn").on("click", () => this._load_data(frm, $wrapper));
 	},

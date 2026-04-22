@@ -85,8 +85,10 @@ def _get_finished_item_stage_info(stage_data, order_sheet, so_item, bundle_items
 	if not normalized_rows:
 		return finished_info or {"qty": 0, "finished": 0, "planned": default_planned_qty or 0}
 
-	# When there are multiple bundle items, use DUVET qty as the primary metric
+	# When there are multiple bundle items, exclude PILLOW from the calculation.
+	# PILLOW is an accessory and should not limit the set count.
 	if len(normalized_rows) > 1:
+		# Prefer DUVET specifically for quilt cover sets
 		duvet_row = next(
 			(r for r in normalized_rows if (r["item"] or "").upper() == "DUVET"), None
 		)
@@ -95,6 +97,15 @@ def _get_finished_item_stage_info(stage_data, order_sheet, so_item, bundle_items
 				"qty": duvet_row["qty"],
 				"finished": duvet_row["finished"],
 				"planned": duvet_row["planned"],
+			}
+
+		# For other combo sets, exclude PILLOW and take the min of remaining items
+		non_pillow = [r for r in normalized_rows if (r["item"] or "").upper() != "PILLOW"]
+		if non_pillow:
+			return {
+				"qty": min(r["qty"] for r in non_pillow),
+				"finished": min(r["finished"] for r in non_pillow),
+				"planned": default_planned_qty or min(r["planned"] for r in non_pillow),
 			}
 
 	return {

@@ -30,9 +30,13 @@ def _get_system_manager_emails():
 	return [row[0] for row in rows if row and row[0]]
 
 
-def _get_stage_rows(from_date, to_date):
+def _get_stage_rows(from_date, to_date, item=None):
+	item_condition = ""
+	if item:
+		item_condition = " AND stage_rows.combo_item = %(item)s"
+
 	return frappe.db.sql(
-		"""
+		f"""
 		SELECT
 			so.name AS sales_order,
 			os.customer,
@@ -100,19 +104,21 @@ def _get_stage_rows(from_date, to_date):
 			AND IFNULL(osct.colour, '') = stage_rows.colour
 			AND IFNULL(osct.size, '') = stage_rows.size
 		WHERE so.docstatus < 2
+			{item_condition}
 		ORDER BY so.name, os.name, stage_rows.so_item, stage_rows.colour, stage_rows.size, stage_rows.stage
 		""",
-		{"from_date": from_date, "to_date": to_date},
+		{"from_date": from_date, "to_date": to_date, "item": item},
 		as_dict=True,
 	)
 
 
-def _build_rows(stage_rows):
+def _build_rows(stage_rows, item=None):
 	row_map = {}
 	for stage_row in stage_rows:
 		key = (
 			stage_row.get("order_sheet"),
 			stage_row.get("so_item"),
+			(stage_row.get("combo_item") or "") if item else "",
 			stage_row.get("colour") or "",
 			stage_row.get("size") or "",
 		)
@@ -123,6 +129,7 @@ def _build_rows(stage_rows):
 				"customer": stage_row.get("customer") or "",
 				"order_sheet": stage_row.get("order_sheet"),
 				"so_item": stage_row.get("so_item") or "",
+				"combo_item": stage_row.get("combo_item") or "",
 				"colour": stage_row.get("colour") or "",
 				"size": stage_row.get("size") or "",
 				"order_qty": flt(stage_row.get("order_qty")),
@@ -143,6 +150,7 @@ def _build_rows(stage_rows):
 			row.get("sales_order") or "",
 			row.get("order_sheet") or "",
 			row.get("so_item") or "",
+			row.get("combo_item") or "",
 			row.get("colour") or "",
 			row.get("size") or "",
 		)
@@ -164,11 +172,12 @@ def _build_summary(rows):
 def _build_item_rows(rows):
 	item_map = {}
 	for row in rows:
-		key = (row.get("so_item") or "", row.get("colour") or "", row.get("size") or "")
+		key = (row.get("so_item") or "", row.get("combo_item") or "", row.get("colour") or "", row.get("size") or "")
 		bucket = item_map.setdefault(
 			key,
 			{
 				"so_item": row.get("so_item") or "",
+				"combo_item": row.get("combo_item") or "",
 				"colour": row.get("colour") or "",
 				"size": row.get("size") or "",
 				"order_qty": 0.0,
@@ -185,7 +194,7 @@ def _build_item_rows(rows):
 		bucket["packing_qty"] += flt(row.get("packing_qty"))
 
 	item_rows = list(item_map.values())
-	item_rows.sort(key=lambda d: (d.get("so_item") or "", d.get("colour") or "", d.get("size") or ""))
+	item_rows.sort(key=lambda d: (d.get("so_item") or "", d.get("combo_item") or "", d.get("colour") or "", d.get("size") or ""))
 	return item_rows
 
 
@@ -353,15 +362,17 @@ def _send_production_progress_email(from_date=None, to_date=None):
 
 
 @frappe.whitelist()
-def get_production_progress_data(from_date=None, to_date=None):
+def get_production_progress_data(from_date=None, to_date=None, item=None):
 	from_date, to_date = _validate_dates(from_date, to_date)
-	stage_rows = _get_stage_rows(from_date, to_date)
-	rows = _build_rows(stage_rows)
+	item = (item or "").strip()
+	stage_rows = _get_stage_rows(from_date, to_date, item=item or None)
+	rows = _build_rows(stage_rows, item=item or None)
 	sales_order_rows = _build_sales_order_rows(rows)
 	item_rows = _build_item_rows(rows)
 	return {
 		"from_date": from_date,
 		"to_date": to_date,
+		"item": item,
 		"summary": _build_summary(rows),
 		"stage_rows": stage_rows,
 		"rows": rows,

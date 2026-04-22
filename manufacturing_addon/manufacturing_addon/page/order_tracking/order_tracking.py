@@ -75,6 +75,7 @@ def _get_finished_item_stage_info(stage_data, order_sheet, so_item, bundle_items
 			continue
 		normalized_rows.append(
 			{
+				"item": combo_item_code,
 				"qty": (info.get("qty") or 0) / pcs,
 				"finished": (info.get("finished") or 0) / pcs,
 				"planned": default_planned_qty or info.get("planned") or 0,
@@ -83,6 +84,18 @@ def _get_finished_item_stage_info(stage_data, order_sheet, so_item, bundle_items
 
 	if not normalized_rows:
 		return finished_info or {"qty": 0, "finished": 0, "planned": default_planned_qty or 0}
+
+	# When there are multiple bundle items, use DUVET qty as the primary metric
+	if len(normalized_rows) > 1:
+		duvet_row = next(
+			(r for r in normalized_rows if (r["item"] or "").upper() == "DUVET"), None
+		)
+		if duvet_row:
+			return {
+				"qty": duvet_row["qty"],
+				"finished": duvet_row["finished"],
+				"planned": duvet_row["planned"],
+			}
 
 	return {
 		"qty": min(row["qty"] for row in normalized_rows),

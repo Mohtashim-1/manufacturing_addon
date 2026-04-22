@@ -73,12 +73,23 @@ function setup_filters(state) {
 		},
 		render_input: true,
 	});
+	state.controls.item = frappe.ui.form.make_control({
+		parent: state.$filters,
+		df: {
+			label: __("Combo Item"),
+			fieldname: "item",
+			fieldtype: "Link",
+			options: "Item",
+		},
+		render_input: true,
+	});
 
 	state.controls.from_date.set_value(today);
 	state.controls.to_date.set_value(today);
 
 	$(state.controls.from_date.$input).on("change", () => refresh_data(state));
 	$(state.controls.to_date.$input).on("change", () => refresh_data(state));
+	$(state.controls.item.$input).on("change", () => refresh_data(state));
 }
 
 function setup_actions(state) {
@@ -116,19 +127,22 @@ function setup_actions(state) {
 function refresh_data(state) {
 	const from_date = state.controls.from_date.get_value();
 	const to_date = state.controls.to_date.get_value();
+	const item = state.controls.item.get_value();
 	if (!from_date || !to_date) return;
 
 	frappe.call({
 		method: "manufacturing_addon.manufacturing_addon.page.production_progress.production_progress.get_production_progress_data",
-		args: { from_date, to_date },
+		args: { from_date, to_date, item },
 		freeze: true,
 		freeze_message: __("Loading production progress..."),
 		callback: async (r) => {
 			const data = r.message || {};
 			const summary = data.summary || {};
 			render_summary(state, summary);
-			render_table(state, data.sales_order_rows || [], data.rows || [], data.stage_rows || []);
-			state.$meta.text(`${data.from_date || from_date} to ${data.to_date || to_date}`);
+			render_table(state, data.sales_order_rows || [], data.rows || [], data.stage_rows || [], data.item || "");
+			const meta_parts = [`${data.from_date || from_date} to ${data.to_date || to_date}`];
+			if (data.item) meta_parts.push(`${__("Combo Item")}: ${data.item}`);
+			state.$meta.text(meta_parts.join(" | "));
 			await render_chart(state, summary);
 		},
 	});
@@ -227,7 +241,7 @@ function render_summary(state, summary) {
 	state.$summary.html(html);
 }
 
-function render_table(state, rows, detail_rows, stage_rows) {
+function render_table(state, rows, detail_rows, stage_rows, selected_combo_item = "") {
 	if (!rows.length) {
 		state.$table.html(`<div style="padding:10px; color:#6b7280;">${__("No production rows found for selected dates.")}</div>`);
 		return;
@@ -236,6 +250,7 @@ function render_table(state, rows, detail_rows, stage_rows) {
 	// Build SO -> detail items map
 	const so_detail_map = {};
 	(detail_rows || []).forEach((r) => {
+		if (selected_combo_item && cstr(r.combo_item) !== cstr(selected_combo_item)) return;
 		const so = r.sales_order || "Not Linked";
 		if (!so_detail_map[so]) so_detail_map[so] = [];
 		so_detail_map[so].push(r);
@@ -247,6 +262,7 @@ function render_table(state, rows, detail_rows, stage_rows) {
 		const so = r.sales_order || "Not Linked";
 		const stage = (r.stage || "").toLowerCase();
 		const combo_item = r.combo_item || "";
+		if (selected_combo_item && cstr(combo_item) !== cstr(selected_combo_item)) return;
 		if (!combo_item || !stage || !["cutting", "stitching"].includes(stage) || num(r.qty) <= 0) return;
 
 		const item_key = get_item_key(r);
@@ -269,6 +285,7 @@ function render_table(state, rows, detail_rows, stage_rows) {
 	rows.forEach((r, idx) => {
 		const row_id = `pp-so-detail-${idx}`;
 		const items = so_detail_map[r.sales_order] || [];
+		if (!items.length && selected_combo_item) return;
 		const combo_map = so_combo_map[r.sales_order] || {};
 
 		body += `
@@ -276,13 +293,14 @@ function render_table(state, rows, detail_rows, stage_rows) {
 				<td>
 					<span class="pp-so-toggle" data-target="${row_id}" style="cursor:pointer; margin-right:6px; color:#0f766e; font-size:11px; user-select:none;">&#9654;</span>${esc(r.sales_order)}
 				</td>
+				
 				<td>${esc(r.customer)}</td>
 				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.cutting_qty)} </span></td>
 				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.stitching_qty)} </span></td>
 				<td style="text-align:right;"><span style="white-space:nowrap;">${fmtNum(r.packing_qty)} </span></td>
 			</tr>
 			<tr id="${row_id}" class="pp-so-detail-row" style="display:none; background:#f9fafb;">
-				<td colspan="5" style="padding:0;">${build_so_detail_html(items, combo_map, idx)}</td>
+				<td colspan="5" style="padding:0;">${build_so_detail_html(items, combo_map, idx, selected_combo_item)}</td>
 			</tr>
 		`;
 	});
@@ -323,7 +341,7 @@ function render_table(state, rows, detail_rows, stage_rows) {
 
 }
 
-function build_so_detail_html(items, combo_map, row_index) {
+function build_so_detail_html(items, combo_map, row_index, selected_combo_item = "") {
 	const stages = [
 		{ key: "cutting", label: "Cutting", field: "cutting_qty" },
 		{ key: "stitching", label: "Stitching", field: "stitching_qty" },
@@ -352,14 +370,23 @@ function build_so_detail_html(items, combo_map, row_index) {
 				const combo_items = Object.values((combo_map[stage.key] || {})[item_key] || {}).sort((a, b) =>
 					cstr(a.combo_item).localeCompare(cstr(b.combo_item))
 				);
-				const has_combo_items = combo_items.length > 0;
-				const combo_html = has_combo_items ? build_inline_combo_html(combo_items, r) : "";
+				if (combo_items.length) {
+					const non_pillow = combo_items.filter((ci) => (ci.combo_item || "").toUpperCase() !== "PILLOW");
+					const primary_combos = non_pillow.length ? non_pillow : combo_items;
+					const summary_qty = selected_combo_item && combo_items.length === 1
+						? fmtNum(combo_items[0].qty)
+						: fmtNum(primary_combos.reduce((s, ci) => s + num(ci.qty), 0));
+					rows_html += `
+						<tr>
+							<td style="padding:4px 8px;">${build_inline_combo_html(combo_items, r)}</td>
+							<td style="padding:4px 8px; text-align:right;">${summary_qty}</td>
+						</tr>`;
+					return;
+				}
 
 				rows_html += `
 					<tr>
-						<td style="padding:4px 8px;">
-							${has_combo_items ? combo_html : build_item_label(r)}
-						</td>
+						<td style="padding:4px 8px;">${build_item_label(r)}</td>
 						<td style="padding:4px 8px; text-align:right;">${fmtNum(r[stage.field])}</td>
 					</tr>`;
 			});
@@ -391,10 +418,10 @@ function build_so_detail_html(items, combo_map, row_index) {
 function build_inline_combo_html(combo_items, row) {
 	const rows_html = combo_items
 		.map(
-			(r) => `
+			(combo_row) => `
 				<tr>
-					<td style="padding:4px 8px;">${esc(r.combo_item)}</td>
-					<td style="padding:4px 8px; text-align:right;">${fmtNum(r.qty)}</td>
+					<td style="padding:4px 8px;">${esc(combo_row.combo_item)}</td>
+					<td style="padding:4px 8px; text-align:right;">${fmtNum(combo_row.qty)}</td>
 				</tr>`
 		)
 		.join("");
@@ -421,6 +448,7 @@ function build_inline_combo_html(combo_items, row) {
 
 function build_item_label(row) {
 	const parts = [];
+	if (row.combo_item) parts.push(row.combo_item);
 	if (row.colour) parts.push(row.colour);
 	if (row.size) parts.push(row.size);
 

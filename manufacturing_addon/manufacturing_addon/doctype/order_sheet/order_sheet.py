@@ -201,40 +201,82 @@ ORDER_SHEET_CT_PRINT_FOOTER_TOTALS = {
 }
 
 
-def _read_order_sheet_user_settings(parent_doctype: str) -> dict:
-	"""Load combined User Settings for Order Sheet.
+def _parse_user_settings_value(raw):
+	"""Safely coerce whatever the cache/DB returns to a plain dict.
 
-	Frappe saves GridView (Configure Columns) to Redis via `update_user_settings` immediately,
-	and persists `__UserSettings` later via async `sync_user_settings`. Reading **only** the
-	database often misses GridView — use cache-first `get_user_settings`, then merge DB if
-	GridView is still empty (cold worker / Redis miss).
+	Frappe's Redis wrapper pickle-serialises values, so hget can return a
+	JSON string, a dict, bytes, or None depending on the site version and
+	cache state.  This helper handles all four cases without raising.
+	"""
+	import json
+
+	if not raw:
+		return {}
+	if isinstance(raw, dict):
+		return raw
+	if isinstance(raw, (bytes, bytearray)):
+		raw = raw.decode("utf-8", errors="replace")
+	if isinstance(raw, str):
+		try:
+			result = json.loads(raw)
+			return result if isinstance(result, dict) else {}
+		except (json.JSONDecodeError, ValueError):
+			return {}
+	return {}
+
+
+def _read_order_sheet_user_settings(parent_doctype: str) -> dict:
+	"""Load GridView (Configure Columns) settings for the Order Sheet child table.
+
+	Tries four sources in order, returning as soon as a non-empty GridView is found:
+	1. In-process local cache (frappe.local) — fastest, same request.
+	2. Redis cache via get_user_settings — reflects changes made in the
+	   current browser session before they are flushed to the DB.
+	3. __UserSettings DB table for the current user (reliable but slightly stale).
+	4. __UserSettings DB table for any user who has saved column settings for
+	   this doctype — used when PDF runs as a background/system user.
 	"""
 	import json
 
 	from frappe.model.utils.user_settings import get_user_settings
 
-	data = json.loads(get_user_settings(parent_doctype) or "{}")
+	def _has_gridview(d):
+		gv = d.get("GridView") if isinstance(d, dict) else None
+		return isinstance(gv, dict) and bool(gv)
 
-	gv = data.get("GridView")
-	has_grid = isinstance(gv, dict) and gv
-	if has_grid:
-		return data
-
-	row = frappe.db.sql(
-		"""select data from `__UserSettings` where `user`=%s and `doctype`=%s limit 1""",
-		(frappe.session.user, parent_doctype),
-	)
-	if not row or not row[0][0]:
-		return data
-
+	# 1 & 2: cache + Redis for current user
 	try:
-		db_data = json.loads(row[0][0])
-	except json.JSONDecodeError:
-		return data
+		data = _parse_user_settings_value(get_user_settings(parent_doctype))
+		if _has_gridview(data):
+			return data
+	except Exception:
+		data = {}
 
-	db_gv = db_data.get("GridView")
-	if isinstance(db_gv, dict) and db_gv:
-		data["GridView"] = db_gv
+	# 3: DB for current user
+	try:
+		rows = frappe.db.sql(
+			"SELECT data FROM `__UserSettings` WHERE `user`=%s AND `doctype`=%s LIMIT 1",
+			(frappe.session.user, parent_doctype),
+		)
+		if rows and rows[0][0]:
+			db_data = _parse_user_settings_value(rows[0][0])
+			if _has_gridview(db_data):
+				return db_data
+	except Exception:
+		pass
+
+	# 4: DB for ANY user — handles PDF workers that run as system/admin
+	try:
+		rows = frappe.db.sql(
+			"SELECT data FROM `__UserSettings` WHERE `doctype`=%s AND data LIKE %s LIMIT 1",
+			(parent_doctype, "%GridView%"),
+		)
+		if rows and rows[0][0]:
+			db_data = _parse_user_settings_value(rows[0][0])
+			if _has_gridview(db_data):
+				return db_data
+	except Exception:
+		pass
 
 	return data
 

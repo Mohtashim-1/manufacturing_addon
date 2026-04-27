@@ -23,6 +23,36 @@ frappe.ui.form.on("Order Sheet", {
 
 		compute_order_sheet_header_totals(frm);
 
+		// ── Intercept GridView column saves so doc field stays current without a full save ──
+		// grid_row.js calls frappe.model.user_settings.save("Order Sheet","GridView",{...}) after
+		// the user applies Configure Columns. We wrap it here to also persist the selection to
+		// order_sheet_print_column_order immediately (server-side set_value), so Print/PDF always
+		// reflects the latest column choice even without an explicit doc save.
+		const _origSave = frappe.model.user_settings.save;
+		frappe.model.user_settings.save = function(doctype, key, value) {
+			const ret = _origSave.apply(this, arguments);
+			if (doctype === frm.doc.doctype && key === "GridView") {
+				const child_dt = "Order Sheet CT";
+				const cols = value?.[child_dt] || [];
+				if (cols.length) {
+					const names = cols.map((r) => (typeof r === "string" ? r : r.fieldname)).filter(Boolean);
+					if (names.length) {
+						frm.doc.order_sheet_print_column_order = JSON.stringify(names);
+						// Persist to DB immediately so the server can read it without a session.
+						if (frm.doc.name && !frm.doc.__islocal) {
+							frappe.db.set_value(
+								frm.doc.doctype,
+								frm.doc.name,
+								"order_sheet_print_column_order",
+								JSON.stringify(names)
+							).catch(() => {});
+						}
+					}
+				}
+			}
+			return ret;
+		};
+
 		// Add button to fetch items from Sales Order
 		if (frm.doc.docstatus === 0) {
 			frm.add_custom_button(

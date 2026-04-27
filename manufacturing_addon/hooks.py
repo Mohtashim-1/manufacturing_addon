@@ -67,10 +67,11 @@ doctype_js = {
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "manufacturing_addon.utils.jinja_methods",
-# 	"filters": "manufacturing_addon.utils.jinja_filters"
-# }
+jinja = {
+	"methods": [
+		"manufacturing_addon.manufacturing_addon.utils.print_columns.get_order_sheet_ct_dynamic_columns",
+	],
+}
 
 # Installation
 # ------------

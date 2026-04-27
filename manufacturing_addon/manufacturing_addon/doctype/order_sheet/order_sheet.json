@@ -17,17 +17,25 @@
   "sales_order",
   "order_sheet_ct_section",
   "order_sheet_ct",
+  "order_sheet_print_column_order",
   "section_break_tzao",
-  "total_quantity",
+  "total_order_qty",
   "column_break_djbx",
-  "total_cartoon",
+  "total_planned_qty",
   "column_break_hemx",
-  "total_quantity_per_cartoon",
+  "total_cartoon",
   "column_break_cngj",
+  "total_planned_cartoon",
+  "section_break_summary_qty2",
+  "total_quantity_per_cartoon",
+  "column_break_qty2a",
   "total_consumption",
+  "total_quantity",
   "section_break_logistics_totals",
   "total_order_cbm",
   "column_break_logistics_1",
+  "total_planned_cbm",
+  "column_break_logistics_1b",
   "total_net_weight",
   "column_break_logistics_2",
   "total_gross_weight",
@@ -105,6 +113,14 @@
    "options": "Order Sheet CT"
   },
   {
+   "description": "Filled from your Configure Columns selection when you Save. Used so PDF/print matches the grid without relying on session.",
+   "fieldname": "order_sheet_print_column_order",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Print Column Order",
+   "print_hide": 1
+  },
+  {
    "default": "0",
    "fieldname": "is_or",
    "fieldtype": "Check",
@@ -113,21 +129,37 @@
   },
   {
    "fieldname": "section_break_tzao",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Summary Totals"
   },
   {
-   "fieldname": "total_quantity",
+   "fieldname": "total_order_qty",
    "fieldtype": "Float",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total Quantity",
+   "label": "Total Order Qty",
    "non_negative": 1,
    "read_only": 1
   },
   {
    "fieldname": "column_break_djbx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_planned_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Planned Qty",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_hemx",
    "fieldtype": "Column Break"
   },
   {
@@ -137,12 +169,26 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total Cartoon",
+   "label": "Total Order Carton",
    "read_only": 1
   },
   {
-   "fieldname": "column_break_hemx",
+   "fieldname": "column_break_cngj",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_planned_cartoon",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Planned Carton",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_summary_qty2",
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "total_quantity_per_cartoon",
@@ -151,11 +197,11 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total Quantity Per Cartoon",
+   "label": "Total Quantity Per Carton",
    "read_only": 1
   },
   {
-   "fieldname": "column_break_cngj",
+   "fieldname": "column_break_qty2a",
    "fieldtype": "Column Break"
   },
   {
@@ -166,6 +212,14 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Consumption",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_quantity",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Total Quantity (legacy)",
+   "non_negative": 1,
    "read_only": 1
   },
   {
@@ -187,13 +241,25 @@
    "fieldtype": "Column Break"
   },
   {
+   "fieldname": "total_planned_cbm",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Total Planned CBM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_logistics_1b",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "total_net_weight",
    "fieldtype": "Float",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
-   "label": "Total Net Weight (KG)",
-   "read_only": 1
+   "label": "Total Net Weight (KG)"
   },
   {
    "fieldname": "column_break_logistics_2",
@@ -205,8 +271,7 @@
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
-   "label": "Total Gross Weight (KG)",
-   "read_only": 1
+   "label": "Total Gross Weight (KG)"
   },
   {
    "fieldname": "order_no",
@@ -244,6 +309,7 @@
    "label": "Instruction"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "instructions",
    "fieldtype": "Text Editor",
    "label": "Instructions"
@@ -252,7 +318,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-04 02:56:41.874532",
+ "modified": "2026-04-28 03:53:55.677625",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

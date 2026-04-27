@@ -9,12 +9,34 @@ from frappe.utils import today, now_datetime, flt
 
 class OrderSheet(Document):
 	def validate(self):
+		self.sync_order_sheet_print_column_order()
 		self.populate_bom_and_carton_details()
 		self.qty_per_cartoon()
 		self.calculate_logistics_metrics()
 		self.total()
 		self.consumption()
 		# self.total_qty()
+
+	def sync_order_sheet_print_column_order(self):
+		"""Fill hidden JSON field from server-side User Settings GridView when available.
+
+		Print/PDF runs without the browser; this ties the saved document to the same GridView
+		data keyed by the current user in Redis/DB. Only sets the field when GridView resolves to
+		a non-empty column list (does not wipe a client-set value when GridView is missing).
+		"""
+		import json
+
+		if not frappe.get_meta(self.doctype).get_field("order_sheet_print_column_order"):
+			return
+
+		grid = _gridview_entries_for_child(
+			_read_order_sheet_user_settings(self.doctype), ORDER_SHEET_CT_DOCTYPE
+		)
+		names = [g.get("fieldname") for g in grid if g.get("fieldname")]
+		if not names:
+			return
+
+		self.order_sheet_print_column_order = json.dumps(names)
 
 	def populate_bom_and_carton_details(self):
 		"""Populate BOM and carton details for each Order Sheet row."""
@@ -55,23 +77,31 @@ class OrderSheet(Document):
 		order_quantity = 0
 		planned_quantity = 0
 		total_cartoons = 0
+		total_planned_cartoons = 0
 		total_quantity_per_cartoon = 0
 		total_order_cbm = 0
+		total_planned_cbm_sum = 0
 		total_net_weight = 0
 		total_gross_weight = 0
 		for i in self.order_sheet_ct:
-			order_quantity += i.order_qty or 0
-			planned_quantity += i.planned_qty or 0
-			total_cartoons += i.total_carton or 0
-			total_quantity_per_cartoon += i.qty_ctn or 0
-			total_order_cbm += i.order_cbm or 0
-			total_net_weight += i.net_weight or 0
-			total_gross_weight += i.gross_weight or 0
-		# Use planned_qty for total if available, otherwise use order_qty
+			order_quantity += flt(i.order_qty)
+			planned_quantity += flt(i.planned_qty)
+			total_cartoons += flt(i.total_carton)
+			total_planned_cartoons += flt(i.total_planned_ctn)
+			total_quantity_per_cartoon += flt(i.qty_ctn)
+			total_order_cbm += flt(i.order_cbm)
+			total_planned_cbm_sum += flt(i.planned_cbm)
+			total_net_weight += flt(i.net_weight)
+			total_gross_weight += flt(i.gross_weight)
+		self.total_order_qty = order_quantity
+		self.total_planned_qty = planned_quantity
+		# Legacy single field: prefer planned sum when any planned qty exists
 		self.total_quantity = planned_quantity if planned_quantity > 0 else order_quantity
 		self.total_cartoon = total_cartoons
+		self.total_planned_cartoon = total_planned_cartoons
 		self.total_quantity_per_cartoon = total_quantity_per_cartoon
 		self.total_order_cbm = total_order_cbm
+		self.total_planned_cbm = total_planned_cbm_sum
 		self.total_net_weight = total_net_weight
 		self.total_gross_weight = total_gross_weight
 
@@ -114,6 +144,209 @@ class OrderSheet(Document):
 				i.total_consumption = i.consumption * qty_for_calc
 			total_consumption += i.total_consumption if i.total_consumption else 0
 		self.total_consumption = total_consumption
+
+	def before_print(self, print_settings=None):
+		"""Expose child-table column order for print format (matches desk GridView / Configure Columns)."""
+		columns = get_order_sheet_ct_print_columns(self, self.doctype)
+		self.flags.order_sheet_print_columns = columns
+		self.flags.order_sheet_print_footer_totals_map = ORDER_SHEET_CT_PRINT_FOOTER_TOTALS
+		footer_keys = ORDER_SHEET_CT_PRINT_FOOTER_TOTALS.keys()
+		first_i = None
+		for i, col in enumerate(columns):
+			if col.get("fieldname") in footer_keys:
+				first_i = i
+				break
+		self.flags.order_sheet_print_footer_start = first_i if first_i is not None else len(columns)
+
+
+ORDER_SHEET_CT_DOCTYPE = "Order Sheet CT"
+ORDER_SHEET_CT_GRID_FIELDNAME = "order_sheet_ct"
+SKIP_PRINT_FIELD_TYPES = frozenset(
+	("Section Break", "Column Break", "Tab Break", "HTML", "Button", "Fold", "Heading")
+)
+ORDER_SHEET_CT_FALLBACK_FIELDS = (
+	"stitching_article_no",
+	"design",
+	"colour",
+	"reverse_colour",
+	"size",
+	"gsm",
+	"ean",
+	"order_qty",
+	"planned_qty",
+	"qty_ctn",
+	"total_carton",
+	"total_planned_ctn",
+	"order_cbm",
+	"planned_cbm",
+	"net_weight",
+	"gross_weight",
+	"consumption",
+	"total_consumption",
+	"carton_dimension",
+	"so_item",
+	"combo_item",
+)
+# Child row field -> parent Order Sheet total field (for table footer)
+ORDER_SHEET_CT_PRINT_FOOTER_TOTALS = {
+	"order_qty": "total_order_qty",
+	"planned_qty": "total_planned_qty",
+	"total_carton": "total_cartoon",
+	"total_planned_ctn": "total_planned_cartoon",
+	"order_cbm": "total_order_cbm",
+	"planned_cbm": "total_planned_cbm",
+	"net_weight": "total_net_weight",
+	"gross_weight": "total_gross_weight",
+	"total_consumption": "total_consumption",
+}
+
+
+def _read_order_sheet_user_settings(parent_doctype: str) -> dict:
+	"""Load combined User Settings for Order Sheet.
+
+	Frappe saves GridView (Configure Columns) to Redis via `update_user_settings` immediately,
+	and persists `__UserSettings` later via async `sync_user_settings`. Reading **only** the
+	database often misses GridView — use cache-first `get_user_settings`, then merge DB if
+	GridView is still empty (cold worker / Redis miss).
+	"""
+	import json
+
+	from frappe.model.utils.user_settings import get_user_settings
+
+	data = json.loads(get_user_settings(parent_doctype) or "{}")
+
+	gv = data.get("GridView")
+	has_grid = isinstance(gv, dict) and gv
+	if has_grid:
+		return data
+
+	row = frappe.db.sql(
+		"""select data from `__UserSettings` where `user`=%s and `doctype`=%s limit 1""",
+		(frappe.session.user, parent_doctype),
+	)
+	if not row or not row[0][0]:
+		return data
+
+	try:
+		db_data = json.loads(row[0][0])
+	except json.JSONDecodeError:
+		return data
+
+	db_gv = db_data.get("GridView")
+	if isinstance(db_gv, dict) and db_gv:
+		data["GridView"] = db_gv
+
+	return data
+
+
+def _normalize_grid_entries(entries):
+	"""Normalise grid entries to a list of dicts that each have a ``fieldname`` key.
+
+	Frappe may store entries as ``{"fieldname": "...", "columns": N}`` objects or, in older/custom
+	builds, as plain fieldname strings. Accepting both avoids silent failures.
+	"""
+	if not isinstance(entries, list):
+		return []
+	out = []
+	for e in entries:
+		if isinstance(e, dict) and e.get("fieldname"):
+			out.append(e)
+		elif isinstance(e, str) and e.strip():
+			out.append({"fieldname": e.strip()})
+	return out
+
+
+def _gridview_entries_for_child(data: dict, child_doctype: str):
+	"""Parse GridView / Configure Columns list for the child table."""
+	import json
+
+	gv = data.get("GridView")
+	if isinstance(gv, str):
+		try:
+			gv = json.loads(gv)
+		except json.JSONDecodeError:
+			gv = {}
+	if not isinstance(gv, dict):
+		gv = {}
+
+	# Primary: child doctype name (same key the desk grid saves under).
+	cols = gv.get(child_doctype)
+	if cols:
+		return _normalize_grid_entries(cols)
+
+	# Alternate key: parent Table fieldname (legacy / custom builds).
+	cols = gv.get(ORDER_SHEET_CT_GRID_FIELDNAME)
+	if cols:
+		return _normalize_grid_entries(cols)
+
+	# Defensive: scrubbed or alternate spacing.
+	for key, val in gv.items():
+		if key.replace(" ", "") == child_doctype.replace(" ", "") and val:
+			return _normalize_grid_entries(val)
+
+	# Single child grid in settings — use it.
+	if len(gv) == 1:
+		only = next(iter(gv.values()))
+		if only:
+			return _normalize_grid_entries(only)
+
+	return []
+
+
+def get_order_sheet_ct_print_columns(doc=None, parent_doctype="Order Sheet"):
+	"""Return Order Sheet CT fields matching the user's Configure Columns selection.
+
+	Priority:
+	1) Live GridView from UserSettings (reflects the current Configure Columns state without
+	   requiring a doc save — most up-to-date during both screen print and PDF generation).
+	2) ``order_sheet_print_column_order`` saved on the document (reliable fallback when the
+	   PDF worker has no session cache, e.g. scheduled/background jobs).
+	3) ORDER_SHEET_CT_FALLBACK_FIELDS (hardcoded default).
+	"""
+	import json
+
+	meta = frappe.get_meta(ORDER_SHEET_CT_DOCTYPE)
+	out = []
+
+	# 1. Live GridView settings — always try first so unsaved column changes are reflected.
+	data = _read_order_sheet_user_settings(parent_doctype)
+	grid = _gridview_entries_for_child(data, ORDER_SHEET_CT_DOCTYPE)
+
+	for g in grid:
+		fn = g.get("fieldname")
+		if not fn:
+			continue
+		df = meta.get_field(fn)
+		if df and df.fieldtype not in SKIP_PRINT_FIELD_TYPES and not getattr(df, "hidden", 0):
+			out.append(df.as_dict())
+
+	if out:
+		return out
+
+	# 2. Column order persisted to the document on last Save (session-independent).
+	raw_order = doc.get("order_sheet_print_column_order") if doc else None
+	if isinstance(raw_order, str) and raw_order.strip():
+		try:
+			names = json.loads(raw_order)
+		except json.JSONDecodeError:
+			names = []
+		if isinstance(names, list):
+			for fn in names:
+				if not isinstance(fn, str):
+					continue
+				df = meta.get_field(fn.strip())
+				if df and df.fieldtype not in SKIP_PRINT_FIELD_TYPES and not getattr(df, "hidden", 0):
+					out.append(df.as_dict())
+			if out:
+				return out
+
+	# 3. Hardcoded fallback — all meaningful fields in a sensible default order.
+	for fn in ORDER_SHEET_CT_FALLBACK_FIELDS:
+		df = meta.get_field(fn)
+		if df and df.fieldtype not in SKIP_PRINT_FIELD_TYPES:
+			out.append(df.as_dict())
+
+	return out
 
 
 def find_or_create_design(design_value):

@@ -21,6 +21,8 @@ frappe.ui.form.on("Order Sheet", {
 		// Show download/upload buttons on refresh
 		frm.trigger("show_bulk_edit_buttons");
 
+		compute_order_sheet_header_totals(frm);
+
 		// Add button to fetch items from Sales Order
 		if (frm.doc.docstatus === 0) {
 			frm.add_custom_button(
@@ -48,12 +50,43 @@ frappe.ui.form.on("Order Sheet", {
 		}
 	},
 
+	before_save(frm) {
+		// Persist Configure Columns on the document for PDF/print (server has no grid UI).
+		// Prefer live grid.user_defined_columns (same source as the visible table); then user settings.
+		const child_dt = "Order Sheet CT";
+		let names = [];
+		const grid = frm.fields_dict.order_sheet_ct?.grid;
+		if (grid?.user_defined_columns?.length) {
+			names = grid.user_defined_columns.map((df) => df.fieldname).filter(Boolean);
+		}
+		if (!names.length) {
+			const gv = frappe.get_user_settings("Order Sheet", "GridView") || {};
+			const cols = gv[child_dt];
+			if (cols?.length) {
+				names = cols.map((r) => r.fieldname).filter(Boolean);
+			}
+		}
+		if (!names.length && frappe.model.user_settings?.["Order Sheet"]?.GridView?.[child_dt]) {
+			const cols = frappe.model.user_settings["Order Sheet"].GridView[child_dt];
+			names = cols.map((r) => r.fieldname).filter(Boolean);
+		}
+		if (names.length) {
+			// Direct assignment so the value is always in the doc payload (set_value can be async).
+			frm.doc.order_sheet_print_column_order = JSON.stringify(names);
+		}
+	},
+
 	recalculate_total_cartoons(frm) {
 		if (!frm.doc.order_sheet_ct || !frm.doc.order_sheet_ct.length) return;
 		(frm.doc.order_sheet_ct || []).forEach((row) => {
 			if (!row.name) return;
 			update_total_cartoons_for_row(row.doctype || "Order Sheet CT", row.name);
 		});
+		compute_order_sheet_header_totals(frm);
+	},
+
+	order_sheet_ct(frm) {
+		compute_order_sheet_header_totals(frm);
 	},
 
 	sales_order(frm) {
@@ -204,6 +237,7 @@ frappe.ui.form.on("Order Sheet", {
 				}
 			});
 			frm.refresh_field("order_sheet_ct");
+			compute_order_sheet_header_totals(frm);
 			frappe.show_alert({
 				message: __("{0} items fetched from Sales Order", [items.length]),
 				indicator: "green"
@@ -287,6 +321,50 @@ frappe.ui.form.on("Order Sheet", {
 	}
 });
 
+/** Sum child-table logistics columns into parent summary fields (matches server validate). */
+function compute_order_sheet_header_totals(frm) {
+	if (!frm || !frm.doc || frm.doc.order_sheet_ct == null) return;
+	let orderQty = 0;
+	let plannedQty = 0;
+	let totalCart = 0;
+	let totalPlannedCtn = 0;
+	let qtyPerCtn = 0;
+	let consumption = 0;
+	let orderCbm = 0;
+	let plannedCbm = 0;
+	let netW = 0;
+	let grossW = 0;
+	for (const row of frm.doc.order_sheet_ct || []) {
+		orderQty += frappe.utils.flt(row.order_qty);
+		plannedQty += frappe.utils.flt(row.planned_qty);
+		totalCart += frappe.utils.flt(row.total_carton);
+		totalPlannedCtn += frappe.utils.flt(row.total_planned_ctn);
+		qtyPerCtn += frappe.utils.flt(row.qty_ctn);
+		consumption += frappe.utils.flt(row.total_consumption);
+		orderCbm += frappe.utils.flt(row.order_cbm);
+		plannedCbm += frappe.utils.flt(row.planned_cbm);
+		netW += frappe.utils.flt(row.net_weight);
+		grossW += frappe.utils.flt(row.gross_weight);
+	}
+	const legacyQty = plannedQty > 0 ? plannedQty : orderQty;
+	const pairs = [
+		["total_order_qty", orderQty],
+		["total_planned_qty", plannedQty],
+		["total_quantity", legacyQty],
+		["total_cartoon", totalCart],
+		["total_planned_cartoon", totalPlannedCtn],
+		["total_quantity_per_cartoon", qtyPerCtn],
+		["total_consumption", consumption],
+		["total_order_cbm", orderCbm],
+		["total_planned_cbm", plannedCbm],
+		["total_net_weight", netW],
+		["total_gross_weight", grossW]
+	];
+	for (const [fn, val] of pairs) {
+		frappe.model.set_value(frm.doctype, frm.doc.name, fn, val);
+	}
+}
+
 function update_total_cartoons_for_row(cdt, cdn) {
 	const row = locals[cdt] && locals[cdt][cdn];
 	if (!row) return;
@@ -311,6 +389,10 @@ function update_total_cartoons_for_row(cdt, cdn) {
 	frappe.model.set_value(cdt, cdn, "planned_cbm", plannedCbm);
 	frappe.model.set_value(cdt, cdn, "net_weight", netWeight);
 	frappe.model.set_value(cdt, cdn, "gross_weight", grossWeight);
+
+	if (cur_frm && cur_frm.doctype === "Order Sheet") {
+		compute_order_sheet_header_totals(cur_frm);
+	}
 }
 
 function parse_carton_dimensions(dimensionText) {

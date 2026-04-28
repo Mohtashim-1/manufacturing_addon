@@ -106,6 +106,118 @@
 			.contractor-performance-page table.cp-table tbody tr:nth-child(even) { background: #f8fafc; }
 			.contractor-performance-page .cp-item-cell { max-width: 340px; word-break: break-word; color: #1e293b; }
 			.contractor-performance-page .cp-item-sub { font-size: 11px; color: #64748b; margin-top: 4px; line-height: 1.3; }
+			.contractor-performance-page .cp-matrix-intro {
+				padding: 10px 14px;
+				background: #f8fafc;
+				border: 1px solid #e2e8f0;
+				border-radius: 8px;
+				border-left: 4px solid #64748b;
+				margin-bottom: 1rem !important;
+			}
+			.contractor-performance-page .cp-matrix-groups {
+				display: flex;
+				flex-direction: column;
+				gap: 22px;
+			}
+			.contractor-performance-page .cp-so-block {
+				border-radius: 10px;
+				overflow: hidden;
+				background: #fff;
+				border: 1px solid #cbd5e1;
+				box-shadow:
+					0 1px 2px rgba(15, 23, 42, 0.06),
+					0 4px 12px rgba(15, 23, 42, 0.06);
+			}
+			.contractor-performance-page .cp-so-block.cp-so-block--sales {
+				border-left: 4px solid #2563eb;
+			}
+			.contractor-performance-page .cp-so-block.cp-so-block--other {
+				border-left: 4px solid #d97706;
+				box-shadow:
+					0 1px 2px rgba(217, 119, 6, 0.12),
+					0 4px 12px rgba(15, 23, 42, 0.06);
+			}
+			.contractor-performance-page .cp-so-head {
+				padding: 14px 16px;
+				border-bottom: 1px solid #e2e8f0;
+				background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+			}
+			.contractor-performance-page .cp-so-head.cp-so-head--warn {
+				background: linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%);
+			}
+			.contractor-performance-page .cp-so-head-label {
+				font-size: 10px;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+				color: #64748b;
+				font-weight: 700;
+				margin-bottom: 6px;
+			}
+			.contractor-performance-page .cp-so-head-title {
+				font-size: 15px;
+				font-weight: 600;
+				color: #0f172a;
+				line-height: 1.45;
+				word-break: break-word;
+			}
+			.contractor-performance-page .cp-so-head-code {
+				font-size: 12px;
+				color: #475569;
+				font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+				margin-top: 8px;
+				padding: 6px 10px;
+				background: rgba(241, 245, 249, 0.9);
+				border-radius: 6px;
+				display: inline-block;
+				max-width: 100%;
+				word-break: break-all;
+			}
+			.contractor-performance-page .cp-so-table-wrap {
+				border-top: none;
+			}
+			.contractor-performance-page .cp-so-table-wrap table.cp-table.cp-table-grouped {
+				font-size: 13px;
+			}
+			.contractor-performance-page .cp-so-table-wrap table.cp-table.cp-table-grouped thead th {
+				background: #e2e8f0;
+				color: #1e293b;
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+				font-weight: 700;
+				padding: 11px 14px;
+				border-color: #cbd5e1 !important;
+				border-bottom: 2px solid #94a3b8 !important;
+				vertical-align: middle;
+			}
+			.contractor-performance-page .cp-so-table-wrap table.cp-table.cp-table-grouped thead th:first-child {
+				min-width: 140px;
+			}
+			.contractor-performance-page .cp-so-table-wrap table.cp-table.cp-table-grouped tbody td {
+				padding: 12px 14px;
+				border-color: #e8edf3 !important;
+			}
+			.contractor-performance-page .cp-so-table-wrap table.cp-table.cp-table-grouped tbody tr:nth-child(even) {
+				background: #fafbfc;
+			}
+			.contractor-performance-page .cp-so-table-wrap table.cp-table.cp-table-grouped tbody td.cp-stage-cell {
+				background: #f4f7fb;
+				border-left: 1px solid #e8edf3;
+				vertical-align: middle !important;
+			}
+			.contractor-performance-page .cp-so-table-wrap table.cp-table.cp-table-grouped tbody tr:nth-child(even) td.cp-stage-cell {
+				background: #eef2f8;
+			}
+			.contractor-performance-page .cp-component-compact .cp-component-name {
+				font-weight: 600;
+				font-size: 14px;
+				color: #0f172a;
+				line-height: 1.35;
+			}
+			.contractor-performance-page .tab-content.cp-tab-panel {
+				box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+				border-color: #e2e8f0 !important;
+			}
 		`;
 		$("<style/>", { id: "cp-dashboard-styles", text: css }).appendTo("head");
 	}
@@ -146,7 +258,7 @@
 						<button type="button" class="nav-link cp-tab-btn" data-cp-tab="cp-tab-packing">${__("Packing detail")}</button>
 					</li>
 				</ul>
-				<div class="tab-content bg-white border border-top-0 rounded-bottom p-3 mb-3" style="border-color:#e2e8f0!important;">
+				<div class="tab-content bg-white border border-top-0 rounded-bottom p-3 mb-3 cp-tab-panel" style="border-color:#e2e8f0!important;">
 					<div class="tab-pane fade show active" id="cp-tab-matrix"></div>
 					<div class="tab-pane fade" id="cp-tab-cutting"></div>
 					<div class="tab-pane fade" id="cp-tab-stitching"></div>
@@ -305,6 +417,20 @@
 			return html;
 		}
 
+		/** Grouped matrix: SO line is in card header — keep component column minimal. */
+		function cpMatrixComponentCellGrouped(m) {
+			const title = m.component_title || m.item_label || m.item_key || "";
+			let html = `<div class="cp-component-compact">`;
+			html += `<div class="cp-component-name">${frappe.utils.escape_html(title)}</div>`;
+			if (m.is_combo) {
+				html += `<span class="badge badge-secondary border-0 mt-2" style="font-size:10px;background:#e2e8f0;color:#475569;">${__(
+					"Combo bundle"
+				)}</span>`;
+			}
+			html += `</div>`;
+			return html;
+		}
+
 		function fmtContractors(list) {
 			if (!list || !list.length) {
 				return `<span class="cp-empty-cell">—</span>`;
@@ -362,43 +488,45 @@
 		}
 
 		function renderMatrixGrouped($container, groups) {
-			const intro = `<p class="text-muted small mb-3">${__(
+			const intro = `<p class="text-muted small mb-3 cp-matrix-intro">${__(
 				"Grouped by sales order line. Each row is one component (bundle line or single SKU). Contractors and quantities from submitted reports."
 			)}</p>`;
 
 			const blocks = groups
 				.map((g) => {
+					const blockClass = g.so_item ? "cp-so-block cp-so-block--sales" : "cp-so-block cp-so-block--other";
 					const soHead = g.so_item
-						? `<div class="cp-so-head px-3 py-2 border-bottom" style="background:#f8fafc;">
-							<div class="small text-muted text-uppercase">${__("Sales order line")}</div>
-							<div class="fw-medium">${frappe.utils.escape_html(g.so_item_label || "")}</div>
-							<div class="cp-item-sub text-monospace">${frappe.utils.escape_html(g.so_item)}</div>
+						? `<div class="cp-so-head">
+							<div class="cp-so-head-label">${__("Sales order line")}</div>
+							<div class="cp-so-head-title">${frappe.utils.escape_html(g.so_item_label || "")}</div>
+							<div class="cp-so-head-code">${frappe.utils.escape_html(g.so_item)}</div>
 						</div>`
-						: `<div class="cp-so-head px-3 py-2 border-bottom" style="background:#fffbeb;">
-							<div class="fw-medium">${frappe.utils.escape_html(g.so_item_label || "")}</div>
+						: `<div class="cp-so-head cp-so-head--warn">
+							<div class="cp-so-head-label">${__("Group")}</div>
+							<div class="cp-so-head-title">${frappe.utils.escape_html(g.so_item_label || "")}</div>
 						</div>`;
 
 					const th = `<thead><tr>
-						<th>${__("Component")}</th>
-						<th>${__("Cutting")}</th>
-						<th>${__("Stitching")}</th>
-						<th>${__("Packing")}</th>
+						<th scope="col">${__("Component")}</th>
+						<th scope="col">${__("Cutting")}</th>
+						<th scope="col">${__("Stitching")}</th>
+						<th scope="col">${__("Packing")}</th>
 					</tr></thead>`;
 
 					const tr = (g.lines || [])
 						.map(
 							(m) => `<tr>
-							<td class="cp-item-cell">${cpMatrixComponentCell(m)}</td>
-							<td>${fmtContractors(m.cutting)}</td>
-							<td>${fmtContractors(m.stitching)}</td>
-							<td>${fmtContractors(m.packing)}</td>
+							<td class="cp-item-cell">${cpMatrixComponentCellGrouped(m)}</td>
+							<td class="cp-stage-cell">${fmtContractors(m.cutting)}</td>
+							<td class="cp-stage-cell">${fmtContractors(m.stitching)}</td>
+							<td class="cp-stage-cell">${fmtContractors(m.packing)}</td>
 						</tr>`
 						)
 						.join("");
 
-					return `<div class="cp-so-block mb-4 rounded border overflow-hidden" style="border-color:#e2e8f0!important;">
+					return `<div class="${blockClass}">
 						${soHead}
-						<div class="table-responsive"><table class="table table-hover table-sm mb-0 cp-table">${th}<tbody>${tr}</tbody></table></div>
+						<div class="table-responsive cp-so-table-wrap"><table class="table table-hover table-sm mb-0 cp-table cp-table-grouped">${th}<tbody>${tr}</tbody></table></div>
 					</div>`;
 				})
 				.join("");

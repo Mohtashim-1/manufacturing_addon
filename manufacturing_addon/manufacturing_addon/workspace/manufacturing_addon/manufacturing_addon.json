@@ -155,7 +155,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Report",
-   "link_count": 5,
+   "link_count": 6,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -209,6 +209,16 @@
    "label": "Total Daily Production",
    "link_count": 0,
    "link_to": "production-progress",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Contractor Performance",
+   "link_count": 0,
+   "link_to": "contractor-performance",
    "link_type": "Page",
    "onboard": 0,
    "type": "Link"

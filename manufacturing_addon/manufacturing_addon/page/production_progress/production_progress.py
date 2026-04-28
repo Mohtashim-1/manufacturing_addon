@@ -364,15 +364,14 @@ def _send_production_progress_email(from_date=None, to_date=None):
 @frappe.whitelist()
 def get_production_progress_data(from_date=None, to_date=None, item=None):
 	from_date, to_date = _validate_dates(from_date, to_date)
-	item = (item or "").strip()
-	stage_rows = _get_stage_rows(from_date, to_date, item=item or None)
-	rows = _build_rows(stage_rows, item=item or None)
+	# Combo item filter removed from UI; optional legacy `item` arg is ignored.
+	stage_rows = _get_stage_rows(from_date, to_date, item=None)
+	rows = _build_rows(stage_rows, item=None)
 	sales_order_rows = _build_sales_order_rows(rows)
 	item_rows = _build_item_rows(rows)
 	return {
 		"from_date": from_date,
 		"to_date": to_date,
-		"item": item,
 		"summary": _build_summary(rows),
 		"stage_rows": stage_rows,
 		"rows": rows,

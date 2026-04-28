@@ -33,7 +33,7 @@ function render_layout(wrapper, state) {
 				<div class="pp-chart" style="min-height: 300px;"></div>
 			</div>
 			<div class="pp-detail-card" style="border:1px solid #e5e7eb; border-radius:8px; padding:10px; background:#fff;">
-				<h4 style="margin:0 0 8px 0; font-size:14px;">Sales Order-wise Progress</h4>
+				<h4 style="margin:0 0 8px 0; font-size:14px;">${__("Sales Order-wise Progress")}</h4>
 				<div class="pp-table-wrap" style="overflow:auto;"></div>
 			</div>
 		</div>
@@ -73,23 +73,18 @@ function setup_filters(state) {
 		},
 		render_input: true,
 	});
-	state.controls.item = frappe.ui.form.make_control({
-		parent: state.$filters,
-		df: {
-			label: __("Combo Item"),
-			fieldname: "item",
-			fieldtype: "Link",
-			options: "Item",
-		},
-		render_input: true,
-	});
-
 	state.controls.from_date.set_value(today);
 	state.controls.to_date.set_value(today);
 
 	$(state.controls.from_date.$input).on("change", () => refresh_data(state));
 	$(state.controls.to_date.$input).on("change", () => refresh_data(state));
-	$(state.controls.item.$input).on("change", () => refresh_data(state));
+
+	const apply_item_filter = frappe.utils.debounce(function () {
+		const $input = $(this);
+		const $content = $input.closest(".pp-so-detail-content");
+		apply_item_filter_to_panel($content, $input.val());
+	}, 200);
+	state.$body.on("input", ".pp-item-search", apply_item_filter);
 }
 
 function setup_actions(state) {
@@ -127,21 +122,19 @@ function setup_actions(state) {
 function refresh_data(state) {
 	const from_date = state.controls.from_date.get_value();
 	const to_date = state.controls.to_date.get_value();
-	const item = state.controls.item.get_value();
 	if (!from_date || !to_date) return;
 
 	frappe.call({
 		method: "manufacturing_addon.manufacturing_addon.page.production_progress.production_progress.get_production_progress_data",
-		args: { from_date, to_date, item },
+		args: { from_date, to_date },
 		freeze: true,
 		freeze_message: __("Loading production progress..."),
 		callback: async (r) => {
 			const data = r.message || {};
 			const summary = data.summary || {};
 			render_summary(state, summary);
-			render_table(state, data.sales_order_rows || [], data.rows || [], data.stage_rows || [], data.item || "");
+			render_table(state, data.sales_order_rows || [], data.rows || [], data.stage_rows || [], "");
 			const meta_parts = [`${data.from_date || from_date} to ${data.to_date || to_date}`];
-			if (data.item) meta_parts.push(`${__("Combo Item")}: ${data.item}`);
 			state.$meta.text(meta_parts.join(" | "));
 			await render_chart(state, summary);
 		},
@@ -219,6 +212,43 @@ function load_apexcharts() {
 	});
 
 	return window.__productionApexPromise;
+}
+
+/** Filter item rows inside an expanded sales order (Cutting / Stitching / Packing lists). */
+function apply_item_filter_to_panel($content, raw_term) {
+	if (!$content || !$content.length) return;
+	const t = cstr(raw_term).trim().toLowerCase();
+	$content.find(".pp-stage-panel").each(function () {
+		const $panel = $(this);
+		const $itemRows = $panel.find("tbody tr.pp-item-row");
+		const $stageEmpty = $panel.find("tbody tr.pp-item-stage-empty");
+		let visible = 0;
+		$itemRows.each(function () {
+			const show = !t || $(this).text().toLowerCase().includes(t);
+			$(this).toggle(show);
+			if (show) visible++;
+		});
+		if (t) {
+			$stageEmpty.hide();
+		} else {
+			$stageEmpty.show();
+		}
+		let $noMatch = $panel.find("tr.pp-item-filter-nomatch");
+		if (!$noMatch.length) {
+			$noMatch = $(
+				`<tr class="pp-item-filter-nomatch" style="display:none;"><td colspan="2" style="padding:8px;color:#6b7280;font-style:italic;">${__(
+					"No items match your search."
+				)}</td></tr>`
+			);
+			$panel.find("tbody").append($noMatch);
+		}
+		const hasDataRows = $itemRows.length > 0;
+		if (!t) {
+			$noMatch.hide();
+		} else {
+			$noMatch.toggle(hasDataRows && visible === 0);
+		}
+	});
 }
 
 function render_summary(state, summary) {
@@ -377,7 +407,7 @@ function build_so_detail_html(items, combo_map, row_index, selected_combo_item =
 						? fmtNum(combo_items[0].qty)
 						: fmtNum(primary_combos.reduce((s, ci) => s + num(ci.qty), 0));
 					rows_html += `
-						<tr>
+						<tr class="pp-item-row">
 							<td style="padding:4px 8px;">${build_inline_combo_html(combo_items, r)}</td>
 							<td style="padding:4px 8px; text-align:right;">${summary_qty}</td>
 						</tr>`;
@@ -385,13 +415,13 @@ function build_so_detail_html(items, combo_map, row_index, selected_combo_item =
 				}
 
 				rows_html += `
-					<tr>
+					<tr class="pp-item-row">
 						<td style="padding:4px 8px;">${build_item_label(r)}</td>
 						<td style="padding:4px 8px; text-align:right;">${fmtNum(r[stage.field])}</td>
 					</tr>`;
 			});
 		} else {
-			rows_html = `<tr><td colspan="2" style="padding:8px; color:#6b7280;">No ${stage.label.toLowerCase()} records found.</td></tr>`;
+			rows_html = `<tr class="pp-item-stage-empty"><td colspan="2" style="padding:8px; color:#6b7280;">No ${stage.label.toLowerCase()} records found.</td></tr>`;
 		}
 
 		panels_html += `
@@ -410,7 +440,14 @@ function build_so_detail_html(items, combo_map, row_index, selected_combo_item =
 
 	return `
 		<div class="pp-so-detail-content" style="padding:10px 14px;">
-			<div style="display:flex; gap:2px; margin-bottom:0;">${tabs_html}</div>
+			<div style="margin-bottom:12px; padding:10px 12px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px;">
+				<label class="small text-muted d-block mb-1" style="margin:0; font-weight:600;">${__(
+					"Filter items in this sales order"
+				)}</label>
+				<input type="search" class="form-control form-control-sm pp-item-search" autocomplete="off"
+					placeholder="${__("Search item code, name, combo, colour…")}" />
+			</div>
+			<div style="display:flex; gap:2px; margin-bottom:0; flex-wrap:wrap;">${tabs_html}</div>
 			<div style="border:1px solid #e5e7eb; border-top:none; background:#fff;">${panels_html}</div>
 		</div>`;
 }

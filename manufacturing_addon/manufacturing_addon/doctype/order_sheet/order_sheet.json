@@ -44,7 +44,9 @@
   "section_break_di6r",
   "amended_from",
   "dashboard_tab",
-  "dashboard"
+  "dashboard",
+  "contractor_dashbaord_tab",
+  "contractor_dashboard"
  ],
  "fields": [
   {
@@ -141,6 +143,7 @@
    "in_standard_filter": 1,
    "label": "Total Order Qty",
    "non_negative": 1,
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -156,6 +159,7 @@
    "in_standard_filter": 1,
    "label": "Total Planned Qty",
    "non_negative": 1,
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -170,6 +174,7 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Order Carton",
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -184,6 +189,7 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Planned Carton",
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -198,6 +204,7 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Quantity Per Carton",
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -212,6 +219,7 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Consumption",
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -220,6 +228,7 @@
    "hidden": 1,
    "label": "Total Quantity (legacy)",
    "non_negative": 1,
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -234,6 +243,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "label": "Total Order CBM",
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -247,6 +257,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "label": "Total Planned CBM",
+   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -259,7 +270,9 @@
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
-   "label": "Total Net Weight (KG)"
+   "label": "Total Net Weight (KG)",
+   "allow_on_submit": 1,
+   "read_only": 1
   },
   {
    "fieldname": "column_break_logistics_2",
@@ -271,7 +284,9 @@
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
-   "label": "Total Gross Weight (KG)"
+   "label": "Total Gross Weight (KG)",
+   "allow_on_submit": 1,
+   "read_only": 1
   },
   {
    "fieldname": "order_no",
@@ -313,12 +328,22 @@
    "fieldname": "instructions",
    "fieldtype": "Text Editor",
    "label": "Instructions"
+  },
+  {
+   "fieldname": "contractor_dashbaord_tab",
+   "fieldtype": "Tab Break",
+   "label": "Contractor Dashbaord"
+  },
+  {
+   "fieldname": "contractor_dashboard",
+   "fieldtype": "HTML",
+   "label": "Dashboard"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-28 03:53:55.677625",
+ "modified": "2026-04-28 15:01:27.098383",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

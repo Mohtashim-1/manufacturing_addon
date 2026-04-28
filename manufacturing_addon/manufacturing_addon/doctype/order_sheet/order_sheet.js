@@ -1,6 +1,11 @@
 // Copyright (c) 2024, mohtashim and contributors
 // For license information, please see license.txt
 
+function toFloat(value) {
+	const n = parseFloat(value);
+	return Number.isFinite(n) ? n : 0;
+}
+
 frappe.ui.form.on("Order Sheet", {
 	setup(frm) {
 		// Ensure bulk edit is enabled for order_sheet_ct field
@@ -22,6 +27,18 @@ frappe.ui.form.on("Order Sheet", {
 		frm.trigger("show_bulk_edit_buttons");
 
 		compute_order_sheet_header_totals(frm);
+
+		if (frm.doc.docstatus === 1) {
+			frm.add_custom_button(__("Recalculate Totals"), () => {
+				frappe.call({
+					method: "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.recalculate_summary_totals",
+					args: { order_sheet: frm.doc.name },
+					freeze: true,
+					freeze_message: __("Recalculating totals..."),
+					callback: () => frm.reload_doc(),
+				});
+			}, __("Actions"));
+		}
 
 		// ── Intercept GridView column saves so doc field stays current without a full save ──
 		// grid_row.js calls frappe.model.user_settings.save("Order Sheet","GridView",{...}) after
@@ -354,6 +371,9 @@ frappe.ui.form.on("Order Sheet", {
 /** Sum child-table logistics columns into parent summary fields (matches server validate). */
 function compute_order_sheet_header_totals(frm) {
 	if (!frm || !frm.doc || frm.doc.order_sheet_ct == null) return;
+	// Submitted documents cannot be mutated from client-side refresh handlers.
+	// Use the server-side "Recalculate Totals" action for docstatus=1.
+	if (cint(frm.doc.docstatus) === 1) return;
 	let orderQty = 0;
 	let plannedQty = 0;
 	let totalCart = 0;
@@ -365,16 +385,16 @@ function compute_order_sheet_header_totals(frm) {
 	let netW = 0;
 	let grossW = 0;
 	for (const row of frm.doc.order_sheet_ct || []) {
-		orderQty += frappe.utils.flt(row.order_qty);
-		plannedQty += frappe.utils.flt(row.planned_qty);
-		totalCart += frappe.utils.flt(row.total_carton);
-		totalPlannedCtn += frappe.utils.flt(row.total_planned_ctn);
-		qtyPerCtn += frappe.utils.flt(row.qty_ctn);
-		consumption += frappe.utils.flt(row.total_consumption);
-		orderCbm += frappe.utils.flt(row.order_cbm);
-		plannedCbm += frappe.utils.flt(row.planned_cbm);
-		netW += frappe.utils.flt(row.net_weight);
-		grossW += frappe.utils.flt(row.gross_weight);
+		orderQty += toFloat(row.order_qty);
+		plannedQty += toFloat(row.planned_qty);
+		totalCart += toFloat(row.total_carton);
+		totalPlannedCtn += toFloat(row.total_planned_ctn);
+		qtyPerCtn += toFloat(row.qty_ctn);
+		consumption += toFloat(row.total_consumption);
+		orderCbm += toFloat(row.order_cbm);
+		plannedCbm += toFloat(row.planned_cbm);
+		netW += toFloat(row.net_weight);
+		grossW += toFloat(row.gross_weight);
 	}
 	const legacyQty = plannedQty > 0 ? plannedQty : orderQty;
 	const pairs = [
@@ -398,15 +418,15 @@ function compute_order_sheet_header_totals(frm) {
 function update_total_cartoons_for_row(cdt, cdn) {
 	const row = locals[cdt] && locals[cdt][cdn];
 	if (!row) return;
-	const qtyCtn = frappe.utils.flt(row.qty_ctn);
-	const orderQty = frappe.utils.flt(row.order_qty);
-	const plannedQty = frappe.utils.flt(row.planned_qty);
+	const qtyCtn = toFloat(row.qty_ctn);
+	const orderQty = toFloat(row.order_qty);
+	const plannedQty = toFloat(row.planned_qty);
 	const qtyForPlanned = plannedQty || orderQty;
 	const total = qtyCtn > 0 ? (orderQty / qtyCtn) : 0;
 	const totalPlanned = qtyCtn > 0 ? (qtyForPlanned / qtyCtn) : 0;
 	const dimensions = parse_carton_dimensions(row.carton_dimension);
-	const soWeightPerUnit = frappe.utils.flt(row.so_item_weight_per_unit);
-	const cartonWeightPerUnit = frappe.utils.flt(row.carton_weight_per_unit);
+	const soWeightPerUnit = toFloat(row.so_item_weight_per_unit);
+	const cartonWeightPerUnit = toFloat(row.carton_weight_per_unit);
 	const perCartonCbm = dimensions ? (dimensions.length * dimensions.width * dimensions.height) / 1000000 : 0;
 	const orderCbm = perCartonCbm * total;
 	const plannedCbm = perCartonCbm * totalPlanned;
@@ -430,9 +450,9 @@ function parse_carton_dimensions(dimensionText) {
 	const match = String(dimensionText).match(/(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/);
 	if (!match) return null;
 	return {
-		length: frappe.utils.flt(match[1]),
-		width: frappe.utils.flt(match[2]),
-		height: frappe.utils.flt(match[3])
+		length: toFloat(match[1]),
+		width: toFloat(match[2]),
+		height: toFloat(match[3])
 	};
 }
 

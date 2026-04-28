@@ -1244,3 +1244,37 @@ def create_production_plan_from_order_sheet(order_sheet):
 		"name": production_plan.name,
 		"message": f"Production Plan {production_plan.name} created successfully"
 	}
+
+
+@frappe.whitelist()
+def recalculate_summary_totals(order_sheet: str):
+	"""Recompute header summary totals for an Order Sheet (works for submitted docs too)."""
+	if not order_sheet:
+		frappe.throw("Order Sheet is required")
+
+	doc = frappe.get_doc("Order Sheet", order_sheet)
+	if not frappe.has_permission("Order Sheet", "write", doc=doc):
+		frappe.throw("Not permitted")
+
+	# Compute without changing BOM/carton selections.
+	doc.qty_per_cartoon()
+	doc.calculate_logistics_metrics()
+	doc.total()
+	doc.consumption()
+
+	values = {
+		"total_order_qty": flt(doc.total_order_qty),
+		"total_planned_qty": flt(doc.total_planned_qty),
+		"total_quantity": flt(doc.total_quantity),
+		"total_cartoon": flt(doc.total_cartoon),
+		"total_planned_cartoon": flt(doc.total_planned_cartoon),
+		"total_quantity_per_cartoon": flt(doc.total_quantity_per_cartoon),
+		"total_consumption": flt(doc.total_consumption),
+		"total_order_cbm": flt(doc.total_order_cbm),
+		"total_planned_cbm": flt(doc.total_planned_cbm),
+		"total_net_weight": flt(doc.total_net_weight),
+		"total_gross_weight": flt(doc.total_gross_weight),
+	}
+
+	frappe.db.set_value("Order Sheet", doc.name, values, update_modified=False)
+	return {"name": doc.name, "values": values}

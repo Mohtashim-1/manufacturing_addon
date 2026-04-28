@@ -216,7 +216,7 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Contractor Production",
+   "label": "Contractor Production Performance",
    "link_count": 0,
    "link_to": "contractor-performan",
    "link_type": "Page",
@@ -224,7 +224,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-04-28 05:29:54.843124",
+ "modified": "2026-04-28 20:01:03.061978",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Addon",

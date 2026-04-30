@@ -95,6 +95,9 @@ frappe.ui.form.on("Order Sheet", {
 		if (frm.fields_dict.dashboard) {
 			orderSheetDashboard.render(frm);
 		}
+		if (frm.fields_dict.contractor_dashboard) {
+			contractorDashboardInForm.render(frm);
+		}
 	},
 
 	before_save(frm) {
@@ -1095,4 +1098,92 @@ const orderSheetDashboard = {
 	get_status_badge(p) { return this._badge(p); },
 	format_number(n) { return this._fmt_num(n); },
 	format_percentage(n) { return this._fmt_pct(n); },
+};
+
+const contractorDashboardInForm = {
+	render(frm) {
+		const $wrapper = frm.fields_dict.contractor_dashboard.$wrapper;
+		if (!$wrapper) return;
+
+		if (!frm.doc.name || frm.doc.__islocal) {
+			$wrapper.html(`
+				<div style="padding:20px; text-align:center; color:#6c757d;">
+					${__("Save the document to load contractor dashboard.")}
+				</div>
+			`);
+			return;
+		}
+
+		$wrapper.html(`
+			<div style="padding:20px;">
+				<div class="text-muted" style="margin-bottom:8px;">
+					${__("Contractor dashboard for Order Sheet")} <b>${frappe.utils.escape_html(frm.doc.name)}</b>
+				</div>
+				<div class="text-muted">
+					<i class="fa fa-spinner fa-spin"></i> ${__("Loading...")}
+				</div>
+			</div>
+		`);
+
+		frappe.call({
+			method: "manufacturing_addon.manufacturing_addon.page.order_tracking.order_tracking.get_dashboard_data",
+			args: { order_sheet: frm.doc.name },
+			callback: (r) => {
+				const data = r.message || {};
+				const summary = data.summary || {};
+				const details = data.details || [];
+
+				const html = `
+					<div style="padding:16px;">
+						<div class="row" style="margin-bottom:14px;">
+							<div class="col-md-3"><div class="alert alert-info"><b>${__("Order Qty")}</b><br>${this.fmt(summary.total_order_qty)}</div></div>
+							<div class="col-md-3"><div class="alert alert-primary"><b>${__("Cutting %")}</b><br>${this.pct(summary.cutting_progress)}%</div></div>
+							<div class="col-md-3"><div class="alert alert-warning"><b>${__("Stitching %")}</b><br>${this.pct(summary.stitching_progress)}%</div></div>
+							<div class="col-md-3"><div class="alert alert-success"><b>${__("Packing %")}</b><br>${this.pct(summary.packing_progress)}%</div></div>
+						</div>
+						<div class="table-responsive">
+							<table class="table table-bordered table-sm">
+								<thead>
+									<tr>
+										<th>${__("Item")}</th>
+										<th>${__("Bundle Item")}</th>
+										<th class="text-right">${__("Order Qty")}</th>
+										<th class="text-right">${__("Planned Qty")}</th>
+										<th class="text-right">${__("Cutting")}</th>
+										<th class="text-right">${__("Stitching")}</th>
+										<th class="text-right">${__("Packing")}</th>
+									</tr>
+								</thead>
+								<tbody>
+									${details.length ? details.map((d) => `
+										<tr>
+											<td>${frappe.utils.escape_html(d.item || "")}</td>
+											<td>${frappe.utils.escape_html(d.bundle_item || "-")}</td>
+											<td class="text-right">${this.fmt(d.order_qty)}</td>
+											<td class="text-right">${this.fmt(d.planned_qty)}</td>
+											<td class="text-right">${this.fmt(d.cutting_finished)}</td>
+											<td class="text-right">${this.fmt(d.stitching_finished)}</td>
+											<td class="text-right">${this.fmt(d.packing_finished)}</td>
+										</tr>
+									`).join("") : `<tr><td colspan="7" class="text-center text-muted">${__("No data found")}</td></tr>`}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				`;
+				$wrapper.html(html);
+			},
+			error: () => {
+				$wrapper.html(`<div style="padding:20px;color:#dc3545;">${__("Failed to load contractor dashboard.")}</div>`);
+			},
+		});
+	},
+
+	fmt(n) {
+		return (n == null ? 0 : Number(n)).toLocaleString("en-US", { maximumFractionDigits: 2 });
+	},
+
+	pct(n) {
+		return (n == null ? 0 : Number(n)).toFixed(1);
+	},
 };

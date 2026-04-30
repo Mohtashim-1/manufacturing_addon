@@ -24,6 +24,8 @@
   "ready_qty",
   "column_break_ruhf",
   "percentage",
+  "section_break_szox",
+  "stitching_article_summary",
   "section_break_c7ga",
   "amended_from"
  ],
@@ -179,12 +181,22 @@
   {
    "fieldname": "column_break_pcxv",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_szox",
+   "fieldtype": "Section Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "stitching_article_summary",
+   "fieldtype": "HTML",
+   "label": "Stitching Article Summary"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-26 15:52:13.374285",
+ "modified": "2026-04-30 17:07:20.082307",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Stitching Report",

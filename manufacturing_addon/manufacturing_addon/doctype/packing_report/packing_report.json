@@ -26,6 +26,8 @@
   "ready_qty",
   "column_break_ruhf",
   "percentage",
+  "section_break_souu",
+  "packing_article_summary",
   "section_break_c7ga",
   "amended_from"
  ],
@@ -189,12 +191,22 @@
    "in_standard_filter": 1,
    "label": "Customer",
    "options": "Customer"
+  },
+  {
+   "fieldname": "section_break_souu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "packing_article_summary",
+   "fieldtype": "HTML",
+   "label": "Packing Article Summary"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-01 18:07:07.405220",
+ "modified": "2026-04-30 17:08:45.998230",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Packing Report",

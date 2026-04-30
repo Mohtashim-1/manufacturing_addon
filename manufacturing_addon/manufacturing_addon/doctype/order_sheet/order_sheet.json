@@ -94,6 +94,7 @@
    "reqd": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "port_of_destination",
    "fieldtype": "Data",
    "in_filter": 1,
@@ -135,6 +136,7 @@
    "label": "Summary Totals"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_order_qty",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -143,7 +145,6 @@
    "in_standard_filter": 1,
    "label": "Total Order Qty",
    "non_negative": 1,
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -151,6 +152,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_planned_qty",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -159,7 +161,6 @@
    "in_standard_filter": 1,
    "label": "Total Planned Qty",
    "non_negative": 1,
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -167,6 +168,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_cartoon",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -174,7 +176,6 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Order Carton",
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -182,6 +183,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_planned_cartoon",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -189,7 +191,6 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Planned Carton",
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -197,6 +198,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_quantity_per_cartoon",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -204,7 +206,6 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Quantity Per Carton",
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -212,6 +213,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_consumption",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -219,16 +221,15 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Total Consumption",
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_quantity",
    "fieldtype": "Float",
    "hidden": 1,
    "label": "Total Quantity (legacy)",
    "non_negative": 1,
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -237,13 +238,13 @@
    "label": "Logistics Totals"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_order_cbm",
    "fieldtype": "Float",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "label": "Total Order CBM",
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -251,13 +252,13 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_planned_cbm",
    "fieldtype": "Float",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "label": "Total Planned CBM",
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -265,13 +266,13 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_net_weight",
    "fieldtype": "Float",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "label": "Total Net Weight (KG)",
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -279,13 +280,13 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_gross_weight",
    "fieldtype": "Float",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "label": "Total Gross Weight (KG)",
-   "allow_on_submit": 1,
    "read_only": 1
   },
   {
@@ -343,7 +344,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-28 15:01:27.098383",
+ "modified": "2026-04-30 14:14:12.898145",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

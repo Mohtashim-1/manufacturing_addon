@@ -26,6 +26,8 @@
   "ready_qty",
   "column_break_ruhf",
   "percentage",
+  "section_break_lrdd",
+  "article_wise_report",
   "section_break_c7ga",
   "amended_from"
  ],
@@ -192,12 +194,22 @@
   {
    "fieldname": "column_break_jvkk",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_lrdd",
+   "fieldtype": "Section Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "article_wise_report",
+   "fieldtype": "HTML",
+   "label": "Article Wise Report"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-01 18:03:22.092102",
+ "modified": "2026-04-30 15:03:16.733953",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Cutting Report",

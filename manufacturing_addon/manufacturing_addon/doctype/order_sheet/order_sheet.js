@@ -733,6 +733,7 @@ const orderSheetDashboard = {
 	},
 
 	_render_summary($wrapper, s) {
+		const plannedQty = s.total_planned_qty || s.cutting_planned || 0;
 		$wrapper.find(".osd-summary-cards").html(`
 			<div class="col-lg-2 col-md-4 col-sm-6 mb-3">
 				<div class="card text-white" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border:none;border-radius:10px;">
@@ -747,6 +748,14 @@ const orderSheetDashboard = {
 					<div class="card-body"><div class="d-flex justify-content-between align-items-center">
 						<div><h6 style="opacity:.9;">Total Order Qty</h6><h2 style="font-weight:700;">${this._fmt_num(s.total_order_qty || 0)}</h2></div>
 						<div style="font-size:40px;opacity:.5;"><i class="fa fa-cubes"></i></div>
+					</div></div>
+				</div>
+			</div>
+			<div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+				<div class="card text-white" style="background:linear-gradient(135deg,#7f5af0 0%,#2cb67d 100%);border:none;border-radius:10px;">
+					<div class="card-body"><div class="d-flex justify-content-between align-items-center">
+						<div><h6 style="opacity:.9;">Total Planned Qty</h6><h2 style="font-weight:700;">${this._fmt_num(plannedQty)}</h2></div>
+						<div style="font-size:40px;opacity:.5;"><i class="fa fa-list-ol"></i></div>
 					</div></div>
 				</div>
 			</div>

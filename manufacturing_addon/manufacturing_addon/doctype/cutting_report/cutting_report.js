@@ -103,8 +103,6 @@ function render_article_wise_summary(frm) {
                             <th>${__("Article")}</th>
                             <th class="text-right">${__("Order Qty")}</th>
                             <th class="text-right">${__("Planned Qty")}</th>
-                            <th class="text-right">${__("Already Cut")}</th>
-                            <th class="text-right">${__("New Cutting Entry")}</th>
                             <th class="text-right">${__("Total Cutting Till Now")}</th>
                         </tr>
                     </thead>
@@ -116,8 +114,6 @@ function render_article_wise_summary(frm) {
                                 <td>${frappe.utils.escape_html(r.article)}</td>
                                 <td class="text-right">${fmt_num(r.order_qty)}</td>
                                 <td class="text-right">${fmt_num(r.planned_qty)}</td>
-                                <td class="text-right">${fmt_num(r.finished_cutting_qty)}</td>
-                                <td class="text-right">${fmt_num(r.cutting_qty)}</td>
                                 <td class="text-right"><b>${fmt_num(r.total_till_now)}</b></td>
                             </tr>`
                             )
@@ -126,8 +122,6 @@ function render_article_wise_summary(frm) {
                             <td>${__("Grand Total")}</td>
                             <td class="text-right">${fmt_num(grand.order_qty)}</td>
                             <td class="text-right">${fmt_num(grand.planned_qty)}</td>
-                            <td class="text-right">${fmt_num(grand.finished_cutting_qty)}</td>
-                            <td class="text-right">${fmt_num(grand.cutting_qty)}</td>
                             <td class="text-right">${fmt_num(grand.total_till_now)}</td>
                         </tr>
                     </tbody>

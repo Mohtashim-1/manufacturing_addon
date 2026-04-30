@@ -980,16 +980,29 @@ function renderDetailedTable(details) {
 		let displayItem = row.item || '';
 		const rowGroupKey = `${row.order_sheet}||${row.item}`;
 		const hasChildren = isParent && (childCountMap[rowGroupKey] || 0) > 0;
+		const canDrillDown = (childCountMap[rowGroupKey] || 0) > 1;
+
+		// If there is only one article under a parent, keep the view flat (no child drill rows).
+		if (isBundleItem && !canDrillDown) {
+			return;
+		}
 
 		if (isBundleItem) {
 			displayItem = `  └─ ${row.bundle_item || ''}`;
-		} else if (hasChildren) {
+		} else if (hasChildren && canDrillDown) {
 			displayItem = `
 				<span class="os-parent-toggle" data-group="${rowGroupKey}" data-expanded="0" style="cursor: pointer; user-select: none;">
 					<span class="os-toggle-icon">▸</span> ${displayItem}
 				</span>
 			`;
 		}
+
+		const cuttingAuditClass = (!isBundleItem && canDrillDown) ? 'os-audit-cell os-audit-cutting' : '';
+		const stitchingAuditClass = (!isBundleItem && canDrillDown) ? 'os-audit-cell os-audit-stitching' : '';
+		const packingAuditClass = (!isBundleItem && canDrillDown) ? 'os-audit-cell os-audit-packing' : '';
+		const cuttingAuditStyle = (!isBundleItem && canDrillDown) ? 'cursor:pointer; text-decoration:underline;' : '';
+		const stitchingAuditStyle = (!isBundleItem && canDrillDown) ? 'cursor:pointer; text-decoration:underline;' : '';
+		const packingAuditStyle = (!isBundleItem && canDrillDown) ? 'cursor:pointer; text-decoration:underline;' : '';
 		
 		const tr = $(`
 			<tr class="${rowClass} ${isBundleItem ? 'os-child-row' : 'os-parent-row'}"
@@ -1002,66 +1015,68 @@ function renderDetailedTable(details) {
 				<td class="text-right">${isBundleItem ? '' : formatNumber(row.order_qty || 0)}</td>
 				<td class="text-right">${isBundleItem ? '' : formatNumber(row.planned_qty || 0)}</td>
 				<td class="text-right">${formatNumber(row.pcs || 0)}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'} os-audit-cell os-audit-cutting" style="cursor:pointer; text-decoration:underline;">${formatNumber(displayCuttingFinished)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'} ${cuttingAuditClass}" style="${cuttingAuditStyle}">${formatNumber(displayCuttingFinished)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatPercentage(cuttingPlannedPercent)}%</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-info text-white'}">${formatPercentage(cuttingQtyPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-info text-white'}">${cuttingStatus}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'} os-audit-cell os-audit-stitching" style="cursor:pointer; text-decoration:underline;">${formatNumber(displayStitchingFinished)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'} ${stitchingAuditClass}" style="${stitchingAuditStyle}">${formatNumber(displayStitchingFinished)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingPlannedPercent)}%</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-warning text-white'}">${formatPercentage(stitchingQtyPercent)}%</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-warning text-white'}">${stitchingStatus}</td>
-				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'} ${isBundleItem ? '' : 'os-audit-cell os-audit-packing'}" style="${isBundleItem ? '' : 'cursor:pointer; text-decoration:underline;'}">${isBundleItem ? '-' : formatNumber(row.packing_finished || 0)}</td>
+				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'} ${packingAuditClass}" style="${packingAuditStyle}">${isBundleItem ? '-' : formatNumber(row.packing_finished || 0)}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatPercentage(packingPlannedPercent) + '%'}</td>
 				<td class="text-right ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : formatPercentage(packingQtyPercent) + '%'}</td>
 				<td class="text-center ${isBundleItem ? '' : 'bg-success text-white'}">${isBundleItem ? '-' : packingStatus}</td>
 			</tr>
 		`);
 
-		tr.find('.os-audit-cutting').data('audit', {
-			stage: 'Cutting',
-			order_sheet: row.order_sheet || '',
-			group_item: row.item || '',
-			bundle_item: row.bundle_item || '',
-			item: row.bundle_item || row.item || '',
-			order_qty: orderQty || 0,
-			planned_qty: cuttingPlannedQty || 0,
-			total_qty: displayCuttingFinished || 0,
-			base_qty: cuttingBaseQty || 0,
-			qty_percent: cuttingQtyPercent || 0,
-			planned_percent: cuttingPlannedPercent || 0,
-			pcs: rowPcs || 0,
-			is_bundle_item: !!isBundleItem,
-		});
-		tr.find('.os-audit-stitching').data('audit', {
-			stage: 'Stitching',
-			order_sheet: row.order_sheet || '',
-			group_item: row.item || '',
-			bundle_item: row.bundle_item || '',
-			item: row.bundle_item || row.item || '',
-			order_qty: orderQty || 0,
-			planned_qty: stitchingPlannedQty || 0,
-			total_qty: displayStitchingFinished || 0,
-			base_qty: stitchingBaseQty || 0,
-			qty_percent: stitchingQtyPercent || 0,
-			planned_percent: stitchingPlannedPercent || 0,
-			pcs: rowPcs || 0,
-			is_bundle_item: !!isBundleItem,
-		});
-		tr.find('.os-audit-packing').data('audit', {
-			stage: 'Packing',
-			order_sheet: row.order_sheet || '',
-			group_item: row.item || '',
-			bundle_item: row.bundle_item || '',
-			item: row.item || '',
-			order_qty: orderQty || 0,
-			planned_qty: packingPlannedQty || 0,
-			total_qty: row.packing_finished || 0,
-			base_qty: packingBaseQty || 0,
-			qty_percent: packingQtyPercent || 0,
-			planned_percent: packingPlannedPercent || 0,
-			pcs: rowPcs || 0,
-			is_bundle_item: !!isBundleItem,
-		});
+		if (!isBundleItem && canDrillDown) {
+			tr.find('.os-audit-cutting').data('audit', {
+				stage: 'Cutting',
+				order_sheet: row.order_sheet || '',
+				group_item: row.item || '',
+				bundle_item: row.bundle_item || '',
+				item: row.bundle_item || row.item || '',
+				order_qty: orderQty || 0,
+				planned_qty: cuttingPlannedQty || 0,
+				total_qty: displayCuttingFinished || 0,
+				base_qty: cuttingBaseQty || 0,
+				qty_percent: cuttingQtyPercent || 0,
+				planned_percent: cuttingPlannedPercent || 0,
+				pcs: rowPcs || 0,
+				is_bundle_item: !!isBundleItem,
+			});
+			tr.find('.os-audit-stitching').data('audit', {
+				stage: 'Stitching',
+				order_sheet: row.order_sheet || '',
+				group_item: row.item || '',
+				bundle_item: row.bundle_item || '',
+				item: row.bundle_item || row.item || '',
+				order_qty: orderQty || 0,
+				planned_qty: stitchingPlannedQty || 0,
+				total_qty: displayStitchingFinished || 0,
+				base_qty: stitchingBaseQty || 0,
+				qty_percent: stitchingQtyPercent || 0,
+				planned_percent: stitchingPlannedPercent || 0,
+				pcs: rowPcs || 0,
+				is_bundle_item: !!isBundleItem,
+			});
+			tr.find('.os-audit-packing').data('audit', {
+				stage: 'Packing',
+				order_sheet: row.order_sheet || '',
+				group_item: row.item || '',
+				bundle_item: row.bundle_item || '',
+				item: row.item || '',
+				order_qty: orderQty || 0,
+				planned_qty: packingPlannedQty || 0,
+				total_qty: row.packing_finished || 0,
+				base_qty: packingBaseQty || 0,
+				qty_percent: packingQtyPercent || 0,
+				planned_percent: packingPlannedPercent || 0,
+				pcs: rowPcs || 0,
+				is_bundle_item: !!isBundleItem,
+			});
+		}
 		tbody.append(tr);
 	});
 

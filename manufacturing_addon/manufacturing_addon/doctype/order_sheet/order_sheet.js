@@ -849,6 +849,10 @@ const orderSheetDashboard = {
 			const orderQty = isBundle ? (parentQtyMap[gk] || 0) : (row.order_qty || 0);
 			const rowPcs = row.pcs || 1;
 			const hasChildren = isParent && (childCountMap[gk] || 0) > 0;
+			const canDrillDown = (childCountMap[gk] || 0) > 1;
+
+			// Keep flat rows when parent has only one article.
+			if (isBundle && !canDrillDown) return;
 
 			const cFin = row.cutting_finished || 0;
 			const sFin = row.stitching_finished || 0;
@@ -872,7 +876,7 @@ const orderSheetDashboard = {
 			let itemCell = row.item || "";
 			if (isBundle) {
 				itemCell = `  └─ ${row.bundle_item}`;
-			} else if (hasChildren) {
+			} else if (hasChildren && canDrillDown) {
 				itemCell = `<span class="osd-toggle" data-group="${gk}" data-exp="0" style="cursor:pointer;user-select:none;">
 					<span class="osd-icon">▸</span> ${itemCell}
 				</span>`;
@@ -893,6 +897,7 @@ const orderSheetDashboard = {
 			const wc = isBundle ? "" : "bg-warning text-white";
 			const gc = isBundle ? "" : "bg-success text-white";
 			const auditStyle = "cursor:pointer;text-decoration:underline;";
+			const auditEnabled = !isBundle && canDrillDown;
 
 			const $tr = $(`
 				<tr class="${isParent ? "font-weight-bold" : ""} ${isBundle ? "osd-child" : "osd-parent"}"
@@ -905,25 +910,27 @@ const orderSheetDashboard = {
 					<td class="text-right">${isBundle ? "" : this._fmt_num(row.order_qty || 0)}</td>
 					<td class="text-right">${isBundle ? "" : this._fmt_num(row.planned_qty || 0)}</td>
 					<td class="text-right">${this._fmt_num(rowPcs)}</td>
-					<td class="text-right ${ic} osd-audit" style="${ic ? auditStyle : ""}">${this._fmt_num(cFin)}</td>
+					<td class="text-right ${ic} ${auditEnabled ? "osd-audit" : ""}" style="${auditEnabled ? auditStyle : ""}">${this._fmt_num(cFin)}</td>
 					<td class="text-right ${ic}">${this._fmt_pct(cPlanPct)}%</td>
 					<td class="text-right ${ic}">${this._fmt_pct(cQtyPct)}%</td>
 					<td class="text-center ${ic}">${this._badge(cQtyPct)}</td>
-					<td class="text-right ${wc} osd-audit" style="${wc ? auditStyle : ""}">${this._fmt_num(sFin)}</td>
+					<td class="text-right ${wc} ${auditEnabled ? "osd-audit" : ""}" style="${auditEnabled ? auditStyle : ""}">${this._fmt_num(sFin)}</td>
 					<td class="text-right ${wc}">${this._fmt_pct(sPlanPct)}%</td>
 					<td class="text-right ${wc}">${this._fmt_pct(sQtyPct)}%</td>
 					<td class="text-center ${wc}">${this._badge(sQtyPct)}</td>
-					<td class="text-right ${gc} ${isBundle ? "" : "osd-audit"}" style="${gc && !isBundle ? auditStyle : ""}">${isBundle ? "-" : this._fmt_num(pFin)}</td>
+					<td class="text-right ${gc} ${auditEnabled ? "osd-audit" : ""}" style="${auditEnabled ? auditStyle : ""}">${isBundle ? "-" : this._fmt_num(pFin)}</td>
 					<td class="text-right ${gc}">${isBundle ? "-" : this._fmt_pct(pPlanPct) + "%"}</td>
 					<td class="text-right ${gc}">${isBundle ? "-" : this._fmt_pct(pQtyPct) + "%"}</td>
 					<td class="text-center ${gc}">${isBundle ? "-" : this._badge(pQtyPct)}</td>
 				</tr>
 			`);
 
-			// Attach audit data objects
-			$tr.find(".osd-audit").eq(0).data("audit", JSON.parse(auditData("Cutting")));
-			$tr.find(".osd-audit").eq(1).data("audit", JSON.parse(auditData("Stitching")));
-			if (!isBundle) $tr.find(".osd-audit").eq(2).data("audit", JSON.parse(auditData("Packing")));
+			// Attach audit data only when drill-down is allowed (2+ articles).
+			if (auditEnabled) {
+				$tr.find(".osd-audit").eq(0).data("audit", JSON.parse(auditData("Cutting")));
+				$tr.find(".osd-audit").eq(1).data("audit", JSON.parse(auditData("Stitching")));
+				$tr.find(".osd-audit").eq(2).data("audit", JSON.parse(auditData("Packing")));
+			}
 
 			$tbody.append($tr);
 		});

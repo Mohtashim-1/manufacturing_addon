@@ -127,9 +127,9 @@ def _cutting_agg(from_date, to_date, customer=None, so_item=None, combo_item=Non
 			) AS item_key,
 			MAX(crct.so_item) AS so_item,
 			MAX(crct.combo_item) AS combo_item,
-			MAX(crct.article) AS article,
-			MAX(crct.design) AS design,
-			MAX(crct.colour) AS colour,
+			NULLIF(TRIM(crct.article), '') AS article,
+			NULLIF(TRIM(crct.design), '') AS design,
+			NULLIF(TRIM(crct.colour), '') AS colour,
 			cr.supplier AS contractor,
 			SUM(IFNULL(crct.cutting_qty, 0)) AS qty,
 			COUNT(DISTINCT cr.name) AS report_count,
@@ -137,9 +137,9 @@ def _cutting_agg(from_date, to_date, customer=None, so_item=None, combo_item=Non
 		FROM `tabCutting Report` cr
 		INNER JOIN `tabCutting Report CT` crct ON crct.parent = cr.name
 		WHERE {where_clause}
-		GROUP BY item_key, cr.supplier
+		GROUP BY item_key, cr.supplier, article, design, colour
 		HAVING SUM(IFNULL(crct.cutting_qty, 0)) <> 0
-		ORDER BY item_key, cr.supplier
+		ORDER BY item_key, cr.supplier, article, design, colour
 		""",
 		values,
 		as_dict=True,
@@ -179,9 +179,9 @@ def _stitching_agg(from_date, to_date, customer=None, so_item=None, combo_item=N
 			) AS item_key,
 			MAX(srct.so_item) AS so_item,
 			MAX(srct.combo_item) AS combo_item,
-			MAX(srct.article) AS article,
-			MAX(srct.design) AS design,
-			MAX(srct.colour) AS colour,
+			NULLIF(TRIM(srct.article), '') AS article,
+			NULLIF(TRIM(srct.design), '') AS design,
+			NULLIF(TRIM(srct.colour), '') AS colour,
 			sr.supplier AS contractor,
 			SUM(IFNULL(srct.stitching_qty, 0)) AS qty,
 			COUNT(DISTINCT sr.name) AS report_count,
@@ -189,9 +189,9 @@ def _stitching_agg(from_date, to_date, customer=None, so_item=None, combo_item=N
 		FROM `tabStitching Report` sr
 		INNER JOIN `tabStitching Report CT` srct ON srct.parent = sr.name
 		WHERE {where_clause}
-		GROUP BY item_key, sr.supplier
+		GROUP BY item_key, sr.supplier, article, design, colour
 		HAVING SUM(IFNULL(srct.stitching_qty, 0)) <> 0
-		ORDER BY item_key, sr.supplier
+		ORDER BY item_key, sr.supplier, article, design, colour
 		""",
 		values,
 		as_dict=True,
@@ -231,9 +231,9 @@ def _packing_agg(from_date, to_date, customer=None, so_item=None, combo_item=Non
 			) AS item_key,
 			MAX(prct.so_item) AS so_item,
 			MAX(prct.combo_item) AS combo_item,
-			MAX(prct.article) AS article,
-			MAX(prct.design) AS design,
-			MAX(prct.colour) AS colour,
+			NULLIF(TRIM(prct.article), '') AS article,
+			NULLIF(TRIM(prct.design), '') AS design,
+			NULLIF(TRIM(prct.colour), '') AS colour,
 			pr.supplier AS contractor,
 			SUM(IFNULL(prct.packaging_qty, 0)) AS qty,
 			COUNT(DISTINCT pr.name) AS report_count,
@@ -241,9 +241,9 @@ def _packing_agg(from_date, to_date, customer=None, so_item=None, combo_item=Non
 		FROM `tabPacking Report` pr
 		INNER JOIN `tabPacking Report CT` prct ON prct.parent = pr.name
 		WHERE {where_clause}
-		GROUP BY item_key, pr.supplier
+		GROUP BY item_key, pr.supplier, article, design, colour
 		HAVING SUM(IFNULL(prct.packaging_qty, 0)) <> 0
-		ORDER BY item_key, pr.supplier
+		ORDER BY item_key, pr.supplier, article, design, colour
 		""",
 		values,
 		as_dict=True,
@@ -272,6 +272,9 @@ def _rows_for_stage(raw_rows, stage_label: str, item_names: dict):
 				"so_item_label": rich["so_item_label"],
 				"combo_item_label": rich["combo_item_label"],
 				"is_combo": rich["is_combo"],
+				"article": row.get("article"),
+				"design": row.get("design"),
+				"colour": row.get("colour"),
 				"contractor": row.get("contractor"),
 				"contractor_name": _contractor_display_name(row.get("contractor")),
 				"qty": flt(row.get("qty")),
@@ -280,6 +283,20 @@ def _rows_for_stage(raw_rows, stage_label: str, item_names: dict):
 			}
 		)
 	return out
+
+
+def _merge_stage_contractors(rows: list[dict]) -> list[dict]:
+	merged = {}
+	for row in rows:
+		key = row.get("contractor") or row.get("contractor_name") or ""
+		if key not in merged:
+			merged[key] = {
+				"contractor": row.get("contractor"),
+				"contractor_name": _contractor_display_name(row.get("contractor")),
+				"qty": 0.0,
+			}
+		merged[key]["qty"] += flt(row.get("qty"))
+	return sorted(merged.values(), key=lambda d: (d.get("contractor_name") or d.get("contractor") or "").lower())
 
 
 def _matrix_meta_for_key(item_key, cutting_rows, stitching_rows, packing_rows, item_names: dict):
@@ -315,6 +332,9 @@ def _build_matrix(cutting_rows, stitching_rows, packing_rows, item_names: dict):
 	matrix = []
 	for ik in sorted(all_keys, key=lambda k: labels.get(k, "")):
 		meta = _matrix_meta_for_key(ik, cutting_rows, stitching_rows, packing_rows, item_names)
+		cutting_for_item = [r for r in cutting_rows if r.get("item_key") == ik]
+		stitching_for_item = [r for r in stitching_rows if r.get("item_key") == ik]
+		packing_for_item = [r for r in packing_rows if r.get("item_key") == ik]
 		entry = {
 			"item_key": ik,
 			"item_label": meta["item_label"],
@@ -324,37 +344,10 @@ def _build_matrix(cutting_rows, stitching_rows, packing_rows, item_names: dict):
 			"so_item_label": meta["so_item_label"],
 			"combo_item_label": meta["combo_item_label"],
 			"is_combo": meta["is_combo"],
-			"cutting": [],
-			"stitching": [],
-			"packing": [],
+			"cutting": _merge_stage_contractors(cutting_for_item),
+			"stitching": _merge_stage_contractors(stitching_for_item),
+			"packing": _merge_stage_contractors(packing_for_item),
 		}
-		for r in cutting_rows:
-			if r.get("item_key") == ik:
-				entry["cutting"].append(
-					{
-						"contractor": r.get("contractor"),
-						"contractor_name": _contractor_display_name(r.get("contractor")),
-						"qty": flt(r.get("qty")),
-					}
-				)
-		for r in stitching_rows:
-			if r.get("item_key") == ik:
-				entry["stitching"].append(
-					{
-						"contractor": r.get("contractor"),
-						"contractor_name": _contractor_display_name(r.get("contractor")),
-						"qty": flt(r.get("qty")),
-					}
-				)
-		for r in packing_rows:
-			if r.get("item_key") == ik:
-				entry["packing"].append(
-					{
-						"contractor": r.get("contractor"),
-						"contractor_name": _contractor_display_name(r.get("contractor")),
-						"qty": flt(r.get("qty")),
-					}
-				)
 		matrix.append(entry)
 
 	return matrix

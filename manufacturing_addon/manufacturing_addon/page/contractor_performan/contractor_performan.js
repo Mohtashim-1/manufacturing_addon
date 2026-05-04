@@ -217,6 +217,74 @@
 				box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 				border-color: #e2e8f0 !important;
 			}
+			.contractor-performance-page .cp-drill-toolbar {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				margin-bottom: 14px;
+			}
+			.contractor-performance-page .cp-breadcrumb {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				align-items: center;
+			}
+			.contractor-performance-page .cp-breadcrumb-sep {
+				color: #94a3b8;
+				font-size: 12px;
+			}
+			.contractor-performance-page .cp-drill-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+				gap: 14px;
+			}
+			.contractor-performance-page .cp-drill-card {
+				background: #fff;
+				border: 1px solid #e2e8f0;
+				border-radius: 10px;
+				padding: 14px;
+				box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+			}
+			.contractor-performance-page .cp-drill-card-title {
+				font-size: 14px;
+				font-weight: 600;
+				color: #0f172a;
+				line-height: 1.4;
+				margin-bottom: 8px;
+			}
+			.contractor-performance-page .cp-drill-card-sub {
+				font-size: 12px;
+				color: #64748b;
+				margin-bottom: 12px;
+				line-height: 1.45;
+			}
+			.contractor-performance-page .cp-drill-card-foot {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 10px;
+			}
+			.contractor-performance-page .cp-drill-card-qty {
+				font-size: 16px;
+				font-weight: 700;
+				color: #0f172a;
+			}
+			.contractor-performance-page .cp-article-meta {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				margin-top: 10px;
+			}
+			.contractor-performance-page .cp-article-pill {
+				font-size: 11px;
+				padding: 4px 8px;
+				background: #f8fafc;
+				border: 1px solid #e2e8f0;
+				border-radius: 999px;
+				color: #475569;
+			}
 		`;
 		$("<style/>", { id: "cp-dashboard-styles", text: css }).appendTo("head");
 	}
@@ -245,7 +313,10 @@
 				<p class="text-muted small cp-meta mb-3"></p>
 				<ul class="nav nav-tabs mb-0 cp-tabs" role="tablist">
 					<li class="nav-item">
-						<button type="button" class="nav-link cp-tab-btn active" data-cp-tab="cp-tab-matrix">${__("By item (all stages)")}</button>
+						<button type="button" class="nav-link cp-tab-btn active" data-cp-tab="cp-tab-contractor">${__("By contractor")}</button>
+					</li>
+					<li class="nav-item">
+						<button type="button" class="nav-link cp-tab-btn" data-cp-tab="cp-tab-matrix">${__("By item (all stages)")}</button>
 					</li>
 					<li class="nav-item">
 						<button type="button" class="nav-link cp-tab-btn" data-cp-tab="cp-tab-cutting">${__("Cutting detail")}</button>
@@ -258,7 +329,8 @@
 					</li>
 				</ul>
 				<div class="tab-content bg-white border border-top-0 rounded-bottom p-3 mb-3 cp-tab-panel" style="border-color:#e2e8f0!important;">
-					<div class="tab-pane fade show active" id="cp-tab-matrix"></div>
+					<div class="tab-pane fade show active" id="cp-tab-contractor"></div>
+					<div class="tab-pane fade" id="cp-tab-matrix"></div>
 					<div class="tab-pane fade" id="cp-tab-cutting"></div>
 					<div class="tab-pane fade" id="cp-tab-stitching"></div>
 					<div class="tab-pane fade" id="cp-tab-packing"></div>
@@ -357,6 +429,7 @@
 		});
 
 		const $meta = $main.find(".cp-meta");
+		const $contractor = $main.find("#cp-tab-contractor");
 		const $matrix = $main.find("#cp-tab-matrix");
 		const $cut = $main.find("#cp-tab-cutting");
 		const $st = $main.find("#cp-tab-stitching");
@@ -429,6 +502,15 @@
 			return html;
 		}
 
+		function articleLabel(row) {
+			const parts = [row.article, row.design, row.colour].filter((v) => v && String(v).trim());
+			return parts.length ? parts.join(" / ") : __("No article");
+		}
+
+		function itemDisplayLabel(row) {
+			return row.item_label || row.combo_item_label || row.so_item_label || row.item_key || __("Unknown item");
+		}
+
 		function fmtContractors(list) {
 			if (!list || !list.length) {
 				return `<span class="cp-empty-cell">—</span>`;
@@ -451,6 +533,7 @@
 			const th = `
 				<thead><tr>
 					<th>${__("Item")}</th>
+					<th>${__("Article")}</th>
 					<th>${__("SO item")}</th>
 					<th>${__("Combo item")}</th>
 					<th>${__("Contractor")}</th>
@@ -471,6 +554,7 @@
 					const cname = frappe.utils.escape_html(r.contractor_name || r.contractor || "");
 					return `<tr>
 					<td class="cp-item-cell">${cpDetailItemCell(r)}</td>
+					<td class="small">${frappe.utils.escape_html(articleLabel(r))}</td>
 					<td class="small">${cpRefCell(r.so_item_label, r.so_item)}</td>
 					<td class="small">${cpRefCell(r.combo_item_label, r.combo_item)}</td>
 					<td><div class="cp-chip-wrap"><span class="cp-chip"><span class="cp-chip-name">${cname}</span></span></div></td>
@@ -483,6 +567,217 @@
 			$container.html(
 				`<div class="table-responsive rounded border" style="border-color:#e2e8f0!important;"><table class="table table-hover table-sm mb-0 cp-table">${th}<tbody>${tr}</tbody></table></div>`
 			);
+		}
+
+		function groupAndSort(rows, keyFn, titleFn, qtyFn, extraFn) {
+			const buckets = new Map();
+			(rows || []).forEach((row) => {
+				const key = keyFn(row);
+				if (!key) return;
+				if (!buckets.has(key)) {
+					buckets.set(key, {
+						key,
+						title: titleFn(row),
+						qty: 0,
+						rows: [],
+						extra: extraFn ? extraFn(row) : "",
+					});
+				}
+				const bucket = buckets.get(key);
+				bucket.qty += qtyFn(row);
+				bucket.rows.push(row);
+			});
+			return Array.from(buckets.values()).sort((a, b) => {
+				if (b.qty !== a.qty) return b.qty - a.qty;
+				return String(a.title || "").localeCompare(String(b.title || ""));
+			});
+		}
+
+		function drillCard(entry, nextLevelLabel) {
+			const extra = entry.extra ? `<div class="cp-drill-card-sub">${frappe.utils.escape_html(entry.extra)}</div>` : "";
+			const buttonHtml = nextLevelLabel
+				? `<button type="button" class="btn btn-sm btn-light border cp-drill-next">${frappe.utils.escape_html(nextLevelLabel)}</button>`
+				: "";
+			return `<div class="cp-drill-card" data-key="${frappe.utils.escape_html(entry.key)}">
+				<div class="cp-drill-card-title">${frappe.utils.escape_html(entry.title)}</div>
+				${extra}
+				<div class="cp-drill-card-foot">
+					<div class="cp-drill-card-qty">${fmt_qty(entry.qty)}</div>
+					${buttonHtml}
+				</div>
+			</div>`;
+		}
+
+		function renderContractorDrilldown($container, data) {
+			const rows = []
+				.concat(data.cutting || [])
+				.concat(data.stitching || [])
+				.concat(data.packing || []);
+
+			if (!rows.length) {
+				$container.html(`<p class="text-muted mb-0">${__("No contractor activity in this period.")}</p>`);
+				return;
+			}
+
+			const state = { contractor: null, operation: null, item: null };
+
+			function currentRows() {
+				return rows.filter((row) => {
+					if (state.contractor && row.contractor !== state.contractor) return false;
+					if (state.operation && row.stage !== state.operation) return false;
+					if (state.item && row.item_key !== state.item) return false;
+					return true;
+				});
+			}
+
+			function breadcrumbHtml() {
+				const crumbs = [];
+				crumbs.push(`<button type="button" class="btn btn-xs btn-light border cp-crumb" data-level="root">${__("Contractors")}</button>`);
+				if (state.contractor) {
+					const sample = rows.find((r) => r.contractor === state.contractor);
+					crumbs.push(`<span class="cp-breadcrumb-sep">/</span>`);
+					crumbs.push(
+						`<button type="button" class="btn btn-xs btn-light border cp-crumb" data-level="contractor">${frappe.utils.escape_html(
+							(sample && sample.contractor_name) || state.contractor
+						)}</button>`
+					);
+				}
+				if (state.operation) {
+					crumbs.push(`<span class="cp-breadcrumb-sep">/</span>`);
+					crumbs.push(
+						`<button type="button" class="btn btn-xs btn-light border cp-crumb" data-level="operation">${frappe.utils.escape_html(
+							state.operation
+						)}</button>`
+					);
+				}
+				if (state.item) {
+					const sample = currentRows()[0] || rows.find((r) => r.item_key === state.item);
+					crumbs.push(`<span class="cp-breadcrumb-sep">/</span>`);
+					crumbs.push(
+						`<button type="button" class="btn btn-xs btn-light border cp-crumb" data-level="item">${frappe.utils.escape_html(
+							itemDisplayLabel(sample || {})
+						)}</button>`
+					);
+				}
+				return crumbs.join("");
+			}
+
+			function renderLevel() {
+				let cards = [];
+				let heading = "";
+				let level = "contractor";
+
+				if (!state.contractor) {
+					heading = __("Click a contractor to drill into operations.");
+					cards = groupAndSort(
+						rows,
+						(row) => row.contractor || row.contractor_name,
+						(row) => row.contractor_name || row.contractor || __("Unknown contractor"),
+						(row) => flt(row.qty),
+						(row) => __("Operations: Cutting, Stitching, Packing")
+					);
+					level = "contractor";
+				} else if (!state.operation) {
+					heading = __("Click an operation to see item-wise totals.");
+					cards = groupAndSort(
+						currentRows(),
+						(row) => row.stage,
+						(row) => row.stage,
+						(row) => flt(row.qty),
+						null
+					);
+					level = "operation";
+				} else if (!state.item) {
+					heading = __("Click an item to see article-wise totals.");
+					cards = groupAndSort(
+						currentRows(),
+						(row) => row.item_key,
+						(row) => itemDisplayLabel(row),
+						(row) => flt(row.qty),
+						(row) => row.combo_detail || articleLabel(row)
+					);
+					level = "item";
+				} else {
+					heading = __("Article-wise breakdown for the selected item.");
+					cards = groupAndSort(
+						currentRows(),
+						(row) => [row.article || "", row.design || "", row.colour || ""].join("|"),
+						(row) => articleLabel(row),
+						(row) => flt(row.qty),
+						(row) => {
+							const bits = [];
+							if (row.article) bits.push(__("Article: {0}").format(row.article));
+							if (row.design) bits.push(__("Design: {0}").format(row.design));
+							if (row.colour) bits.push(__("Colour: {0}").format(row.colour));
+							return bits.join(" | ");
+						}
+					);
+					level = "article";
+				}
+
+				const toolbar = `<div class="cp-drill-toolbar">
+					<div class="cp-breadcrumb">${breadcrumbHtml()}</div>
+					<div class="text-muted small">${frappe.utils.escape_html(heading)}</div>
+				</div>`;
+
+				if (!cards.length) {
+					$container.html(toolbar + `<p class="text-muted mb-0">${__("No rows found for this selection.")}</p>`);
+					return;
+				}
+
+				const html = cards
+					.map((entry) => {
+						if (level === "article") {
+							const sample = entry.rows[0] || {};
+							const meta = [];
+							if (sample.article) meta.push(`<span class="cp-article-pill">${__("Article")}: ${frappe.utils.escape_html(sample.article)}</span>`);
+							if (sample.design) meta.push(`<span class="cp-article-pill">${__("Design")}: ${frappe.utils.escape_html(sample.design)}</span>`);
+							if (sample.colour) meta.push(`<span class="cp-article-pill">${__("Colour")}: ${frappe.utils.escape_html(sample.colour)}</span>`);
+							return `<div class="cp-drill-card" data-key="${frappe.utils.escape_html(entry.key)}">
+								<div class="cp-drill-card-title">${frappe.utils.escape_html(entry.title)}</div>
+								<div class="cp-drill-card-foot"><div class="cp-drill-card-qty">${fmt_qty(entry.qty)}</div></div>
+								<div class="cp-article-meta">${meta.join("")}</div>
+							</div>`;
+						}
+						const nextLevel = level === "contractor" ? __("View operations") : level === "operation" ? __("View items") : __("View articles");
+						return drillCard(entry, nextLevel);
+					})
+					.join("");
+
+				$container.html(toolbar + `<div class="cp-drill-grid">${html}</div>`);
+
+				$container.find(".cp-crumb").on("click", function () {
+					const target = $(this).data("level");
+					if (target === "root") {
+						state.contractor = null;
+						state.operation = null;
+						state.item = null;
+					} else if (target === "contractor") {
+						state.operation = null;
+						state.item = null;
+					} else if (target === "operation") {
+						state.item = null;
+					}
+					renderLevel();
+				});
+
+				$container.find(".cp-drill-card").on("click", function (e) {
+					if (level === "article") return;
+					if ($(e.target).closest(".cp-drill-next").length || $(e.currentTarget).is(this)) {
+						const key = $(this).data("key");
+						if (level === "contractor") {
+							state.contractor = key;
+						} else if (level === "operation") {
+							state.operation = key;
+						} else if (level === "item") {
+							state.item = key;
+						}
+						renderLevel();
+					}
+				});
+			}
+
+			renderLevel();
 		}
 
 		function renderMatrixGrouped($container, groups) {
@@ -595,6 +890,7 @@
 					$meta.text(
 						``
 					);
+					renderContractorDrilldown($contractor, data);
 					renderMatrix($matrix, data);
 					renderDetailTableGeneric($cut, data.cutting, "cutting-report");
 					renderDetailTableGeneric($st, data.stitching, "stitching-report");

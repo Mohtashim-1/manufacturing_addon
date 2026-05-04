@@ -238,7 +238,7 @@ class StitchingReport(Document):
                                                 "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                                 "pcs": combo_pcs,
                                                 "qty": calculated_qty,  # planned_qty * pcs
-                                                "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                                                "planned_qty": planned_qty * combo_pcs,  # Original planned_qty from Order Sheet CT
                                                 "so_item": so_item,
                                                 "combo_item": combo_item_code,
                                             })
@@ -401,10 +401,9 @@ class StitchingReport(Document):
                 stitching_totals[(row.so_item, row.combo_item or '')] = result[0].total_stitching if result else 0
 
             for row in self.stitching_report_ct:
-                pcs = flt(row.pcs) or 1
                 row.finished_stitched_qty = flt(
                     stitching_totals.get((row.so_item, row.combo_item or ''), 0)
-                ) * pcs
+                )
 
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Finished Stitching Quantity Calculation Failed")

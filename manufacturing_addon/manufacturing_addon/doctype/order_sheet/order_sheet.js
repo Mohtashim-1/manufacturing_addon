@@ -546,9 +546,18 @@ const orderSheetDashboard = {
 				<!-- Filters -->
 				<div style="background:#f8f9fa; padding:20px; border-radius:8px; margin-bottom:25px; box-shadow:0 2px 4px rgba(0,0,0,.1);">
 					<div class="row">
-						<div class="col-md-3"><div id="osd-customer-field"></div></div>
-						<div class="col-md-3"><div id="osd-so-field"></div></div>
-						<div class="col-md-3"><div id="osd-os-field"></div></div>
+						<div class="col-md-3">
+							<label style="font-weight:600;font-size:13px;color:#495057;margin-bottom:5px;">${__("Customer")}</label>
+							<input type="text" class="form-control osd-customer-input" placeholder="${__("Customer")}" />
+						</div>
+						<div class="col-md-3">
+							<label style="font-weight:600;font-size:13px;color:#495057;margin-bottom:5px;">${__("Sales Order")}</label>
+							<input type="text" class="form-control osd-sales-order-input" placeholder="${__("Sales Order")}" />
+						</div>
+						<div class="col-md-3">
+							<label style="font-weight:600;font-size:13px;color:#495057;margin-bottom:5px;">${__("Order Sheet")}</label>
+							<input type="text" class="form-control osd-order-sheet-input" placeholder="${__("Order Sheet")}" />
+						</div>
 						<div class="col-md-3" style="display:flex; align-items:flex-end;">
 							<button class="btn btn-primary btn-block osd-refresh-btn">
 								<i class="fa fa-refresh"></i> Refresh
@@ -617,58 +626,16 @@ const orderSheetDashboard = {
 	},
 
 	_setup_filters(frm, $wrapper) {
-		const self = this;
+		this._customer_input = $wrapper.find(".osd-customer-input");
+		this._sales_order_input = $wrapper.find(".osd-sales-order-input");
+		this._order_sheet_input = $wrapper.find(".osd-order-sheet-input");
 
-		const make_link = (container, df, initial_value) => {
-			// Clear container first to avoid duplicates from repeated make_control calls
-			container.empty();
-			const label = $(`<label style="font-weight:600;font-size:13px;color:#495057;margin-bottom:5px;">${df.label}</label>`);
-			const input_wrap = $(`<div></div>`);
-			container.append(label).append(input_wrap);
+		this._customer_input.val(frm.doc.customer || "");
+		this._sales_order_input.val(frm.doc.sales_order || "");
+		this._order_sheet_input.val(frm.doc.name || "");
 
-			const ctrl = frappe.ui.form.make_control({
-				df: { ...df, label: "" },
-				parent: input_wrap,
-				render_input: true,
-				only_input: true,
-			});
-			// render_input:true already calls make_input() internally — do NOT call it again
-			if (initial_value) ctrl.set_value(initial_value);
-			return ctrl;
-		};
-
-		this._customer_field = make_link(
-			$wrapper.find("#osd-customer-field"),
-			{ fieldtype: "Link", fieldname: "customer", options: "Customer", label: __("Customer"), placeholder: "Select Customer" },
-			frm.doc.customer
-		);
-
-		this._so_field = make_link(
-			$wrapper.find("#osd-so-field"),
-			{
-				fieldtype: "Link", fieldname: "sales_order", options: "Sales Order", label: __("Sales Order"), placeholder: "Select Sales Order",
-				get_query: () => {
-					const c = self._customer_field ? self._customer_field.get_value() : "";
-					const f = { docstatus: ["!=", 2] };
-					if (c) f.customer = c;
-					return { filters: f };
-				}
-			},
-			frm.doc.sales_order
-		);
-
-		this._os_field = make_link(
-			$wrapper.find("#osd-os-field"),
-			{
-				fieldtype: "Link", fieldname: "order_sheet", options: "Order Sheet", label: __("Order Sheet"), placeholder: "Select Order Sheet",
-				get_query: () => {
-					const so = self._so_field ? self._so_field.get_value() : "";
-					return { filters: so ? { sales_order: so } : {} };
-				}
-			},
-			frm.doc.name
-		);
-
+		const triggerRefresh = frappe.utils.debounce(() => this._load_data(frm, $wrapper), 250);
+		$wrapper.find(".osd-customer-input, .osd-sales-order-input, .osd-order-sheet-input").on("change", triggerRefresh);
 		$wrapper.find(".osd-refresh-btn").on("click", () => this._load_data(frm, $wrapper));
 	},
 
@@ -717,9 +684,9 @@ const orderSheetDashboard = {
 		frappe.call({
 			method: "manufacturing_addon.manufacturing_addon.page.order_tracking.order_tracking.get_dashboard_data",
 			args: {
-				customer: (self._customer_field && self._customer_field.get_value()) || null,
-				sales_order: (self._so_field && self._so_field.get_value()) || null,
-				order_sheet: (self._os_field && self._os_field.get_value()) || frm.doc.name || null,
+				customer: cstr(self._customer_input && self._customer_input.val()).trim() || null,
+				sales_order: cstr(self._sales_order_input && self._sales_order_input.val()).trim() || null,
+				order_sheet: cstr(self._order_sheet_input && self._order_sheet_input.val()).trim() || frm.doc.name || null,
 			},
 			freeze: true,
 			freeze_message: __("Loading dashboard data..."),

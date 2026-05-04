@@ -30,6 +30,23 @@ def _get_system_manager_emails():
 	return [row[0] for row in rows if row and row[0]]
 
 
+def _get_latest_production_activity_date():
+	rows = frappe.db.sql(
+		"""
+		SELECT MAX(activity_date) AS activity_date
+		FROM (
+			SELECT MAX(date) AS activity_date FROM `tabCutting Report` WHERE docstatus = 1
+			UNION ALL
+			SELECT MAX(date) AS activity_date FROM `tabStitching Report` WHERE docstatus = 1
+			UNION ALL
+			SELECT MAX(date) AS activity_date FROM `tabPacking Report` WHERE docstatus = 1
+		) AS production_dates
+		""",
+		as_dict=True,
+	)
+	return rows[0].activity_date if rows and rows[0].activity_date else None
+
+
 def _get_stage_rows(from_date, to_date, item=None):
 	item_condition = ""
 	if item:
@@ -340,7 +357,7 @@ def _send_production_progress_email(from_date=None, to_date=None):
 	rows = _build_rows(stage_rows)
 	summary = _build_summary(rows)
 	sales_order_rows = _build_sales_order_rows(rows)
-	dashboard_url = get_url("/app/page/production-progress")
+	dashboard_url = get_url("/app/production-progress")
 
 	subject = f"Production Progress Summary - {from_date} to {to_date}"
 	message = _build_email_html(from_date, to_date, summary, sales_order_rows, dashboard_url)
@@ -388,6 +405,13 @@ def send_production_progress_email(from_date=None, to_date=None):
 
 
 def send_scheduled_production_progress_email():
-	# Send the previous day's report at scheduled time.
+	# Send the previous day's report when there is activity; otherwise fall back
+	# to the latest available production activity date so the summary is not blank.
 	previous_day = add_days(nowdate(), -1)
-	_send_production_progress_email(previous_day, previous_day)
+	if _get_stage_rows(previous_day, previous_day):
+		_send_production_progress_email(previous_day, previous_day)
+		return
+
+	latest_activity_date = _get_latest_production_activity_date()
+	if latest_activity_date:
+		_send_production_progress_email(latest_activity_date, latest_activity_date)

@@ -91,16 +91,15 @@ function setup_actions(state) {
 	state.page.set_primary_action(__("Refresh"), () => refresh_data(state), "refresh");
 
 	state.page.add_inner_button(__("Email System Managers"), () => {
-		const previous_day = frappe.datetime.add_days(frappe.datetime.get_today(), -1);
-		const from_date = previous_day;
-		const to_date = previous_day;
+		const from_date = state.controls.from_date.get_value();
+		const to_date = state.controls.to_date.get_value();
 		if (!from_date || !to_date) {
 			frappe.msgprint(__("Please select both From Date and To Date."));
 			return;
 		}
 
 		frappe.confirm(
-			__("Send production progress email to all System Managers for previous day report: {0} to {1}?", [from_date, to_date]),
+			__("Send production progress email to all System Managers for report: {0} to {1}?", [from_date, to_date]),
 			() => {
 				frappe.call({
 					method: "manufacturing_addon.manufacturing_addon.page.production_progress.production_progress.send_production_progress_email",

@@ -3,50 +3,78 @@
 
 import json
 
-import frappe
 from frappe import _
+import frappe
 from frappe.desk.notifications import get_open_count as frappe_get_open_count
 
-# Linked via Order Sheet → Sales Order (no direct sales_order field on these doctypes)
-INDIRECT_VIA_ORDER_SHEET = ("Cutting Report", "Packing Report", "Stitching Report")
 
+INDIRECT_VIA_ORDER_SHEET = ("Cutting Report", "Packing Report", "Stitching Report")
 MANUFACTURING_CONNECTION_ITEMS = ("Order Sheet",) + INDIRECT_VIA_ORDER_SHEET
 
 
 def get_data(data=None):
-	"""Extend ERPNext Sales Order dashboard with Order Sheet and manufacturing reports."""
-	if data is None:
-		data = {}
-
-	if "transactions" not in data:
-		data["transactions"] = []
-
-	mfg_group = None
-	for transaction in data["transactions"]:
-		if transaction.get("label") == _("Manufacturing"):
-			mfg_group = transaction
-			break
-
-	if mfg_group:
-		for dt in MANUFACTURING_CONNECTION_ITEMS:
-			if dt not in mfg_group["items"]:
-				mfg_group["items"].append(dt)
-	else:
-		data["transactions"].append(
-			{"label": _("Manufacturing"), "items": list(MANUFACTURING_CONNECTION_ITEMS)}
-		)
-
-	data["method"] = (
+	frappe.log_error("sales_order_dashboard")
+	try:
+		frappe.log_error("[Manufacturing Addon] get_data called for Sales Order dashboard override")
+		if data:
+			frappe.log_error(f"[Manufacturing Addon] Incoming data keys: {list(data.keys())}")
+	except Exception as e:
+		frappe.log_error(f"Sales Order dashboard logging failed: {e}", "Manufacturing Addon Dashboard Log Error")
+	dashboard = {
+		"fieldname": "sales_order",
+		"non_standard_fieldnames": {
+			"Delivery Note": "against_sales_order",
+			"Journal Entry": "reference_name",
+			"Payment Entry": "reference_name",
+			"Payment Request": "reference_name",
+			"Auto Repeat": "reference_document",
+			"Maintenance Visit": "prevdoc_docname",
+			"Stock Reservation Entry": "voucher_no",
+		},
+		"internal_links": {
+			"Quotation": ["items", "prevdoc_docname"],
+			"BOM": ["items", "bom_no"],
+			"Blanket Order": ["items", "blanket_order"],
+			"Production Plan": ["sales_orders", "sales_order"],
+			"Material Request": ["items", "sales_order"],
+			"Purchase Order": ["items", "sales_order"],
+			"Purchase Receipt": ["items", "sales_order"],
+			"Purchase Invoice": ["items", "sales_order"],
+		},
+		"transactions": [
+			{
+				"label": _("Fulfillment"),
+				"items": ["Sales Invoice", "Pick List", "Delivery Note", "Maintenance Visit"],
+			},
+			{"label": _("Purchasing"), "items": ["Material Request", "Purchase Order", "Purchase Receipt", "Purchase Invoice"]},
+			{"label": _("Projects"), "items": ["Project"]},
+			{
+				"label": _("Manufacturing"),
+				"items": [
+					"Work Order",
+					"BOM",
+					"Blanket Order",
+					"Production Plan",
+					"Order Sheet",
+					"Cutting Report",
+					"Stitching Report",
+					"Packing Report",
+				],
+			},
+			{"label": _("Reference"), "items": ["Quotation", "Auto Repeat", "Stock Reservation Entry"]},
+			{"label": _("Payment"), "items": ["Payment Entry", "Payment Request", "Journal Entry"]},
+		],
+	}
+	dashboard["method"] = (
 		"manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order_dashboard.get_open_count"
 	)
-
-	return data
+	return dashboard
 
 
 @frappe.whitelist()
 @frappe.read_only()
 def get_open_count(doctype: str, name: str, items=None):
-	"""Resolve Cutting / Packing / Stitching counts via Order Sheet; delegate the rest to core."""
+	"""Keep direct links and add indirect manufacturing counts via Order Sheet."""
 	if doctype != "Sales Order":
 		return frappe_get_open_count(doctype, name, items)
 
@@ -64,7 +92,7 @@ def get_open_count(doctype: str, name: str, items=None):
 		for group in links.transactions:
 			items.extend(group.get("items"))
 
-	cleaned = [i for i in items if i not in INDIRECT_VIA_ORDER_SHEET]
+	cleaned = [item for item in items if item not in INDIRECT_VIA_ORDER_SHEET]
 	out = frappe_get_open_count(doctype, name, cleaned)
 
 	order_sheet_names = frappe.get_all(
@@ -73,16 +101,18 @@ def get_open_count(doctype: str, name: str, items=None):
 		pluck="name",
 	)
 
-	for d in items:
-		if d not in INDIRECT_VIA_ORDER_SHEET:
+	for linked_doctype in items:
+		if linked_doctype not in INDIRECT_VIA_ORDER_SHEET:
 			continue
+
 		if not order_sheet_names:
 			out["count"]["internal_links_found"].append(
-				{"doctype": d, "count": 0, "open_count": 0, "names": []}
+				{"doctype": linked_doctype, "count": 0, "open_count": 0, "names": []}
 			)
 			continue
+
 		names = frappe.get_all(
-			d,
+			linked_doctype,
 			filters={"order_sheet": ["in", order_sheet_names]},
 			pluck="name",
 			limit=100,
@@ -91,7 +121,7 @@ def get_open_count(doctype: str, name: str, items=None):
 		)
 		out["count"]["internal_links_found"].append(
 			{
-				"doctype": d,
+				"doctype": linked_doctype,
 				"count": len(names),
 				"open_count": 0,
 				"names": names,

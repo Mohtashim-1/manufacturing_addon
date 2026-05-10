@@ -36,6 +36,12 @@ frappe.ui.form.on("Sales Order Item", {
 // Add custom button on Sales Order
 frappe.ui.form.on("Sales Order", {
     refresh: function(frm) {
+        console.log("[Manufacturing Addon][Sales Order] refresh", {
+            name: frm.doc.name,
+            is_new: frm.is_new(),
+            docstatus: frm.doc.docstatus,
+            status: frm.doc.status
+        });
         // Add custom button if Sales Order is already saved
         if (!frm.is_new()) {
             frm.add_custom_button(__("Create Order Sheet"), function () {
@@ -86,6 +92,24 @@ frappe.ui.form.on("Sales Order", {
                 }, __("Actions"));
             }
         }
+    },
+
+    dashboard_update: function(frm) {
+        const dashboardData = frm.dashboard_data || {};
+        const transactions = dashboardData.transactions || [];
+        const count = dashboardData.count || {};
+        const internalLinks = count.internal_links_found || [];
+
+        console.log("[Manufacturing Addon][Sales Order] dashboard_update", {
+            sales_order: frm.doc.name,
+            transactions,
+            internal_links_found: internalLinks,
+            manufacturing_group: transactions.find(group => group.label === "Manufacturing"),
+            order_sheet_link: internalLinks.find(link => link.doctype === "Order Sheet"),
+            cutting_report_link: internalLinks.find(link => link.doctype === "Cutting Report"),
+            stitching_report_link: internalLinks.find(link => link.doctype === "Stitching Report"),
+            packing_report_link: internalLinks.find(link => link.doctype === "Packing Report")
+        });
     }
 });
 

@@ -124,6 +124,7 @@ jinja = {
 # Override standard doctype classes
 
 override_doctype_class = {
+	"Sales Order": "manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order.CustomSalesOrder",
 	"Production Plan": "manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan.ProductionPlan",
 	"Purchase Order": "manufacturing_addon.manufacturing_addon.doctype.purchase_order.purchase_order.PurchaseOrder",
 	"Purchase Receipt": "manufacturing_addon.manufacturing_addon.doctype.purchase_receipt.purchase_receipt.CustomPurchaseReceipt"

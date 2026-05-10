@@ -1,5 +1,20 @@
 import frappe
 from frappe import _
+from erpnext.selling.doctype.sales_order.sales_order import SalesOrder as ERPNextSalesOrder
+
+
+class CustomSalesOrder(ERPNextSalesOrder):
+	def validate_update_after_submit(self):
+		if self.can_update_submitted_sales_order():
+			self.flags.ignore_validate_update_after_submit = True
+
+		super().validate_update_after_submit()
+
+	def can_update_submitted_sales_order(self):
+		if self.docstatus != 1:
+			return False
+
+		return not has_linked_delivery_note(self.name)
 
 def validate_sales_order(doc, method):
     for item in doc.items:
@@ -66,3 +81,30 @@ def close_sales_order_and_cost_center(sales_order_name):
     except Exception as e:
         frappe.msgprint(f"Error closing Sales Order: {str(e)}")
         return {"status": "error", "message": str(e)}
+
+
+def has_linked_delivery_note(sales_order_name):
+	return bool(
+		frappe.db.sql(
+			"""
+			select dni.parent
+			from `tabDelivery Note Item` dni
+			inner join `tabDelivery Note` dn on dn.name = dni.parent
+			where dni.against_sales_order = %s
+				and dn.docstatus != 2
+			limit 1
+			""",
+			(sales_order_name,),
+		)
+	)
+
+
+@frappe.whitelist()
+def can_update_submitted_sales_order(sales_order_name):
+	doc = frappe.get_doc("Sales Order", sales_order_name)
+	doc.check_permission("write")
+
+	return {
+		"allowed": doc.docstatus == 1 and not has_linked_delivery_note(sales_order_name),
+		"has_delivery_note": has_linked_delivery_note(sales_order_name),
+	}

@@ -90,6 +90,20 @@ frappe.ui.form.on("Sales Order", {
                         }
                     );
                 }, __("Actions"));
+
+                frappe.call({
+                    method: "manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order.can_update_submitted_sales_order",
+                    args: {
+                        sales_order_name: frm.doc.name
+                    },
+                    callback: function (r) {
+                        if (!r.message || !r.message.allowed) return;
+
+                        frm.add_custom_button(__("Enable Update"), function () {
+                            enable_submitted_sales_order_editing(frm);
+                        }, __("Actions"));
+                    }
+                });
             }
         }
     },
@@ -112,6 +126,62 @@ frappe.ui.form.on("Sales Order", {
         });
     }
 });
+
+
+function enable_submitted_sales_order_editing(frm) {
+    if (frm.__submitted_update_enabled) return;
+
+    const layoutFields = new Set([
+        "Section Break",
+        "Column Break",
+        "Tab Break",
+        "HTML",
+        "Heading",
+        "Button",
+        "Image",
+        "Fold"
+    ]);
+
+    frm.meta.fields.forEach(df => {
+        if (!df.fieldname || layoutFields.has(df.fieldtype)) return;
+
+        if (df.fieldtype === "Table") {
+            const grid = frm.fields_dict[df.fieldname] && frm.fields_dict[df.fieldname].grid;
+            if (!grid) return;
+
+            df.read_only = 0;
+            df.allow_on_submit = 1;
+            grid.df.read_only = 0;
+            grid.df.allow_on_submit = 1;
+            grid.cannot_add_rows = false;
+            grid.cannot_delete_rows = false;
+
+            (grid.docfields || []).forEach(childDf => {
+                if (!childDf.fieldname || layoutFields.has(childDf.fieldtype)) return;
+                grid.update_docfield_property(childDf.fieldname, "read_only", 0);
+                grid.update_docfield_property(childDf.fieldname, "allow_on_submit", 1);
+            });
+
+            grid.refresh();
+            return;
+        }
+
+        frm.set_df_property(df.fieldname, "read_only", 0);
+        frm.set_df_property(df.fieldname, "allow_on_submit", 1);
+    });
+
+    frm.__submitted_update_enabled = true;
+    frm.enable_save();
+    frm.page.set_primary_action(__("Update"), function () {
+        frm.save("Update");
+    });
+    frm.refresh_fields();
+
+    frappe.show_alert({
+        message: __("Submitted Sales Order editing enabled"),
+        indicator: "orange"
+    });
+}
 
 
 

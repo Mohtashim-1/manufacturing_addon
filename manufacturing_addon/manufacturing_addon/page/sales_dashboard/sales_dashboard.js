@@ -396,6 +396,48 @@ class SalesDashboard {
 				</div>
 
 				<div class="sales-dashboard-section">
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Outstanding Aging")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Receivables split by due age bucket")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="outstanding_aging"></div>
+					</div>
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Customer Retention")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("New versus repeat customers in selected period")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="customer_retention"></div>
+					</div>
+				</div>
+
+				<div class="sales-dashboard-section">
+					<div class="sales-dashboard-panel two-third">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Commission Agent Trend")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Commission overhead movement over time")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="commission_agent_trend"></div>
+					</div>
+					<div class="sales-dashboard-panel third">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Item Group Share")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Revenue distribution by item group")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="item_group_share"></div>
+					</div>
+				</div>
+
+				<div class="sales-dashboard-section">
 					<div class="sales-dashboard-panel third">
 						<div class="sales-dashboard-panel-header">
 							<div>
@@ -443,6 +485,90 @@ class SalesDashboard {
 							</div>
 						</div>
 						<div class="sales-dashboard-chart" data-chart="territory_sales_pie"></div>
+					</div>
+				</div>
+
+				<div class="sales-dashboard-section">
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Gross Profit Trend")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Gross profit movement over time")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="gross_profit_trend"></div>
+					</div>
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Return Rate Trend")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Sales return percentage over time")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="return_rate_trend"></div>
+					</div>
+				</div>
+
+				<div class="sales-dashboard-section">
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Billing Pending")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Unbilled order value by customer")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="billing_pending"></div>
+					</div>
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Delivery Pending")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Undelivered order value by customer")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="delivery_pending"></div>
+					</div>
+				</div>
+
+				<div class="sales-dashboard-section">
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Quotation Funnel")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Quotation value across draft, open, ordered and lost")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="quotation_funnel"></div>
+					</div>
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Top Margin Items")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Items generating the highest gross profit")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="top_margin_items"></div>
+					</div>
+				</div>
+
+				<div class="sales-dashboard-section">
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Country-wise Sales")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("Revenue grouped by address country")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="country_wise_sales"></div>
+					</div>
+					<div class="sales-dashboard-panel">
+						<div class="sales-dashboard-panel-header">
+							<div>
+								<div class="sales-dashboard-panel-title">${__("Monthly Customer Growth")}</div>
+								<div class="sales-dashboard-panel-subtitle">${__("New customers created per month")}</div>
+							</div>
+						</div>
+						<div class="sales-dashboard-chart" data-chart="monthly_customer_growth"></div>
 					</div>
 				</div>
 			</div>
@@ -637,6 +763,14 @@ class SalesDashboard {
 		this.render_distribution_donut("customer_group_sales_pie", charts.customer_group_sales);
 		this.render_distribution_donut("territory_sales_pie", charts.territory_sales);
 		this.render_distribution_donut("commission_agents_pie", charts.commission_agents);
+		this.render_distribution_donut("outstanding_aging", charts.outstanding_aging);
+		this.render_distribution_donut("customer_retention", charts.customer_retention);
+		this.render_distribution_donut("item_group_share", charts.item_group_share);
+		this.render_distribution_donut("quotation_funnel", charts.quotation_funnel);
+		this.render_horizontal_bar("billing_pending", charts.billing_pending, "#f97316");
+		this.render_horizontal_bar("delivery_pending", charts.delivery_pending, "#ea580c");
+		this.render_horizontal_bar("top_margin_items", charts.top_margin_items, "#fb923c");
+		this.render_horizontal_bar("country_wise_sales", charts.country_wise_sales, "#f97316");
 
 		this.render_series_chart("payment_status", {
 			chart: { type: "donut", height: 340, toolbar: { show: false } },
@@ -688,6 +822,47 @@ class SalesDashboard {
 			plotOptions: { bar: { borderRadius: 6, columnWidth: "52%", distributed: true } },
 			yaxis: { labels: { formatter: (v) => this.short_currency(v) } },
 			tooltip: { y: { formatter: (v) => this.format_currency(v, this.data.currency) } },
+		});
+
+		this.render_series_chart("commission_agent_trend", {
+			chart: { type: "line", height: 340, toolbar: { show: false } },
+			series: [{ name: __("Commission"), data: charts.commission_agent_trend?.values || [] }],
+			xaxis: { categories: charts.commission_agent_trend?.labels || [] },
+			stroke: { curve: "smooth", width: 3 },
+			colors: ["#9a3412"],
+			yaxis: { labels: { formatter: (v) => this.short_currency(v) } },
+			tooltip: { y: { formatter: (v) => this.format_currency(v, this.data.currency) } },
+		});
+
+		this.render_series_chart("gross_profit_trend", {
+			chart: { type: "area", height: 320, toolbar: { show: false } },
+			series: [{ name: __("Gross Profit"), data: charts.gross_profit_trend?.values || [] }],
+			xaxis: { categories: charts.gross_profit_trend?.labels || [] },
+			stroke: { curve: "smooth", width: 3 },
+			colors: ["#fb923c"],
+			fill: { opacity: 0.25, type: "gradient" },
+			yaxis: { labels: { formatter: (v) => this.short_currency(v) } },
+			tooltip: { y: { formatter: (v) => this.format_currency(v, this.data.currency) } },
+		});
+
+		this.render_series_chart("return_rate_trend", {
+			chart: { type: "line", height: 320, toolbar: { show: false } },
+			series: [{ name: __("Return Rate %"), data: charts.return_rate_trend?.values || [] }],
+			xaxis: { categories: charts.return_rate_trend?.labels || [] },
+			stroke: { curve: "smooth", width: 3 },
+			colors: ["#c2410c"],
+			yaxis: { labels: { formatter: (v) => `${Number(v || 0).toFixed(1)}%` } },
+			tooltip: { y: { formatter: (v) => `${Number(v || 0).toFixed(2)}%` } },
+		});
+
+		this.render_series_chart("monthly_customer_growth", {
+			chart: { type: "bar", height: 320, toolbar: { show: false } },
+			series: [{ name: __("New Customers"), data: charts.monthly_customer_growth?.values || [] }],
+			xaxis: { categories: charts.monthly_customer_growth?.labels || [] },
+			colors: ["#ea580c"],
+			plotOptions: { bar: { borderRadius: 6, columnWidth: "48%" } },
+			yaxis: { labels: { formatter: (v) => this.format_number(v) } },
+			tooltip: { y: { formatter: (v) => this.format_number(v) } },
 		});
 	}
 

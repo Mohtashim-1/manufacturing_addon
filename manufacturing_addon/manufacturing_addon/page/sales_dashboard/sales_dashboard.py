@@ -99,6 +99,18 @@ def get_dashboard_data(filters=None):
 	currency_wise_sales = _get_currency_wise_sales(sales_invoice_where, sales_invoice_params)
 	customer_group_sales = _get_customer_group_sales(sales_invoice_where, sales_invoice_params)
 	commission_agents = _get_commission_agent_sales(sales_invoice_where, sales_invoice_params)
+	outstanding_aging = _get_outstanding_aging(sales_invoice_where, sales_invoice_params)
+	customer_retention = _get_customer_retention(filters, from_date, to_date)
+	commission_agent_trend = _get_commission_agent_trend(filters, from_date, to_date)
+	item_group_share = _get_item_group_share(sales_invoice_where, sales_invoice_params)
+	gross_profit_trend = _get_gross_profit_trend(filters, from_date, to_date)
+	return_rate_trend = _get_return_rate_trend(filters, from_date, to_date)
+	billing_pending = _get_billing_pending(sales_order_where, sales_order_params)
+	delivery_pending = _get_delivery_pending(sales_order_where, sales_order_params)
+	quotation_funnel = _get_quotation_funnel(quotation_where, quotation_params)
+	top_margin_items = _get_top_margin_items(sales_invoice_where, sales_invoice_params)
+	country_wise_sales = _get_country_wise_sales(sales_invoice_where, sales_invoice_params)
+	monthly_customer_growth = _get_monthly_customer_growth(filters, from_date, to_date)
 	financial_snapshot = _get_financial_snapshot(total_sales, net_sales, gross_profit, outstanding_amount, overdue_amount, flt(invoice_metrics.return_gross_amount), target_total=0, pipeline_value=0)
 	if use_sales_order_fallback:
 		trend = _get_sales_order_trend(sales_order_where, sales_order_params, from_date, to_date)
@@ -110,6 +122,9 @@ def get_dashboard_data(filters=None):
 		territory_sales = _get_territory_sales_from_sales_orders(sales_order_where, sales_order_params)
 		currency_wise_sales = _get_currency_wise_sales_from_sales_orders(sales_order_where, sales_order_params)
 		customer_group_sales = _get_customer_group_sales_from_sales_orders(sales_order_where, sales_order_params)
+		customer_retention = _get_customer_retention_from_orders(filters, from_date, to_date)
+		item_group_share = _get_item_group_share_from_orders(sales_order_where, sales_order_params)
+		country_wise_sales = _get_country_wise_sales_from_orders(sales_order_where, sales_order_params)
 	quotation_stats = _get_quotation_stats(quotation_where, quotation_params)
 
 	month_starts = _month_starts_between(from_date, to_date)
@@ -171,6 +186,18 @@ def get_dashboard_data(filters=None):
 			"currency_wise_sales": currency_wise_sales,
 			"customer_group_sales": customer_group_sales,
 			"commission_agents": commission_agents,
+			"outstanding_aging": outstanding_aging,
+			"customer_retention": customer_retention,
+			"commission_agent_trend": commission_agent_trend,
+			"item_group_share": item_group_share,
+			"gross_profit_trend": gross_profit_trend,
+			"return_rate_trend": return_rate_trend,
+			"billing_pending": billing_pending,
+			"delivery_pending": delivery_pending,
+			"quotation_funnel": quotation_funnel,
+			"top_margin_items": top_margin_items,
+			"country_wise_sales": country_wise_sales,
+			"monthly_customer_growth": monthly_customer_growth,
 			"financial_snapshot": financial_snapshot,
 		},
 		"data_source": "Sales Order" if use_sales_order_fallback else "Sales Invoice",
@@ -764,6 +791,473 @@ def _get_commission_agent_sales(where_clause, params):
 		as_dict=True,
 	)
 	return _chart_payload(rows)
+
+
+def _get_outstanding_aging(where_clause, params):
+	row = frappe.db.sql(
+		f"""
+		select
+			sum(case when ifnull(si.outstanding_amount, 0) > 0 and datediff(curdate(), si.due_date) <= 0 then ifnull(si.outstanding_amount, 0) * ifnull(si.conversion_rate, 1) else 0 end) as current_bucket,
+			sum(case when ifnull(si.outstanding_amount, 0) > 0 and datediff(curdate(), si.due_date) between 1 and 30 then ifnull(si.outstanding_amount, 0) * ifnull(si.conversion_rate, 1) else 0 end) as bucket_30,
+			sum(case when ifnull(si.outstanding_amount, 0) > 0 and datediff(curdate(), si.due_date) between 31 and 60 then ifnull(si.outstanding_amount, 0) * ifnull(si.conversion_rate, 1) else 0 end) as bucket_60,
+			sum(case when ifnull(si.outstanding_amount, 0) > 0 and datediff(curdate(), si.due_date) between 61 and 90 then ifnull(si.outstanding_amount, 0) * ifnull(si.conversion_rate, 1) else 0 end) as bucket_90,
+			sum(case when ifnull(si.outstanding_amount, 0) > 0 and datediff(curdate(), si.due_date) > 90 then ifnull(si.outstanding_amount, 0) * ifnull(si.conversion_rate, 1) else 0 end) as bucket_90_plus
+		from `tabSales Invoice` si
+		{where_clause}
+		""",
+		params,
+		as_dict=True,
+	)[0]
+	return {
+		"labels": ["Current", "1-30 Days", "31-60 Days", "61-90 Days", "90+ Days"],
+		"values": [
+			flt(row.current_bucket),
+			flt(row.bucket_30),
+			flt(row.bucket_60),
+			flt(row.bucket_90),
+			flt(row.bucket_90_plus),
+		],
+	}
+
+
+def _get_customer_retention(filters, from_date, to_date):
+	conditions = []
+	params = []
+	if filters.get("company"):
+		conditions.append("and si.company = %s")
+		params.append(filters["company"])
+	if filters.get("customer"):
+		conditions.append("and si.customer = %s")
+		params.append(filters["customer"])
+	if filters.get("territory"):
+		conditions.append("and si.territory = %s")
+		params.append(filters["territory"])
+	if filters.get("customer_group"):
+		conditions.append("and si.customer_group = %s")
+		params.append(filters["customer_group"])
+	if filters.get("sales_person"):
+		conditions.append(
+			"""and exists(
+				select 1 from `tabSales Team` st
+				where st.parent = si.name
+					and st.parenttype = 'Sales Invoice'
+					and st.sales_person = %s
+			)"""
+		)
+		params.append(filters["sales_person"])
+	if filters.get("item_group"):
+		conditions.append(
+			"""and exists(
+				select 1 from `tabSales Invoice Item` sii
+				where sii.parent = si.name
+					and sii.item_group = %s
+			)"""
+		)
+		params.append(filters["item_group"])
+	condition_sql = "\n".join(conditions)
+	rows = frappe.db.sql(
+		f"""
+		select
+			sum(case when first_date between %s and %s then 1 else 0 end) as new_customers,
+			sum(case when first_date < %s then 1 else 0 end) as repeat_customers
+		from (
+			select si.customer, min(si.posting_date) as first_date
+			from `tabSales Invoice` si
+			where si.docstatus = 1
+				{condition_sql}
+			group by si.customer
+			having sum(case when si.posting_date between %s and %s then 1 else 0 end) > 0
+		) t
+		""",
+		[from_date, to_date, from_date, *params, from_date, to_date],
+		as_dict=True,
+	)[0]
+	return {
+		"labels": ["New Customers", "Repeat Customers"],
+		"values": [cint(rows.new_customers), cint(rows.repeat_customers)],
+	}
+
+
+def _get_customer_retention_from_orders(filters, from_date, to_date):
+	conditions = []
+	params = []
+	if filters.get("company"):
+		conditions.append("and so.company = %s")
+		params.append(filters["company"])
+	if filters.get("customer"):
+		conditions.append("and so.customer = %s")
+		params.append(filters["customer"])
+	if filters.get("territory"):
+		conditions.append("and so.territory = %s")
+		params.append(filters["territory"])
+	if filters.get("customer_group"):
+		conditions.append("and so.customer_group = %s")
+		params.append(filters["customer_group"])
+	if filters.get("sales_person"):
+		conditions.append(
+			"""and exists(
+				select 1 from `tabSales Team` st
+				where st.parent = so.name
+					and st.parenttype = 'Sales Order'
+					and st.sales_person = %s
+			)"""
+		)
+		params.append(filters["sales_person"])
+	if filters.get("item_group"):
+		conditions.append(
+			"""and exists(
+				select 1 from `tabSales Order Item` soi
+				where soi.parent = so.name
+					and soi.item_group = %s
+			)"""
+		)
+		params.append(filters["item_group"])
+	condition_sql = "\n".join(conditions)
+	rows = frappe.db.sql(
+		f"""
+		select
+			sum(case when first_date between %s and %s then 1 else 0 end) as new_customers,
+			sum(case when first_date < %s then 1 else 0 end) as repeat_customers
+		from (
+			select so.customer, min(so.transaction_date) as first_date
+			from `tabSales Order` so
+			where so.docstatus = 1
+				{condition_sql}
+			group by so.customer
+			having sum(case when so.transaction_date between %s and %s then 1 else 0 end) > 0
+		) t
+		""",
+		[from_date, to_date, from_date, *params, from_date, to_date],
+		as_dict=True,
+	)[0]
+	return {
+		"labels": ["New Customers", "Repeat Customers"],
+		"values": [cint(rows.new_customers), cint(rows.repeat_customers)],
+	}
+
+
+def _get_commission_agent_trend(filters, from_date, to_date):
+	group_daily = (to_date - from_date).days <= 45
+	label_expr = "date_format(si.posting_date, '%%Y-%%m-%%d')" if group_daily else "date_format(si.posting_date, '%%Y-%%m')"
+	conditions = ["si.docstatus = 1", "si.posting_date between %s and %s"]
+	params = [from_date, to_date]
+	if filters.get("company"):
+		conditions.append("si.company = %s")
+		params.append(filters["company"])
+	if filters.get("customer"):
+		conditions.append("si.customer = %s")
+		params.append(filters["customer"])
+	if filters.get("territory"):
+		conditions.append("si.territory = %s")
+		params.append(filters["territory"])
+	if filters.get("customer_group"):
+		conditions.append("si.customer_group = %s")
+		params.append(filters["customer_group"])
+	if filters.get("sales_person"):
+		conditions.append(
+			"""exists(
+				select 1 from `tabSales Team` st
+				where st.parent = si.name
+					and st.parenttype = 'Sales Invoice'
+					and st.sales_person = %s
+			)"""
+		)
+		params.append(filters["sales_person"])
+	if filters.get("item_group"):
+		conditions.append(
+			"""exists(
+				select 1 from `tabSales Invoice Item` sii
+				where sii.parent = si.name
+					and sii.item_group = %s
+			)"""
+		)
+		params.append(filters["item_group"])
+	rows = frappe.db.sql(
+		f"""
+		select
+			{label_expr} as bucket,
+			sum(ifnull(sio.base_amount, 0)) as value
+		from `tabSales Invoice Overheads` sio
+		inner join `tabSales Invoice` si on si.name = sio.parent
+		where {' and '.join(conditions)}
+		group by bucket
+		order by bucket
+		""",
+		params,
+		as_dict=True,
+	)
+	return {
+		"labels": [row.bucket for row in rows],
+		"values": [flt(row.value) for row in rows],
+		"mode": "daily" if group_daily else "monthly",
+	}
+
+
+def _get_item_group_share(where_clause, params):
+	rows = frappe.db.sql(
+		f"""
+		select
+			coalesce(nullif(sii.item_group, ''), 'Unassigned') as label,
+			sum(case when ifnull(si.is_return, 0) = 1 then -1 * abs(ifnull(sii.base_net_amount, 0)) else ifnull(sii.base_net_amount, 0) end) as value
+		from `tabSales Invoice Item` sii
+		inner join `tabSales Invoice` si on si.name = sii.parent
+		{where_clause}
+		group by label
+		order by value desc
+		limit 10
+		""",
+		params,
+		as_dict=True,
+	)
+	return _chart_payload(rows)
+
+
+def _get_item_group_share_from_orders(where_clause, params):
+	rows = frappe.db.sql(
+		f"""
+		select
+			coalesce(nullif(soi.item_group, ''), 'Unassigned') as label,
+			sum(ifnull(soi.base_net_amount, 0)) as value
+		from `tabSales Order Item` soi
+		inner join `tabSales Order` so on so.name = soi.parent
+		{where_clause}
+			and so.docstatus = 1
+		group by label
+		order by value desc
+		limit 10
+		""",
+		params,
+		as_dict=True,
+	)
+	return _chart_payload(rows)
+
+
+def _get_gross_profit_trend(filters, from_date, to_date):
+	group_daily = (to_date - from_date).days <= 45
+	label_expr = "date_format(si.posting_date, '%%Y-%%m-%%d')" if group_daily else "date_format(si.posting_date, '%%Y-%%m')"
+	where_clause, params = _build_sales_invoice_where(filters, from_date, to_date)
+	rows = frappe.db.sql(
+		f"""
+		select
+			{label_expr} as bucket,
+			sum(
+				case
+					when ifnull(si.is_return, 0) = 1 then -1 * abs(ifnull(sii.base_net_amount, 0) - (ifnull(sii.incoming_rate, 0) * ifnull(sii.stock_qty, 0)))
+					else ifnull(sii.base_net_amount, 0) - (ifnull(sii.incoming_rate, 0) * ifnull(sii.stock_qty, 0))
+				end
+			) as value
+		from `tabSales Invoice Item` sii
+		inner join `tabSales Invoice` si on si.name = sii.parent
+		{where_clause}
+		group by bucket
+		order by bucket
+		""",
+		params,
+		as_dict=True,
+	)
+	return {
+		"labels": [row.bucket for row in rows],
+		"values": [flt(row.value) for row in rows],
+		"mode": "daily" if group_daily else "monthly",
+	}
+
+
+def _get_return_rate_trend(filters, from_date, to_date):
+	group_daily = (to_date - from_date).days <= 45
+	label_expr = "date_format(si.posting_date, '%%Y-%%m-%%d')" if group_daily else "date_format(si.posting_date, '%%Y-%%m')"
+	where_clause, params = _build_sales_invoice_where(filters, from_date, to_date)
+	rows = frappe.db.sql(
+		f"""
+		select
+			{label_expr} as bucket,
+			sum(case when ifnull(si.is_return, 0) = 0 then ifnull(si.base_net_total, 0) else 0 end) as sales_value,
+			sum(case when ifnull(si.is_return, 0) = 1 then abs(ifnull(si.base_net_total, 0)) else 0 end) as return_value
+		from `tabSales Invoice` si
+		{where_clause}
+		group by bucket
+		order by bucket
+		""",
+		params,
+		as_dict=True,
+	)
+	return {
+		"labels": [row.bucket for row in rows],
+		"values": [(flt(row.return_value) / flt(row.sales_value) * 100) if flt(row.sales_value) else 0 for row in rows],
+		"mode": "daily" if group_daily else "monthly",
+	}
+
+
+def _get_billing_pending(where_clause, params):
+	rows = frappe.db.sql(
+		f"""
+		select
+			coalesce(nullif(so.customer, ''), 'Unassigned') as label,
+			sum(ifnull(so.base_grand_total, 0) * greatest(0, 100 - ifnull(so.per_billed, 0)) / 100) as value
+		from `tabSales Order` so
+		{where_clause}
+			and so.docstatus = 1
+			and ifnull(so.per_billed, 0) < 100
+		group by label
+		having value > 0
+		order by value desc
+		limit 10
+		""",
+		params,
+		as_dict=True,
+	)
+	return _chart_payload(rows)
+
+
+def _get_delivery_pending(where_clause, params):
+	rows = frappe.db.sql(
+		f"""
+		select
+			coalesce(nullif(so.customer, ''), 'Unassigned') as label,
+			sum(ifnull(so.base_grand_total, 0) * greatest(0, 100 - ifnull(so.per_delivered, 0)) / 100) as value
+		from `tabSales Order` so
+		{where_clause}
+			and so.docstatus = 1
+			and ifnull(so.per_delivered, 0) < 100
+		group by label
+		having value > 0
+		order by value desc
+		limit 10
+		""",
+		params,
+		as_dict=True,
+	)
+	return _chart_payload(rows)
+
+
+def _get_quotation_funnel(where_clause, params):
+	row = frappe.db.sql(
+		f"""
+		select
+			sum(case when q.docstatus = 0 then ifnull(q.base_grand_total, 0) else 0 end) as draft_value,
+			sum(case when q.status not in ('Lost', 'Ordered') and q.docstatus < 2 then ifnull(q.base_grand_total, 0) else 0 end) as open_value,
+			sum(case when q.status = 'Ordered' then ifnull(q.base_grand_total, 0) else 0 end) as ordered_value,
+			sum(case when q.status = 'Lost' then ifnull(q.base_grand_total, 0) else 0 end) as lost_value
+		from `tabQuotation` q
+		{where_clause}
+		""",
+		params,
+		as_dict=True,
+	)[0]
+	return {
+		"labels": ["Draft", "Open", "Ordered", "Lost"],
+		"values": [
+			flt(row.draft_value),
+			flt(row.open_value),
+			flt(row.ordered_value),
+			flt(row.lost_value),
+		],
+	}
+
+
+def _get_top_margin_items(where_clause, params):
+	rows = frappe.db.sql(
+		f"""
+		select
+			sii.item_code as label,
+			sum(
+				case
+					when ifnull(si.is_return, 0) = 1 then -1 * abs(ifnull(sii.base_net_amount, 0) - (ifnull(sii.incoming_rate, 0) * ifnull(sii.stock_qty, 0)))
+					else ifnull(sii.base_net_amount, 0) - (ifnull(sii.incoming_rate, 0) * ifnull(sii.stock_qty, 0))
+				end
+			) as value
+		from `tabSales Invoice Item` sii
+		inner join `tabSales Invoice` si on si.name = sii.parent
+		{where_clause}
+		group by sii.item_code
+		order by value desc
+		limit 10
+		""",
+		params,
+		as_dict=True,
+	)
+	return _chart_payload(rows)
+
+
+def _get_country_wise_sales(where_clause, params):
+	rows = frappe.db.sql(
+		f"""
+		select
+			coalesce(nullif(addr.country, ''), 'Unassigned') as label,
+			sum(case when ifnull(si.is_return, 0) = 1 then -1 * abs(ifnull(si.base_net_total, 0)) else ifnull(si.base_net_total, 0) end) as value
+		from `tabSales Invoice` si
+		left join `tabAddress` addr on addr.name = coalesce(nullif(si.customer_address, ''), nullif(si.shipping_address_name, ''))
+		{where_clause}
+		group by label
+		order by value desc
+		limit 10
+		""",
+		params,
+		as_dict=True,
+	)
+	return _chart_payload(rows)
+
+
+def _get_country_wise_sales_from_orders(where_clause, params):
+	rows = frappe.db.sql(
+		f"""
+		select
+			coalesce(nullif(addr.country, ''), 'Unassigned') as label,
+			sum(ifnull(so.base_net_total, 0)) as value
+		from `tabSales Order` so
+		left join `tabAddress` addr on addr.name = coalesce(nullif(so.customer_address, ''), nullif(so.shipping_address_name, ''))
+		{where_clause}
+			and so.docstatus = 1
+		group by label
+		order by value desc
+		limit 10
+		""",
+		params,
+		as_dict=True,
+	)
+	return _chart_payload(rows)
+
+
+def _get_monthly_customer_growth(filters, from_date, to_date):
+	current = date(from_date.year, from_date.month, 1)
+	end = date(to_date.year, to_date.month, 1)
+	months = []
+	while current <= end:
+		months.append(current)
+		if current.month == 12:
+			current = date(current.year + 1, 1, 1)
+		else:
+			current = date(current.year, current.month + 1, 1)
+
+	conditions = ["disabled = 0", "date(creation) between %s and %s"]
+	params = [from_date, to_date]
+	if filters.get("customer_group"):
+		conditions.append("customer_group = %s")
+		params.append(filters["customer_group"])
+	if filters.get("territory"):
+		conditions.append("territory = %s")
+		params.append(filters["territory"])
+	if filters.get("customer"):
+		conditions.append("name = %s")
+		params.append(filters["customer"])
+
+	rows = frappe.db.sql(
+		f"""
+		select
+			date_format(creation, '%%Y-%%m') as bucket,
+			count(name) as value
+		from `tabCustomer`
+		where {' and '.join(conditions)}
+		group by bucket
+		order by bucket
+		""",
+		params,
+		as_dict=True,
+	)
+	value_map = {row.bucket: cint(row.value) for row in rows}
+	return {
+		"labels": [month.strftime("%b %Y") for month in months],
+		"values": [value_map.get(month.strftime("%Y-%m"), 0) for month in months],
+	}
 
 
 def _get_financial_snapshot(total_sales, net_sales, gross_profit, outstanding_amount, overdue_amount, return_amount, target_total, pipeline_value):

@@ -2,6 +2,7 @@
 frappe.ui.form.on("Sales Order Item", {
     item_code: function(frm, cdt, cdn) {
         let item = locals[cdt][cdn];
+        update_cost_of_product(frm, cdt, cdn);
 
         // Ensure both item_code and customer are selected
         if (!item.item_code || !frm.doc.customer) return;
@@ -30,6 +31,11 @@ frappe.ui.form.on("Sales Order Item", {
                 }
             }
         });
+
+    },
+
+    bom_no: function(frm, cdt, cdn) {
+        update_cost_of_product(frm, cdt, cdn);
     }
 });
 
@@ -44,6 +50,12 @@ frappe.ui.form.on("Sales Order", {
         });
         // Add custom button if Sales Order is already saved
         if (!frm.is_new()) {
+            (frm.doc.items || []).forEach(row => {
+                if (row.item_code && (!row.custom_cost_of_product || row.bom_no)) {
+                    update_cost_of_product(frm, row.doctype, row.name);
+                }
+            });
+
             frm.add_custom_button(__("Create Order Sheet"), function () {
                 frappe.call({
                     method: "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.create_order_sheet_from_sales_order",
@@ -106,6 +118,14 @@ frappe.ui.form.on("Sales Order", {
                 });
             }
         }
+    },
+
+    currency: function(frm) {
+        refresh_cost_of_product_for_all_rows(frm);
+    },
+
+    conversion_rate: function(frm) {
+        refresh_cost_of_product_for_all_rows(frm);
     },
 
     dashboard_update: function(frm) {
@@ -180,6 +200,40 @@ function enable_submitted_sales_order_editing(frm) {
     frappe.show_alert({
         message: __("Submitted Sales Order editing enabled"),
         indicator: "orange"
+    });
+}
+
+
+function update_cost_of_product(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    if (!row || !row.item_code) return;
+
+    frappe.call({
+        method: "manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order.get_sales_order_item_cost_of_product",
+        args: {
+            item_code: row.item_code,
+            bom_no: row.bom_no,
+            company: frm.doc.company,
+            currency: frm.doc.currency,
+            conversion_rate: frm.doc.conversion_rate
+        },
+        callback: function(r) {
+            frappe.model.set_value(
+                cdt,
+                cdn,
+                "custom_cost_of_product",
+                (r.message && r.message.cost_of_product) || 0
+            );
+        }
+    });
+}
+
+
+function refresh_cost_of_product_for_all_rows(frm) {
+    (frm.doc.items || []).forEach(row => {
+        if (row.item_code) {
+            update_cost_of_product(frm, row.doctype, row.name);
+        }
     });
 }
 

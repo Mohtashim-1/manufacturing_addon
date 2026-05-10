@@ -1,0 +1,19 @@
+{
+ "content": null,
+ "creation": "2026-05-11 03:07:30.609476",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-05-11 03:07:30.609476",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "sales-dashboard",
+ "owner": "Administrator",
+ "page_name": "sales-dashboard",
+ "roles": [],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Sales Dashboard"
+}

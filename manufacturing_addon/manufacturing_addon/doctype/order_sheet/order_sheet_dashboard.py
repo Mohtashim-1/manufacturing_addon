@@ -7,7 +7,14 @@ def get_data():
 		"transactions": [
 			{
 				"label": _("Production Reports"),
-				"items": ["Cutting Report", "Stitching Report", "Packing Report"],
+				"items": [
+					"Cutting Report",
+					"Stitching Report",
+					"Packing Report",
+					"Daily Checking",
+					"Inline Stitching",
+					"Final Inspection",
+				],
 			},
 		],
 	}

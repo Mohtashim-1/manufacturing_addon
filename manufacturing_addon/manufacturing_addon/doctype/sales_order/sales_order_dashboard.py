@@ -8,7 +8,14 @@ import frappe
 from frappe.desk.notifications import get_open_count as frappe_get_open_count
 
 
-INDIRECT_VIA_ORDER_SHEET = ("Cutting Report", "Packing Report", "Stitching Report")
+INDIRECT_VIA_ORDER_SHEET = (
+	"Cutting Report",
+	"Packing Report",
+	"Stitching Report",
+	"Daily Checking",
+	"Inline Stitching",
+	"Final Inspection",
+)
 MANUFACTURING_CONNECTION_ITEMS = ("Order Sheet",) + INDIRECT_VIA_ORDER_SHEET
 
 
@@ -59,6 +66,9 @@ def get_data(data=None):
 					"Cutting Report",
 					"Stitching Report",
 					"Packing Report",
+					"Daily Checking",
+					"Inline Stitching",
+					"Final Inspection",
 				],
 			},
 			{"label": _("Reference"), "items": ["Quotation", "Auto Repeat", "Stock Reservation Entry"]},

@@ -51,7 +51,7 @@ frappe.ui.form.on("Sales Order", {
         // Add custom button if Sales Order is already saved
         if (!frm.is_new()) {
             (frm.doc.items || []).forEach(row => {
-                if (row.item_code && (!row.custom_cost_of_product || row.bom_no)) {
+                if (row.item_code && !row.custom_cost_of_product) {
                     update_cost_of_product(frm, row.doctype, row.name);
                 }
             });

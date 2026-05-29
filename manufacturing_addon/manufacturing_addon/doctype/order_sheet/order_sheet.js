@@ -98,6 +98,9 @@ frappe.ui.form.on("Order Sheet", {
 		if (frm.fields_dict.contractor_dashboard) {
 			contractorDashboardInForm.render(frm);
 		}
+		if (frm.fields_dict.quality_dashboard) {
+			qualityDashboardInForm.render(frm);
+		}
 	},
 
 	before_save(frm) {
@@ -1083,10 +1086,96 @@ const orderSheetDashboard = {
 	format_percentage(n) { return this._fmt_pct(n); },
 };
 
+function contractorProgressPct(finished, planned, orderQty) {
+	const plan = Number(planned) > 0 ? Number(planned) : Number(orderQty) || 0;
+	if (!plan) {
+		return 0;
+	}
+	return Math.min(100, (Number(finished) || 0) / plan * 100);
+}
+
+function contractorProgressGrade(pct) {
+	const p = Number(pct) || 0;
+	if (p >= 100) {
+		return { bg: "#d4edda", color: "#155724", border: "#b7dfc5", bar: "bg-success", status: __("Complete") };
+	}
+	if (p >= 75) {
+		return { bg: "#d1ecf1", color: "#0c5460", border: "#bee5eb", bar: "bg-info", status: __("On Track") };
+	}
+	if (p >= 50) {
+		return { bg: "#fff3cd", color: "#856404", border: "#ffeeba", bar: "bg-warning", status: __("In Progress") };
+	}
+	if (p > 0) {
+		return { bg: "#ffe8cc", color: "#8a4500", border: "#ffd8a8", bar: "bg-warning", status: __("Started") };
+	}
+	return { bg: "#f8d7da", color: "#721c24", border: "#f1aeb5", bar: "bg-danger", status: __("Not Started") };
+}
+
+function contractorProgressLegend() {
+	return `
+		<div class="contractor-grade-legend">
+			<span><i class="contractor-grade-swatch" style="background:#f8d7da;"></i> 0%</span>
+			<span><i class="contractor-grade-swatch" style="background:#ffe8cc;"></i> 1–49%</span>
+			<span><i class="contractor-grade-swatch" style="background:#fff3cd;"></i> 50–74%</span>
+			<span><i class="contractor-grade-swatch" style="background:#d1ecf1;"></i> 75–99%</span>
+			<span><i class="contractor-grade-swatch" style="background:#d4edda;"></i> 100%</span>
+		</div>
+	`;
+}
+
+function contractorInjectStyles() {
+	if (document.getElementById("contractor-dash-grade-styles")) {
+		return;
+	}
+	const style = document.createElement("style");
+	style.id = "contractor-dash-grade-styles";
+	style.textContent = `
+		.contractor-dashboard-panel { padding: 12px 4px 16px; }
+		.contractor-grade-legend { display:flex; flex-wrap:wrap; gap:12px; font-size:11px; color:#6c757d; margin-bottom:14px; align-items:center; }
+		.contractor-grade-swatch { display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:middle; margin-right:4px; border:1px solid rgba(0,0,0,.1); }
+		.contractor-kpi-card { transition: transform .15s ease; }
+		.contractor-kpi-card:hover { transform: translateY(-2px); }
+		.contractor-grade-cell { white-space: nowrap; }
+		.contractor-dashboard-panel .table thead th { background:#f8f9fa; font-weight:600; font-size:12px; }
+	`;
+	document.head.appendChild(style);
+}
+
 const contractorDashboardInForm = {
+	kpiCard(label, pct, displayValue) {
+		const g = contractorProgressGrade(pct);
+		const barPct = Math.min(Number(pct) || 0, 100);
+		return `
+			<div class="col-md-3 col-sm-6 mb-3">
+				<div class="contractor-kpi-card" style="background:${g.bg};border:1px solid ${g.border};color:${g.color};border-radius:10px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+					<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:.9;">${label}</div>
+					<div style="font-size:28px;font-weight:700;line-height:1.2;margin:8px 0 6px;">${displayValue}</div>
+					<div class="progress" style="height:10px;background:rgba(0,0,0,.1);border-radius:5px;margin-bottom:6px;">
+						<div class="progress-bar ${g.bar}" style="width:${barPct}%;"></div>
+					</div>
+					<small style="font-weight:600;">${g.status} · ${this.pct(pct)}%</small>
+				</div>
+			</div>
+		`;
+	},
+
+	qtyCell(finished, planned, orderQty) {
+		const pct = contractorProgressPct(finished, planned, orderQty);
+		const g = contractorProgressGrade(pct);
+		return `
+			<td class="text-right contractor-grade-cell" style="background:${g.bg};color:${g.color};font-weight:600;"
+				title="${g.status}: ${this.pct(pct)}% of ${this.fmt(planned || orderQty)}">
+				<div>${this.fmt(finished)}</div>
+				<div style="font-size:10px;font-weight:500;opacity:.9;">${this.pct(pct)}%</div>
+			</td>
+		`;
+	},
+
 	render(frm) {
 		const $wrapper = frm.fields_dict.contractor_dashboard.$wrapper;
 		if (!$wrapper) return;
+
+		contractorInjectStyles();
 
 		if (!frm.doc.name || frm.doc.__islocal) {
 			$wrapper.html(`
@@ -1098,13 +1187,8 @@ const contractorDashboardInForm = {
 		}
 
 		$wrapper.html(`
-			<div style="padding:20px;">
-				<div class="text-muted" style="margin-bottom:8px;">
-					${__("Contractor dashboard for Order Sheet")} <b>${frappe.utils.escape_html(frm.doc.name)}</b>
-				</div>
-				<div class="text-muted">
-					<i class="fa fa-spinner fa-spin"></i> ${__("Loading...")}
-				</div>
+			<div class="contractor-dashboard-panel">
+				<div class="text-muted text-center p-3"><i class="fa fa-spinner fa-spin"></i> ${__("Loading...")}</div>
 			</div>
 		`);
 
@@ -1115,17 +1199,34 @@ const contractorDashboardInForm = {
 				const data = r.message || {};
 				const summary = data.summary || {};
 				const details = data.details || [];
+				const cuttingPct = Number(summary.cutting_progress) || 0;
+				const stitchingPct = Number(summary.stitching_progress) || 0;
+				const packingPct = Number(summary.packing_progress) || 0;
+				const overallPct = Number(summary.overall_progress) || packingPct;
 
 				const html = `
-					<div style="padding:16px;">
-						<div class="row" style="margin-bottom:14px;">
-							<div class="col-md-3"><div class="alert alert-info"><b>${__("Order Qty")}</b><br>${this.fmt(summary.total_order_qty)}</div></div>
-							<div class="col-md-3"><div class="alert alert-primary"><b>${__("Cutting %")}</b><br>${this.pct(summary.cutting_progress)}%</div></div>
-							<div class="col-md-3"><div class="alert alert-warning"><b>${__("Stitching %")}</b><br>${this.pct(summary.stitching_progress)}%</div></div>
-							<div class="col-md-3"><div class="alert alert-success"><b>${__("Packing %")}</b><br>${this.pct(summary.packing_progress)}%</div></div>
+					<div class="contractor-dashboard-panel">
+						<div class="text-muted" style="margin-bottom:10px;font-size:12px;">
+							${__("Order Sheet")}: <b>${frappe.utils.escape_html(frm.doc.name)}</b>
+						</div>
+						${contractorProgressLegend()}
+						<div class="row">
+							<div class="col-md-3 col-sm-6 mb-3">
+								<div class="contractor-kpi-card" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+									<div style="font-size:11px;font-weight:700;text-transform:uppercase;opacity:.9;">${__("Order Qty")}</div>
+									<div style="font-size:28px;font-weight:700;margin:8px 0;">${this.fmt(summary.total_order_qty)}</div>
+									<small style="opacity:.9;">${__("Total ordered quantity")}</small>
+								</div>
+							</div>
+							${this.kpiCard(__("Cutting %"), cuttingPct, `${this.pct(cuttingPct)}%`)}
+							${this.kpiCard(__("Stitching %"), stitchingPct, `${this.pct(stitchingPct)}%`)}
+							${this.kpiCard(__("Packing %"), packingPct, `${this.pct(packingPct)}%`)}
+						</div>
+						<div class="row" style="margin-bottom:12px;">
+							${this.kpiCard(__("Overall %"), overallPct, `${this.pct(overallPct)}%`)}
 						</div>
 						<div class="table-responsive">
-							<table class="table table-bordered table-sm">
+							<table class="table table-bordered table-sm table-hover">
 								<thead>
 									<tr>
 										<th>${__("Item")}</th>
@@ -1138,17 +1239,21 @@ const contractorDashboardInForm = {
 									</tr>
 								</thead>
 								<tbody>
-									${details.length ? details.map((d) => `
+									${details.length ? details.map((d) => {
+										const oq = d.order_qty || 0;
+										const pq = d.planned_qty || 0;
+										return `
 										<tr>
 											<td>${frappe.utils.escape_html(d.item || "")}</td>
-											<td>${frappe.utils.escape_html(d.bundle_item || "-")}</td>
-											<td class="text-right">${this.fmt(d.order_qty)}</td>
-											<td class="text-right">${this.fmt(d.planned_qty)}</td>
-											<td class="text-right">${this.fmt(d.cutting_finished)}</td>
-											<td class="text-right">${this.fmt(d.stitching_finished)}</td>
-											<td class="text-right">${this.fmt(d.packing_finished)}</td>
+											<td>${frappe.utils.escape_html(d.bundle_item || "—")}</td>
+											<td class="text-right">${this.fmt(oq)}</td>
+											<td class="text-right">${this.fmt(pq)}</td>
+											${this.qtyCell(d.cutting_finished, pq, oq)}
+											${this.qtyCell(d.stitching_finished, pq, oq)}
+											${this.qtyCell(d.packing_finished, pq, oq)}
 										</tr>
-									`).join("") : `<tr><td colspan="7" class="text-center text-muted">${__("No data found")}</td></tr>`}
+									`;
+									}).join("") : `<tr><td colspan="7" class="text-center text-muted">${__("No data found")}</td></tr>`}
 								</tbody>
 							</table>
 						</div>
@@ -1160,6 +1265,722 @@ const contractorDashboardInForm = {
 				$wrapper.html(`<div style="padding:20px;color:#dc3545;">${__("Failed to load contractor dashboard.")}</div>`);
 			},
 		});
+	},
+
+	fmt(n) {
+		return (n == null ? 0 : Number(n)).toLocaleString("en-US", { maximumFractionDigits: 2 });
+	},
+
+	pct(n) {
+		return (n == null ? 0 : Number(n)).toFixed(1);
+	},
+};
+
+function loadOrderSheetQualityChartJS() {
+	return frappe.require([
+		"/assets/quality_addon/js/chart.min.js",
+		"/assets/quality_addon/js/quality_chartjs.js",
+	]).then(() => {
+		if (typeof quality_addon !== "undefined" && quality_addon.chartjs) {
+			return quality_addon.chartjs.load();
+		}
+		if (typeof Chart !== "undefined") {
+			return Chart;
+		}
+		throw new Error("Chart.js not available");
+	});
+}
+
+function osQualityCreateChart(key, canvasId, config) {
+	const helper = typeof quality_addon !== "undefined" ? quality_addon.chartjs : null;
+	if (helper) {
+		return helper.create(key, canvasId, config);
+	}
+	const canvas = document.getElementById(canvasId);
+	if (!canvas || typeof Chart === "undefined") {
+		return null;
+	}
+	return new Chart(canvas.getContext("2d"), config);
+}
+
+function osQualityDestroyCharts() {
+	const helper = typeof quality_addon !== "undefined" ? quality_addon.chartjs : null;
+	if (helper && helper.instances) {
+		Object.keys(helper.instances).forEach((key) => {
+			if (key.startsWith("osQ_")) {
+				helper.destroy(key);
+			}
+		});
+	}
+}
+
+function osQualityScheduleCharts(fn) {
+	requestAnimationFrame(() => {
+		setTimeout(fn, 120);
+	});
+}
+
+function osQualitySumDefects(defects) {
+	return Object.values(defects || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+}
+
+function osQualityDefectLabel(key) {
+	return (key || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function osQualityInjectDashStyles() {
+	if (document.getElementById("os-quality-dash-styles")) {
+		return;
+	}
+	const style = document.createElement("style");
+	style.id = "os-quality-dash-styles";
+	style.textContent = `
+		.os-order-sheet-quality.daily-stitching-dashboard { padding: 12px 4px 20px; }
+		.os-order-sheet-quality .summary-card { border: none; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.1); margin-bottom: 16px; transition: transform .2s; }
+		.os-order-sheet-quality .summary-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,.12); }
+		.os-order-sheet-quality .summary-card .card-body { padding: 18px; }
+		.os-order-sheet-quality .summary-card .card-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+		.os-order-sheet-quality .summary-card h3 { font-size: 26px; font-weight: 700; margin: 0; }
+		.os-order-sheet-quality .gradient-header { background: linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:#fff; border:none; padding:14px 18px; border-radius:10px 10px 0 0; }
+		.os-order-sheet-quality .gradient-header h5, .os-order-sheet-quality .gradient-header h6 { margin:0; font-weight:600; }
+		.os-order-sheet-quality .gradient-header-success { background: linear-gradient(135deg,#4facfe 0%,#00f2fe 100%); color:#fff; }
+		.os-order-sheet-quality .gradient-header-warning { background: linear-gradient(135deg,#fa709a 0%,#fee140 100%); color:#fff; }
+		.os-order-sheet-quality .gradient-header-info { background: linear-gradient(135deg,#a8edea 0%,#fed6e3 100%); color:#333; }
+		.os-order-sheet-quality .gradient-header-danger { background: linear-gradient(135deg,#ff9a9e 0%,#fecfef 100%); color:#333; }
+		.os-order-sheet-quality .card { border:none; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.1); margin-bottom:20px; }
+		.os-order-sheet-quality .chart-container { position:relative; height:260px; width:100%; background:#fff; padding:12px; border-radius:0 0 10px 10px; }
+		.os-order-sheet-quality .chart-container--sm { height:220px; }
+		.os-order-sheet-quality .chart-container canvas { display:block!important; width:100%!important; height:100%!important; }
+		.os-order-sheet-quality .defect-breakdown-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; }
+		.os-order-sheet-quality .defect-item { background:#f8f9fa; padding:12px; border-radius:8px; text-align:center; border:1px solid #e9ecef; }
+		.os-order-sheet-quality .defect-item .defect-count { font-size:22px; font-weight:700; color:#dc3545; }
+		.os-order-sheet-quality .os-q-empty-chart { display:flex; align-items:center; justify-content:center; height:100%; color:#6c757d; font-size:13px; text-align:center; padding:16px; }
+		.os-order-sheet-quality .dashboard-table .table thead th { background:#f8f9fa; font-weight:600; }
+		.os-order-sheet-quality .os-q-op-worst { background:#f8d7da !important; }
+		.os-order-sheet-quality .os-q-op-high { background:#fff3cd !important; }
+		.os-order-sheet-quality .os-q-op-badge-worst { background:#dc3545; color:#fff; }
+		.os-order-sheet-quality .os-q-op-badge-high { background:#ffc107; color:#333; }
+		.os-order-sheet-quality .os-q-op-badge-ok { background:#28a745; color:#fff; }
+		.os-order-sheet-quality .os-q-inspection-totals td { font-weight:600; }
+	`;
+	document.head.appendChild(style);
+}
+
+const qualityDashboardInForm = {
+	render(frm) {
+		const $wrapper = frm.fields_dict.quality_dashboard?.$wrapper;
+		if (!$wrapper) return;
+
+		osQualityInjectDashStyles();
+
+		if (!frm.doc.name || frm.doc.__islocal) {
+			$wrapper.html(`<div class="text-muted text-center p-4">${__("Save the document to load the quality dashboard.")}</div>`);
+			return;
+		}
+
+		$wrapper.html(`
+			<div class="daily-stitching-dashboard os-order-sheet-quality">
+				<div class="text-center text-muted p-4"><i class="fa fa-spinner fa-spin"></i> ${__("Loading quality dashboard...")}</div>
+			</div>
+		`);
+
+		loadOrderSheetQualityChartJS()
+			.then(() => this.load(frm, $wrapper))
+			.catch(() => {
+				$wrapper.html(`<div class="alert alert-warning">${__("Could not load Chart.js.")}</div>`);
+			});
+	},
+
+	load(frm, $wrapper) {
+		frappe.call({
+			method: "quality_addon.api.order_sheet_quality_dashboard.get_order_sheet_quality_dashboard",
+			args: { order_sheet: frm.doc.name },
+			callback: (r) => this.render_dashboard(frm, $wrapper, r.message || {}),
+			error: () => {
+				$wrapper.html(`<div class="alert alert-danger">${__("Failed to load quality dashboard.")}</div>`);
+			},
+		});
+	},
+
+	summary_card(title, value, icon, colorClass, sub) {
+		return `
+			<div class="col-md-2 col-sm-4 col-xs-6">
+				<div class="card summary-card">
+					<div class="card-body">
+						<div class="d-flex justify-content-between">
+							<div>
+								<h6 class="card-title text-muted">${title}</h6>
+								<h3 class="mb-0 ${colorClass || ""}">${value}</h3>
+								${sub ? `<small class="text-muted">${sub}</small>` : ""}
+							</div>
+							<div class="align-self-center"><i class="fa ${icon} fa-2x ${colorClass || "text-primary"}"></i></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		`;
+	},
+
+	render_inspection_summary_table(ins) {
+		const bySrc = ins.by_source || {};
+		const rows = [
+			["Daily Checking", bySrc["Daily Checking"] || {}],
+			["Inline Stitching", bySrc["Inline Stitching"] || {}],
+			["Final Inspection", bySrc["Final Inspection"] || {}],
+		];
+		return `
+			<table class="table table-bordered table-sm os-q-inspection-totals mb-0">
+				<thead>
+					<tr>
+						<th>${__("Source")}</th>
+						<th class="text-right">${__("Pcs Checked")}</th>
+						<th class="text-right">${__("Major")}</th>
+						<th class="text-right">${__("Minor")}</th>
+						<th class="text-right">${__("Critical")}</th>
+						<th class="text-right">${__("Total Defects")}</th>
+						<th class="text-right">${__("Defect %")}</th>
+					</tr>
+				</thead>
+				<tbody>
+					${rows.map(([label, r]) => {
+						const pcs = Number(r.pcs_checked) || 0;
+						const def = Number(r.defect_qty) || 0;
+						const rate = pcs ? (def / pcs * 100).toFixed(1) : "0.0";
+						return `<tr>
+							<td>${frappe.utils.escape_html(label)}</td>
+							<td class="text-right">${this.fmt(pcs)}</td>
+							<td class="text-right text-danger">${this.fmt(r.major)}</td>
+							<td class="text-right text-warning">${this.fmt(r.minor)}</td>
+							<td class="text-right">${this.fmt(r.critical)}</td>
+							<td class="text-right">${this.fmt(def)}</td>
+							<td class="text-right">${rate}%</td>
+						</tr>`;
+					}).join("")}
+					<tr style="background:#f0f4ff;font-weight:700;">
+						<td>${__("Grand Total")}</td>
+						<td class="text-right">${this.fmt(ins.pcs_checked)}</td>
+						<td class="text-right text-danger">${this.fmt(ins.major)}</td>
+						<td class="text-right text-warning">${this.fmt(ins.minor)}</td>
+						<td class="text-right">${this.fmt(ins.critical)}</td>
+						<td class="text-right">${this.fmt(ins.total_defects)}</td>
+						<td class="text-right">${this.pct(ins.defect_rate)}%</td>
+					</tr>
+				</tbody>
+			</table>
+		`;
+	},
+
+	render_operator_table(opData, worstName) {
+		const operators = opData.operators || [];
+		if (!operators.length) {
+			return `<p class="text-muted text-center mb-0" style="padding:16px;">${__(
+				"No operator or checker data for this order sheet. Inline Stitching uses Operator Name; Daily Checking uses Checker Name."
+			)}</p>`;
+		}
+		return `
+			${worstName ? `<div class="alert alert-danger py-2 mb-3"><i class="fa fa-exclamation-triangle"></i> <strong>${__("Worst performer")}:</strong> ${frappe.utils.escape_html(worstName)} — ${__("highest defect rate in this order sheet.")}</div>` : ""}
+			<table class="table table-bordered table-sm table-hover mb-0">
+				<thead>
+					<tr>
+						<th>${__("Rank")}</th>
+						<th>${__("Operator / Checker")}</th>
+						<th>${__("Source")}</th>
+						<th class="text-right">${__("Pcs Checked")}</th>
+						<th class="text-right">${__("Major")}</th>
+						<th class="text-right">${__("Minor")}</th>
+						<th class="text-right">${__("Critical")}</th>
+						<th class="text-right">${__("Total Defects")}</th>
+						<th class="text-right">${__("Defect %")}</th>
+						<th class="text-center">${__("Status")}</th>
+					</tr>
+				</thead>
+				<tbody>
+					${operators.map((op) => {
+						const sk = op.status_key || "ok";
+						const rowCls = sk === "worst" ? "os-q-op-worst" : (sk === "high" ? "os-q-op-high" : "");
+						let badgeCls = "os-q-op-badge-ok";
+						if (sk === "worst") badgeCls = "os-q-op-badge-worst";
+						else if (sk === "high") badgeCls = "os-q-op-badge-high";
+						else if (sk === "watch") badgeCls = "badge badge-warning";
+						return `<tr class="${rowCls}">
+							<td class="text-center">${op.rank}</td>
+							<td><strong>${frappe.utils.escape_html(op.operator)}</strong></td>
+							<td><small>${frappe.utils.escape_html(op.sources)}</small></td>
+							<td class="text-right">${this.fmt(op.pcs_checked)}</td>
+							<td class="text-right">${this.fmt(op.major)}</td>
+							<td class="text-right">${this.fmt(op.minor)}</td>
+							<td class="text-right">${this.fmt(op.critical)}</td>
+							<td class="text-right"><strong>${this.fmt(op.defect_qty)}</strong></td>
+							<td class="text-right"><strong>${this.pct(op.defect_rate)}%</strong></td>
+							<td class="text-center"><span class="badge ${badgeCls}" style="font-size:11px;">${frappe.utils.escape_html(op.status)}</span></td>
+						</tr>`;
+					}).join("")}
+				</tbody>
+			</table>
+		`;
+	},
+
+	defect_items_grid(defects, total) {
+		const keys = Object.keys(defects || {}).filter((k) => defects[k] > 0);
+		if (!keys.length) {
+			return `<p class="text-muted text-center mb-0">${__("No defects recorded.")}</p>`;
+		}
+		return `<div class="defect-breakdown-grid">${keys.map((key) => {
+			const pct = total > 0 ? (defects[key] / total * 100).toFixed(1) : 0;
+			return `
+				<div class="defect-item">
+					<h6>${osQualityDefectLabel(key)}</h6>
+					<div class="defect-count">${this.fmt(defects[key])}</div>
+					<small class="text-muted">${pct}%</small>
+				</div>
+			`;
+		}).join("")}</div>`;
+	},
+
+	render_dashboard(frm, $wrapper, data) {
+		const s = data.summary || {};
+		const cats = data.defect_categories || {};
+		const weaving = cats.weaving || {};
+		const finishing = cats.finishing || {};
+		const sewing = cats.sewing || {};
+		const totals = cats.totals || {};
+		const tw = totals.weaving || 0;
+		const tf = totals.finishing || 0;
+		const ts = totals.sewing || 0;
+		const tall = totals.all || 0;
+		const details = data.details || [];
+		const docs = data.documents || {};
+		const ins = data.inspection_summary || {};
+		const opData = data.operator_performance || {};
+		const hasDocs = (s.daily_checking_count || 0) + (s.inline_stitching_count || 0) + (s.final_inspection_count || 0) > 0;
+
+		$wrapper.html(`
+			<div class="daily-stitching-dashboard os-order-sheet-quality">
+				<div class="row dashboard-summary">
+					${this.summary_card(__("Plan Qty"), this.fmt(s.plan_qty), "fa-calendar-check-o", "text-primary")}
+					${this.summary_card(__("Inspected"), this.fmt(s.inspected_qty), "fa-search", "text-info")}
+					${this.summary_card(__("Pcs Checked"), this.fmt(ins.pcs_checked), "fa-check-square", "text-primary")}
+					${this.summary_card(__("Major"), this.fmt(ins.major), "fa-times-circle", "text-danger")}
+					${this.summary_card(__("Minor"), this.fmt(ins.minor), "fa-exclamation-circle", "text-warning")}
+					${this.summary_card(__("Critical"), this.fmt(ins.critical), "fa-ban", "text-danger")}
+				</div>
+				<div class="row dashboard-summary">
+					${this.summary_card(__("Total Defects"), this.fmt(ins.total_defects || s.defect_qty), "fa-exclamation-triangle", "text-warning")}
+					${this.summary_card(__("Defect Rate"), `${this.pct(ins.defect_rate)}%`, "fa-percent", "text-danger")}
+					${this.summary_card(__("Progress"), `${this.pct(s.progress_pct)}%`, "fa-line-chart", "text-success")}
+					${this.summary_card(__("Daily Checking"), s.daily_checking_count || 0, "fa-clipboard", "text-primary", __("docs"))}
+					${this.summary_card(__("Inline Stitching"), s.inline_stitching_count || 0, "fa-scissors", "text-warning", __("docs"))}
+					${this.summary_card(__("Final Inspection"), s.final_inspection_count || 0, "fa-check-square-o", "text-success", __("docs"))}
+				</div>
+
+				<div class="row">
+					<div class="col-md-12">
+						<div class="card dashboard-table">
+							<div class="card-header gradient-header">
+								<h5><i class="fa fa-table"></i> ${__("Inspection Summary — Pcs Checked & Severity")}</h5>
+							</div>
+							<div class="card-body table-responsive">
+								${this.render_inspection_summary_table(ins)}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="row">
+					<div class="col-md-12">
+						<div class="card dashboard-table">
+							<div class="card-header gradient-header-danger">
+								<h5><i class="fa fa-user"></i> ${__("Operator / Checker Performance")} <small style="opacity:.85;font-weight:400;">(${__("worst first")})</small></h5>
+							</div>
+							<div class="card-body table-responsive" style="max-height:420px;overflow:auto;">
+								${this.render_operator_table(opData, opData.worst_operator)}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="row dashboard-charts">
+					<div class="col-md-6">
+						<div class="card">
+							<div class="card-header gradient-header-success">
+								<h5><i class="fa fa-pie-chart"></i> ${__("Inspection by Source")}</h5>
+							</div>
+							<div class="card-body p-0">
+								<div class="chart-container" id="os_q_source_pie_wrap"><canvas id="os_q_source_pie"></canvas></div>
+							</div>
+						</div>
+					</div>
+					<div class="col-md-6">
+						<div class="card">
+							<div class="card-header gradient-header">
+								<h5><i class="fa fa-bar-chart"></i> ${__("Plan vs Inspected")}</h5>
+							</div>
+							<div class="card-body p-0">
+								<div class="chart-container" id="os_q_plan_wrap"><canvas id="os_q_plan_bar"></canvas></div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="row">
+					<div class="col-md-12">
+						<div class="card">
+							<div class="card-header gradient-header-warning">
+								<h5><i class="fa fa-line-chart"></i> ${__("Quality Activity Trend")}</h5>
+							</div>
+							<div class="card-body p-0">
+								<div class="chart-container" style="height:280px;" id="os_q_trend_wrap"><canvas id="os_q_trend_line"></canvas></div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="row">
+					<div class="col-md-12">
+						<div class="card">
+							<div class="card-header gradient-header-danger">
+								<h5><i class="fa fa-bug"></i> ${__("Detailed Defect Breakdown")}</h5>
+							</div>
+							<div class="card-body">
+								<div class="row mb-4 qa-defect-breakdown-charts">
+									<div class="col-md-4">
+										<div class="card h-100 border-0 bg-light">
+											<div class="card-body">
+												<h6 class="text-muted mb-2"><i class="fa fa-pie-chart"></i> ${__("Defects by Category")}</h6>
+												<div class="chart-container chart-container--sm" id="os_q_cat_pie_wrap"><canvas id="os_q_category_pie"></canvas></div>
+											</div>
+										</div>
+									</div>
+									<div class="col-md-8">
+										<div class="card h-100 border-0 bg-light">
+											<div class="card-body">
+												<h6 class="text-muted mb-2"><i class="fa fa-bar-chart"></i> ${__("Top Defect Types")}</h6>
+												<div class="chart-container chart-container--sm" id="os_q_top_wrap"><canvas id="os_q_top_bar"></canvas></div>
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="row mb-4">
+									<div class="col-md-4">
+										<div class="card h-100 border-0 bg-light">
+											<div class="card-body">
+												<h6 class="text-muted mb-2"><i class="fa fa-th"></i> ${__("Weaving")}</h6>
+												<div class="chart-container chart-container--sm" id="os_q_weaving_wrap"><canvas id="os_q_weaving_bar"></canvas></div>
+											</div>
+										</div>
+									</div>
+									<div class="col-md-4">
+										<div class="card h-100 border-0 bg-light">
+											<div class="card-body">
+												<h6 class="text-muted mb-2"><i class="fa fa-cog"></i> ${__("Finishing")}</h6>
+												<div class="chart-container chart-container--sm" id="os_q_finishing_wrap"><canvas id="os_q_finishing_bar"></canvas></div>
+											</div>
+										</div>
+									</div>
+									<div class="col-md-4">
+										<div class="card h-100 border-0 bg-light">
+											<div class="card-body">
+												<h6 class="text-muted mb-2"><i class="fa fa-scissors"></i> ${__("Sewing")}</h6>
+												<div class="chart-container chart-container--sm" id="os_q_sewing_wrap"><canvas id="os_q_sewing_bar"></canvas></div>
+											</div>
+										</div>
+									</div>
+								</div>
+								${!tall ? `<div class="alert alert-info text-center"><i class="fa fa-info-circle"></i> ${__("Link Daily Checking, Inline Stitching, or Final Inspection documents to this Order Sheet to see defect charts.")}</div>` : ""}
+								<div class="row">
+									<div class="col-md-12 mb-4">
+										<div class="card">
+											<div class="card-header gradient-header-warning">
+												<h6><i class="fa fa-th"></i> ${__("Weaving Defects")} (${tw} — ${tall > 0 ? (tw / tall * 100).toFixed(1) : 0}%)</h6>
+											</div>
+											<div class="card-body">${this.defect_items_grid(weaving, tw)}</div>
+										</div>
+									</div>
+									<div class="col-md-12 mb-4">
+										<div class="card">
+											<div class="card-header gradient-header-info">
+												<h6><i class="fa fa-cog"></i> ${__("Finishing Defects")} (${tf} — ${tall > 0 ? (tf / tall * 100).toFixed(1) : 0}%)</h6>
+											</div>
+											<div class="card-body">${this.defect_items_grid(finishing, tf)}</div>
+										</div>
+									</div>
+									<div class="col-md-12 mb-4">
+										<div class="card">
+											<div class="card-header gradient-header-danger">
+												<h6><i class="fa fa-scissors"></i> ${__("Sewing Defects")} (${ts} — ${tall > 0 ? (ts / tall * 100).toFixed(1) : 0}%)</h6>
+											</div>
+											<div class="card-body">${this.defect_items_grid(sewing, ts)}</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="row dashboard-table">
+					<div class="col-md-12">
+						<div class="card">
+							<div class="card-header gradient-header">
+								<h5><i class="fa fa-table"></i> ${__("Quality Detail by Article")}</h5>
+							</div>
+							<div class="card-body table-responsive" style="max-height:380px;">
+								${this.render_details_table(details, hasDocs)}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="row">
+					${this.render_doc_cards(docs)}
+				</div>
+			</div>
+		`);
+
+		osQualityScheduleCharts(() => this.render_charts(data, s, weaving, finishing, sewing));
+	},
+
+	render_details_table(details, hasDocs) {
+		if (!details.length) {
+			return `<p class="text-muted text-center">${hasDocs
+				? __("No article-level rows yet.")
+				: __("No quality documents linked. Set Order Sheet on Daily Checking / Inline Stitching / Final Inspection.")}</p>`;
+		}
+		return `
+			<table class="table table-bordered table-sm table-hover">
+				<thead><tr>
+					<th>${__("Source")}</th><th>${__("Article")}</th><th>${__("Size")}</th><th>${__("Color")}</th>
+					<th>${__("Design")}</th><th>${__("Operator")}</th>
+					<th class="text-right">${__("Plan")}</th><th class="text-right">${__("Inspected")}</th>
+					<th class="text-right">${__("Defects")}</th><th class="text-right">${__("Progress %")}</th>
+				</tr></thead>
+				<tbody>${details.map((d) => `
+					<tr>
+						<td>${frappe.utils.escape_html(d.source || "")}</td>
+						<td>${frappe.utils.escape_html(d.article || "")}</td>
+						<td>${frappe.utils.escape_html(d.size || "")}</td>
+						<td>${frappe.utils.escape_html(d.color || "")}</td>
+						<td>${frappe.utils.escape_html(d.design_combination || "")}</td>
+						<td>${frappe.utils.escape_html(d.operator_name || "—")}</td>
+						<td class="text-right">${this.fmt(d.plan_qty)}</td>
+						<td class="text-right">${this.fmt(d.inspected_qty)}</td>
+						<td class="text-right">${this.fmt(d.defect_qty)}</td>
+						<td class="text-right">${this.pct(d.progress_pct)}%</td>
+					</tr>
+				`).join("")}</tbody>
+			</table>
+		`;
+	},
+
+	render_doc_cards(docs) {
+		return Object.keys(docs || {}).map((source) => {
+			const list = docs[source] || [];
+			const rows = list.length
+				? list.map((d) => `<tr>
+					<td><a href="${frappe.utils.get_form_link(source, d.name)}">${frappe.utils.escape_html(d.name)}</a></td>
+					<td>${frappe.datetime.str_to_user(d.reporting_date) || ""}</td>
+				</tr>`).join("")
+				: `<tr><td colspan="2" class="text-muted text-center">${__("No documents")}</td></tr>`;
+			return `
+				<div class="col-md-4">
+					<div class="card dashboard-table">
+						<div class="card-header gradient-header"><h5>${frappe.utils.escape_html(source)}</h5></div>
+						<div class="card-body p-0 table-responsive" style="max-height:200px;">
+							<table class="table table-sm mb-0"><thead><tr><th>${__("Name")}</th><th>${__("Date")}</th></tr></thead><tbody>${rows}</tbody></table>
+						</div>
+					</div>
+				</div>
+			`;
+		}).join("");
+	},
+
+	show_empty_chart(wrapId, msg) {
+		const el = document.getElementById(wrapId);
+		if (el) {
+			el.innerHTML = `<div class="os-q-empty-chart">${frappe.utils.escape_html(msg)}</div>`;
+		}
+	},
+
+	render_bar_entries(canvasId, wrapId, entries, color) {
+		if (!entries.length) {
+			this.show_empty_chart(wrapId, __("No data"));
+			return;
+		}
+		osQualityCreateChart(`osQ_${canvasId}`, canvasId, {
+			type: "bar",
+			data: {
+				labels: entries.map(([k]) => osQualityDefectLabel(k)),
+				datasets: [{
+					label: __("Qty"),
+					data: entries.map(([, v]) => v),
+					backgroundColor: color + "B3",
+					borderColor: color,
+					borderWidth: 1,
+				}],
+			},
+			options: {
+				indexAxis: "y",
+				responsive: true,
+				maintainAspectRatio: false,
+				plugins: { legend: { display: false } },
+				scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+			},
+		});
+	},
+
+	render_charts(data, summary, weaving, finishing, sewing) {
+		if (typeof Chart === "undefined") return;
+		osQualityDestroyCharts();
+
+		const bySource = data.by_source || [];
+		const trend = data.trend || {};
+		const colors = ["#FF6384", "#36A2EB", "#FFCE56"];
+		const sourceLabels = bySource.map((d) => d.source);
+		const inspectedVals = bySource.map((d) => Number(d.inspected_qty) || 0);
+		const planQty = Number(summary.plan_qty) || 0;
+		const inspectedQty = Number(summary.inspected_qty) || 0;
+
+		if (inspectedVals.reduce((a, b) => a + b, 0) > 0) {
+			osQualityCreateChart("osQ_sourcePie", "os_q_source_pie", {
+				type: "pie",
+				data: {
+					labels: sourceLabels,
+					datasets: [{ data: inspectedVals, backgroundColor: colors, borderColor: "#fff", borderWidth: 2 }],
+				},
+				options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+			});
+		} else {
+			this.show_empty_chart("os_q_source_pie_wrap", __("No inspection data"));
+		}
+
+		if (planQty > 0 || inspectedQty > 0) {
+			osQualityCreateChart("osQ_planBar", "os_q_plan_bar", {
+				type: "bar",
+				data: {
+					labels: [__("Plan Qty"), __("Inspected")],
+					datasets: [{
+						data: [planQty, inspectedQty],
+						backgroundColor: ["#667eea", "#28a745"],
+						borderRadius: 6,
+					}],
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: { legend: { display: false } },
+					scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+				},
+			});
+		} else {
+			this.show_empty_chart("os_q_plan_wrap", __("No quantities"));
+		}
+
+		const tw = osQualitySumDefects(weaving);
+		const tf = osQualitySumDefects(finishing);
+		const ts = osQualitySumDefects(sewing);
+		if (tw + tf + ts > 0) {
+			osQualityCreateChart("osQ_categoryPie", "os_q_category_pie", {
+				type: "pie",
+				data: {
+					labels: [__("Weaving"), __("Finishing"), __("Sewing")],
+					datasets: [{ data: [tw, tf, ts], backgroundColor: colors, borderColor: "#fff", borderWidth: 2 }],
+				},
+				options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+			});
+		} else {
+			this.show_empty_chart("os_q_cat_pie_wrap", __("No defects"));
+		}
+
+		const allDefects = [];
+		const pushDef = (obj, cat, col) => {
+			Object.entries(obj || {}).forEach(([k, v]) => {
+				if (v > 0) allDefects.push({ label: `${osQualityDefectLabel(k)} (${cat})`, value: v, color: col });
+			});
+		};
+		pushDef(weaving, "W", colors[0]);
+		pushDef(finishing, "F", colors[1]);
+		pushDef(sewing, "S", colors[2]);
+		allDefects.sort((a, b) => b.value - a.value);
+		const top = allDefects.slice(0, 12);
+		if (top.length) {
+			osQualityCreateChart("osQ_topBar", "os_q_top_bar", {
+				type: "bar",
+				data: {
+					labels: top.map((d) => d.label),
+					datasets: [{
+						data: top.map((d) => d.value),
+						backgroundColor: top.map((d) => d.color + "B3"),
+						borderColor: top.map((d) => d.color),
+						borderWidth: 1,
+					}],
+				},
+				options: {
+					indexAxis: "y",
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: { legend: { display: false } },
+					scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+				},
+			});
+		} else {
+			this.show_empty_chart("os_q_top_wrap", __("No defects"));
+		}
+
+		this.render_bar_entries(
+			"os_q_weaving_bar",
+			"os_q_weaving_wrap",
+			Object.entries(weaving).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8),
+			"#FF6384"
+		);
+		this.render_bar_entries(
+			"os_q_finishing_bar",
+			"os_q_finishing_wrap",
+			Object.entries(finishing).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8),
+			"#36A2EB"
+		);
+		this.render_bar_entries(
+			"os_q_sewing_bar",
+			"os_q_sewing_wrap",
+			Object.entries(sewing).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8),
+			"#FFCE56"
+		);
+
+		const trendLabels = trend.labels || [];
+		if (trendLabels.length && (trend.datasets || []).some((ds) => (ds.values || []).some((v) => v > 0))) {
+			const palette = ["#667eea", "#ffa00a", "#28a745"];
+			osQualityCreateChart("osQ_trendLine", "os_q_trend_line", {
+				type: "line",
+				data: {
+					labels: trendLabels,
+					datasets: (trend.datasets || []).map((ds, i) => ({
+						label: ds.name,
+						data: ds.values || [],
+						borderColor: palette[i % palette.length],
+						backgroundColor: palette[i % palette.length] + "33",
+						fill: true,
+						tension: 0.35,
+						pointRadius: 3,
+					})),
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					interaction: { mode: "index", intersect: false },
+					plugins: { legend: { position: "bottom" } },
+					scales: {
+						y: { beginAtZero: true, ticks: { precision: 0 } },
+						x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 16 } },
+					},
+				},
+			});
+		} else {
+			this.show_empty_chart("os_q_trend_wrap", __("No activity yet"));
+		}
+
+		const helper = typeof quality_addon !== "undefined" ? quality_addon.chartjs : null;
+		if (helper && helper.instances) {
+			Object.values(helper.instances).forEach((c) => c.resize && c.resize());
+		}
 	},
 
 	fmt(n) {

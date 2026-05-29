@@ -1,12 +1,13 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{sales_order}-{#}",
+ "autoname": "naming_series:naming_series",
  "creation": "2024-11-11 17:23:00.879120",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "detail_tab",
+  "naming_series",
   "posting_date_and_time",
   "shipment_date",
   "order_no",
@@ -46,7 +47,9 @@
   "dashboard_tab",
   "dashboard",
   "contractor_dashbaord_tab",
-  "contractor_dashboard"
+  "contractor_dashboard",
+  "quality_dashboard_tab",
+  "quality_dashboard"
  ],
  "fields": [
   {
@@ -341,16 +344,33 @@
    "fieldname": "contractor_dashboard",
    "fieldtype": "HTML",
    "label": "Dashboard"
+  },
+  {
+   "fieldname": "quality_dashboard_tab",
+   "fieldtype": "Tab Break",
+   "label": "Quality Dashboard"
+  },
+  {
+   "fieldname": "quality_dashboard",
+   "fieldtype": "HTML",
+   "label": "Quality Dashboard"
+  },
+  {
+   "default": ".{sales_order}.-.{#}.",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": ".{sales_order}.-.{#}."
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-30 15:16:43.298499",
+ "modified": "2026-05-29 22:09:02.846171",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",
- "naming_rule": "Expression",
+ "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

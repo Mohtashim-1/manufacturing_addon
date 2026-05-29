@@ -6,11 +6,16 @@ def get_data():
 		"fieldname": "order_sheet",
 		"transactions": [
 			{
-				"label": _("Production Reports"),
+				"label": _("Production"),
 				"items": [
 					"Cutting Report",
 					"Stitching Report",
 					"Packing Report",
+				],
+			},
+			{
+				"label": _("Quality"),
+				"items": [
 					"Daily Checking",
 					"Inline Stitching",
 					"Final Inspection",

@@ -573,7 +573,7 @@ function loadDashboardData() {
 
 function triggerDailyOrderSheetEmail() {
 	frappe.confirm(
-		__('Send daily active order-sheet email now? This will send the report with previous-day data only.'),
+		__('Send Order Tracking Dashboard email now? (Same layout and data as this page.)'),
 		function() {
 			frappe.call({
 				method: 'manufacturing_addon.manufacturing_addon.daily_order_sheet_email.trigger_daily_active_order_sheet_email',
@@ -840,7 +840,7 @@ function filterTableRows(searchTerm) {
 		}
 	} else {
 		$('#order-details-body tr.no-results').remove();
-	}r
+	}
 }
 
 function applyDefaultCollapsedState() {

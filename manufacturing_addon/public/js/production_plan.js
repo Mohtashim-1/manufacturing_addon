@@ -4,6 +4,14 @@ frappe.ui.form.on("Production Plan", {
 	},
 
 	refresh(frm) {
+		if (frm.doc.custom_order_sheet) {
+			frm.add_custom_button(
+				__("Order Sheet"),
+				() => frappe.set_route("Form", "Order Sheet", frm.doc.custom_order_sheet),
+				__("View")
+			);
+		}
+
 		console.log("[PP Custom] refresh for", frm.doc && frm.doc.name, {
 			docstatus: frm.doc && frm.doc.docstatus,
 			status: frm.doc && frm.doc.status,

@@ -4,10 +4,14 @@ from frappe import _
 def get_data():
 	return {
 		"fieldname": "order_sheet",
+		"non_standard_fieldnames": {
+			"Production Plan": "custom_order_sheet",
+		},
 		"transactions": [
 			{
 				"label": _("Production"),
 				"items": [
+					"Production Plan",
 					"Cutting Report",
 					"Stitching Report",
 					"Packing Report",

@@ -1081,6 +1081,24 @@ def create_order_sheet_from_sales_order(sales_order):
 
 
 @frappe.whitelist()
+def get_linked_production_plans(order_sheet):
+	"""Production plans linked to this Order Sheet via custom_order_sheet."""
+	if not order_sheet:
+		return {"plans": []}
+
+	if not frappe.db.has_column("Production Plan", "custom_order_sheet"):
+		return {"plans": []}
+
+	plans = frappe.get_all(
+		"Production Plan",
+		filters={"custom_order_sheet": order_sheet, "docstatus": ["<", 2]},
+		fields=["name", "status", "posting_date", "total_planned_qty", "docstatus"],
+		order_by="modified desc",
+	)
+	return {"plans": plans}
+
+
+@frappe.whitelist()
 def create_production_plan_from_order_sheet(order_sheet):
 	"""
 	Create a Production Plan from Order Sheet
@@ -1104,6 +1122,7 @@ def create_production_plan_from_order_sheet(order_sheet):
 		"doctype": "Production Plan",
 		"company": company,
 		"customer": os_doc.customer,
+		"custom_order_sheet": os_doc.name,
 		"posting_date": os_doc.posting_date_and_time.date() if os_doc.posting_date_and_time else today(),
 		"get_items_from": "Sales Order" if os_doc.sales_order else "",
 		"for_warehouse": "Stores - SAH",

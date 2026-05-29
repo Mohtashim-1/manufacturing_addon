@@ -15,9 +15,14 @@ def get_data(data=None):
 	return {
 		"fieldname": "production_plan",  # Default fieldname for Work Order, Material Request, Purchase Order
 		"non_standard_fieldnames": {
-			"Raw Material Transfer Planning": "custom_production_plan"  # Use custom_production_plan for Raw Material Transfer Planning
+			"Raw Material Transfer Planning": "custom_production_plan",
+			"Order Sheet": "custom_order_sheet",
+		},
+		"internal_links": {
+			"Order Sheet": "custom_order_sheet",
 		},
 		"transactions": [
+			{"label": _("References"), "items": ["Order Sheet"]},
 			{"label": _("Transactions"), "items": ["Work Order", "Material Request"]},
 			{"label": _("Subcontract"), "items": ["Purchase Order"]},
 			{"label": _("Raw Material Transfer Planning"), "items": ["Raw Material Transfer Planning"]},

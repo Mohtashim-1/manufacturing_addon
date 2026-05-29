@@ -3,6 +3,7 @@
 
 import frappe
 from frappe import _
+from frappe.utils import nowdate
 
 
 def _get_bundle_items_for_so_item(so_item):
@@ -213,26 +214,41 @@ def get_stage_voucher_details(stage, order_sheet, so_item, bundle_item=None):
 	}
 
 
+def _stage_date_clause(parent_alias, report_date):
+	"""Optional filter on report date field."""
+	if not report_date:
+		return "", {}
+	return f" AND {parent_alias}.date = %(report_date)s", {"report_date": report_date}
+
+
 @frappe.whitelist()
-def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
+def get_dashboard_data(customer=None, sales_order=None, order_sheet=None, order_sheets=None, report_date=None):
 	"""
-	Get dashboard data for Order Tracking page
+	Get dashboard data for Order Tracking page.
+	Optional order_sheets: list of Order Sheet names to restrict results (e.g. daily email).
+	Optional report_date: if set, stage qty/planned only from reports on that date (YYYY-MM-DD).
 	"""
 	try:
 		# Build filters
 		filters = {}
-		if customer:
-			filters['customer'] = customer
-		if sales_order:
-			filters['sales_order'] = sales_order
-		if order_sheet:
-			filters['name'] = order_sheet
-		
+		if order_sheets:
+			if isinstance(order_sheets, str):
+				order_sheets = frappe.parse_json(order_sheets)
+			if order_sheets:
+				filters["name"] = ["in", order_sheets]
+		else:
+			if customer:
+				filters["customer"] = customer
+			if sales_order:
+				filters["sales_order"] = sales_order
+			if order_sheet:
+				filters["name"] = order_sheet
+
 		# Get Order Sheets
 		order_sheets = frappe.get_all(
 			"Order Sheet",
 			filters=filters,
-			fields=["name", "customer", "sales_order", "docstatus"]
+			fields=["name", "customer", "sales_order", "docstatus"],
 		)
 		
 		order_sheet_names = [os.name for os in order_sheets]
@@ -240,7 +256,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		if not order_sheet_names:
 			return {
 				"summary": {},
-				"details": []
+				"details": [],
+				"report_date": report_date,
 			}
 		
 		# Get Order Sheet CT data
@@ -260,6 +277,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		cutting_report_names = [cr.name for cr in cutting_reports]
 		cutting_data = {}
 		
+		cutting_date_clause, cutting_date_vals = _stage_date_clause("cr", report_date)
+
 		if cutting_report_names:
 			print(f"\n{'='*80}")
 			print(f"[Order Tracking] Fetching Cutting Report data...")
@@ -267,7 +286,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 			print(f"  - Order Sheet Names: {order_sheet_names}")
 			print(f"{'='*80}\n")
 			
-			cutting_report_ct = frappe.db.sql("""
+			cutting_report_ct = frappe.db.sql(
+				f"""
 				SELECT 
 					cr.order_sheet,
 					crct.so_item,
@@ -276,9 +296,13 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 					SUM(crct.planned_qty) as planned_qty
 				FROM `tabCutting Report CT` crct
 				LEFT JOIN `tabCutting Report` cr ON crct.parent = cr.name
-				WHERE cr.order_sheet IN %s AND cr.docstatus = 1
+				WHERE cr.order_sheet IN %(order_sheets)s AND cr.docstatus = 1
+					{cutting_date_clause}
 				GROUP BY cr.order_sheet, crct.so_item, crct.combo_item
-			""", (order_sheet_names,), as_dict=True)
+				""",
+				{"order_sheets": tuple(order_sheet_names), **cutting_date_vals},
+				as_dict=True,
+			)
 			
 			print(f"[Order Tracking] Cutting Report CT Query Results:")
 			print(f"  - Total rows: {len(cutting_report_ct)}")
@@ -308,6 +332,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		stitching_report_names = [sr.name for sr in stitching_reports]
 		stitching_data = {}
 		
+		stitching_date_clause, stitching_date_vals = _stage_date_clause("sr", report_date)
+
 		if stitching_report_names:
 			print(f"\n{'='*80}")
 			print(f"[Order Tracking] Fetching Stitching Report data...")
@@ -315,7 +341,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 			print(f"  - Order Sheet Names: {order_sheet_names}")
 			print(f"{'='*80}\n")
 			
-			stitching_report_ct = frappe.db.sql("""
+			stitching_report_ct = frappe.db.sql(
+				f"""
 				SELECT 
 					sr.order_sheet,
 					srct.so_item,
@@ -324,9 +351,13 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 					SUM(srct.planned_qty) as planned_qty
 				FROM `tabStitching Report CT` srct
 				LEFT JOIN `tabStitching Report` sr ON srct.parent = sr.name
-				WHERE sr.order_sheet IN %s AND sr.docstatus = 1
+				WHERE sr.order_sheet IN %(order_sheets)s AND sr.docstatus = 1
+					{stitching_date_clause}
 				GROUP BY sr.order_sheet, srct.so_item, srct.combo_item
-			""", (order_sheet_names,), as_dict=True)
+				""",
+				{"order_sheets": tuple(order_sheet_names), **stitching_date_vals},
+				as_dict=True,
+			)
 			
 			print(f"[Order Tracking] Stitching Report CT Query Results:")
 			print(f"  - Total rows: {len(stitching_report_ct)}")
@@ -356,6 +387,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		packing_report_names = [pr.name for pr in packing_reports]
 		packing_data = {}
 		
+		packing_date_clause, packing_date_vals = _stage_date_clause("pr", report_date)
+
 		if packing_report_names:
 			print(f"\n{'='*80}")
 			print(f"[Order Tracking] Fetching Packing Report data...")
@@ -365,7 +398,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 			
 			# Packing is done at finished item level, so we need to SUM all quantities
 			# for a given order_sheet + so_item, regardless of combo_item
-			packing_report_ct = frappe.db.sql("""
+			packing_report_ct = frappe.db.sql(
+				f"""
 				SELECT 
 					pr.order_sheet,
 					prct.so_item,
@@ -373,9 +407,13 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 					SUM(prct.planned_qty) as planned_qty
 				FROM `tabPacking Report CT` prct
 				LEFT JOIN `tabPacking Report` pr ON prct.parent = pr.name
-				WHERE pr.order_sheet IN %s AND pr.docstatus = 1
+				WHERE pr.order_sheet IN %(order_sheets)s AND pr.docstatus = 1
+					{packing_date_clause}
 				GROUP BY pr.order_sheet, prct.so_item
-			""", (order_sheet_names,), as_dict=True)
+				""",
+				{"order_sheets": tuple(order_sheet_names), **packing_date_vals},
+				as_dict=True,
+			)
 			
 			print(f"[Order Tracking] Packing Report CT Query Results (Aggregated by finished item):")
 			print(f"  - Total rows: {len(packing_report_ct)}")
@@ -634,7 +672,8 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None):
 		
 		return {
 			"summary": summary,
-			"details": details
+			"details": details,
+			"report_date": report_date,
 		}
 		
 	except Exception as e:

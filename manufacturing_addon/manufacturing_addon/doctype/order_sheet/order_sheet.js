@@ -81,15 +81,40 @@ frappe.ui.form.on("Order Sheet", {
 			);
 		}
 
-		// Add button to create Production Plan
+		// Production Plan — create or open linked plan(s)
 		if (frm.doc.docstatus === 1 && frm.doc.order_sheet_ct && frm.doc.order_sheet_ct.length > 0) {
 			frm.add_custom_button(
 				__("Create Production Plan"),
 				function() {
 					frm.events.create_production_plan(frm);
 				},
-				__("Create")
+				__("Production Plan")
 			);
+			frappe.call({
+				method:
+					"manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.get_linked_production_plans",
+				args: { order_sheet: frm.doc.name },
+				callback(r) {
+					const plans = (r.message && r.message.plans) || [];
+					if (!plans.length) return;
+					if (plans.length === 1) {
+						frm.add_custom_button(
+							plans[0].name,
+							() => frappe.set_route("Form", "Production Plan", plans[0].name),
+							__("Production Plan")
+						);
+					} else {
+						frm.add_custom_button(
+							__("View Production Plans ({0})", [plans.length]),
+							() => {
+								frappe.route_options = { custom_order_sheet: frm.doc.name };
+								frappe.set_route("List", "Production Plan");
+							},
+							__("Production Plan")
+						);
+					}
+				},
+			});
 		}
 
 		if (frm.fields_dict.dashboard) {

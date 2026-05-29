@@ -102,15 +102,15 @@ frappe.pages['order-tracking'].on_page_load = function(wrapper) {
 								<th></th>
 								<th class="bg-info text-white">Total Cutting</th>
 								<th class="bg-info text-white">Planned %</th>
-								<th class="bg-info text-white">Qty %</th>
+								<th class="bg-info text-white">Order %</th>
 								<th class="bg-info text-white">Status</th>
 								<th class="bg-warning text-white">Total Stitching</th>
 								<th class="bg-warning text-white">Planned %</th>
-								<th class="bg-warning text-white">Qty %</th>
+								<th class="bg-warning text-white">Order %</th>
 								<th class="bg-warning text-white">Status</th>
 								<th class="bg-success text-white">Total Packing</th>
 								<th class="bg-success text-white">Planned %</th>
-								<th class="bg-success text-white">Qty %</th>
+								<th class="bg-success text-white">Order %</th>
 								<th class="bg-success text-white">Status</th>
 							</tr>
 						</thead>
@@ -745,7 +745,7 @@ function renderProgressCharts(summary) {
 					</div>
 				</div>
 				<div class="mt-2" style="font-size: 12px; color: #6c757d;">
-					Complete: ${formatNumber(summary.packing_finished_finished_items || summary.packing_finished || 0)} / Total: ${formatNumber(summary.total_order_qty || 0)}
+					Complete: ${formatNumber(summary.packing_finished_finished_items || summary.packing_finished || 0)} / Planned: ${formatNumber(summary.total_planned_qty || 0)}
 				</div>
 			</div>
 		</div>
@@ -1185,7 +1185,7 @@ function showAuditDrilldown(audit, voucherData) {
 				<tr><th>${__('Total Qty')}</th><td>${formatNumber(audit.total_qty || 0)}</td></tr>
 				<tr><th>${__('Base Qty For %')}</th><td>${formatNumber(audit.base_qty || 0)}</td></tr>
 				<tr><th>${__('Planned %')}</th><td>${formatPercentage(audit.planned_percent || 0)}%</td></tr>
-				<tr><th>${__('Qty %')}</th><td>${formatPercentage(audit.qty_percent || 0)}%</td></tr>
+				<tr><th>${__('Order %')}</th><td>${formatPercentage(audit.qty_percent || 0)}%</td></tr>
 			</table>
 			<div style="margin-top:16px;">
 				<h5 style="margin:0 0 8px 0;">${__('Row-wise Data')}</h5>
@@ -1199,7 +1199,7 @@ function showAuditDrilldown(audit, voucherData) {
 							<th class="text-right">${__('Total Qty')}</th>
 							<th class="text-right">${__('Base Qty')}</th>
 							<th class="text-right">${__('Planned %')}</th>
-							<th class="text-right">${__('Qty %')}</th>
+							<th class="text-right">${__('Order %')}</th>
 						</tr>
 					</thead>
 					<tbody>${rowsHtml}</tbody>

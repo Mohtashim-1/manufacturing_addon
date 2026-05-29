@@ -94,9 +94,25 @@ def _rich_item_fields(row, item_names: dict) -> dict:
 	}
 
 
-def _cutting_agg(from_date, to_date, customer=None, so_item=None, combo_item=None, supplier=None):
-	conditions = ["cr.docstatus = 1", "cr.date >= %(from_date)s", "cr.date <= %(to_date)s"]
-	values = {"from_date": from_date, "to_date": to_date}
+def _cutting_agg(
+	from_date,
+	to_date,
+	customer=None,
+	so_item=None,
+	combo_item=None,
+	supplier=None,
+	order_sheet=None,
+	skip_date_filter=False,
+):
+	conditions = ["cr.docstatus = 1"]
+	values = {}
+	if not skip_date_filter:
+		conditions.extend(["cr.date >= %(from_date)s", "cr.date <= %(to_date)s"])
+		values["from_date"] = from_date
+		values["to_date"] = to_date
+	if order_sheet:
+		conditions.append("cr.order_sheet = %(order_sheet)s")
+		values["order_sheet"] = order_sheet
 	if customer:
 		conditions.append("cr.customer = %(customer)s")
 		values["customer"] = customer
@@ -146,9 +162,25 @@ def _cutting_agg(from_date, to_date, customer=None, so_item=None, combo_item=Non
 	)
 
 
-def _stitching_agg(from_date, to_date, customer=None, so_item=None, combo_item=None, supplier=None):
-	conditions = ["sr.docstatus = 1", "sr.date >= %(from_date)s", "sr.date <= %(to_date)s"]
-	values = {"from_date": from_date, "to_date": to_date}
+def _stitching_agg(
+	from_date,
+	to_date,
+	customer=None,
+	so_item=None,
+	combo_item=None,
+	supplier=None,
+	order_sheet=None,
+	skip_date_filter=False,
+):
+	conditions = ["sr.docstatus = 1"]
+	values = {}
+	if not skip_date_filter:
+		conditions.extend(["sr.date >= %(from_date)s", "sr.date <= %(to_date)s"])
+		values["from_date"] = from_date
+		values["to_date"] = to_date
+	if order_sheet:
+		conditions.append("sr.order_sheet = %(order_sheet)s")
+		values["order_sheet"] = order_sheet
 	if customer:
 		conditions.append("sr.customer = %(customer)s")
 		values["customer"] = customer
@@ -198,9 +230,25 @@ def _stitching_agg(from_date, to_date, customer=None, so_item=None, combo_item=N
 	)
 
 
-def _packing_agg(from_date, to_date, customer=None, so_item=None, combo_item=None, supplier=None):
-	conditions = ["pr.docstatus = 1", "pr.date >= %(from_date)s", "pr.date <= %(to_date)s"]
-	values = {"from_date": from_date, "to_date": to_date}
+def _packing_agg(
+	from_date,
+	to_date,
+	customer=None,
+	so_item=None,
+	combo_item=None,
+	supplier=None,
+	order_sheet=None,
+	skip_date_filter=False,
+):
+	conditions = ["pr.docstatus = 1"]
+	values = {}
+	if not skip_date_filter:
+		conditions.extend(["pr.date >= %(from_date)s", "pr.date <= %(to_date)s"])
+		values["from_date"] = from_date
+		values["to_date"] = to_date
+	if order_sheet:
+		conditions.append("pr.order_sheet = %(order_sheet)s")
+		values["order_sheet"] = order_sheet
 	if customer:
 		conditions.append("pr.customer = %(customer)s")
 		values["customer"] = customer
@@ -429,18 +477,38 @@ def get_contractor_performance_data(
 	so_item=None,
 	combo_item=None,
 	supplier=None,
+	order_sheet=None,
+	all_dates=None,
 ):
 	"""Aggregate Cutting / Stitching / Packing reports: which contractor worked which item (qty)."""
-	from_date, to_date = _date_range(from_date, to_date)
-
 	customer = _strip_opt(customer)
 	so_item = _strip_opt(so_item)
 	combo_item = _strip_opt(combo_item)
 	supplier = _strip_opt(supplier)
+	order_sheet = _strip_opt(order_sheet)
+	skip_date_filter = frappe.utils.cint(all_dates) and bool(order_sheet)
 
-	cutting_raw = _drop_zero_qty_rows(_cutting_agg(from_date, to_date, customer, so_item, combo_item, supplier))
-	stitching_raw = _drop_zero_qty_rows(_stitching_agg(from_date, to_date, customer, so_item, combo_item, supplier))
-	packing_raw = _drop_zero_qty_rows(_packing_agg(from_date, to_date, customer, so_item, combo_item, supplier))
+	if skip_date_filter:
+		from_date = getdate("2000-01-01")
+		to_date = getdate(nowdate())
+	else:
+		from_date, to_date = _date_range(from_date, to_date)
+
+	cutting_raw = _drop_zero_qty_rows(
+		_cutting_agg(
+			from_date, to_date, customer, so_item, combo_item, supplier, order_sheet, skip_date_filter
+		)
+	)
+	stitching_raw = _drop_zero_qty_rows(
+		_stitching_agg(
+			from_date, to_date, customer, so_item, combo_item, supplier, order_sheet, skip_date_filter
+		)
+	)
+	packing_raw = _drop_zero_qty_rows(
+		_packing_agg(
+			from_date, to_date, customer, so_item, combo_item, supplier, order_sheet, skip_date_filter
+		)
+	)
 
 	item_names = _item_name_map(_collect_item_codes(cutting_raw, stitching_raw, packing_raw))
 
@@ -449,6 +517,7 @@ def get_contractor_performance_data(
 	return {
 		"from_date": str(from_date),
 		"to_date": str(to_date),
+		"order_sheet": order_sheet,
 		"cutting": _rows_for_stage(cutting_raw, "Cutting", item_names),
 		"stitching": _rows_for_stage(stitching_raw, "Stitching", item_names),
 		"packing": _rows_for_stage(packing_raw, "Packing", item_names),

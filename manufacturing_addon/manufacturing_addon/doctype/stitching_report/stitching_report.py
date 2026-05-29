@@ -149,10 +149,10 @@ class StitchingReport(Document):
                                     "qty_ctn": r.get("qty_ctn"),
                                     "article": r.get("stitching_article_no"),
                                     "ean": r.get("ean"),
-                                    "order_qty": order_qty * combo_pcs,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
+                                    "order_qty": order_qty,  # Finished-item order qty (not multiplied by PCS)
                                     "pcs": combo_pcs,
-                                    "qty": calculated_qty,  # planned_qty * pcs
-                                    "planned_qty": planned_qty * combo_pcs,  # Original planned_qty from Order Sheet CT
+                                    "qty": calculated_qty,  # component qty = planned_qty * pcs
+                                    "planned_qty": planned_qty,  # Finished-item planned qty (same for duvet/pillow)
                                     "so_item": so_item,
                                     "combo_item": combo_item_code,
                                 })
@@ -237,8 +237,8 @@ class StitchingReport(Document):
                                                 "ean": r.get("ean"),
                                                 "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                                 "pcs": combo_pcs,
-                                                "qty": calculated_qty,  # planned_qty * pcs
-                                                "planned_qty": planned_qty * combo_pcs,  # Original planned_qty from Order Sheet CT
+                                                "qty": calculated_qty,  # component qty = planned_qty * pcs
+                                                "planned_qty": planned_qty,  # Finished-item planned qty (same for duvet/pillow)
                                                 "so_item": so_item,
                                                 "combo_item": combo_item_code,
                                             })

@@ -438,6 +438,7 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None, order_
 		# Build details array with bundle items breakdown
 		details = []
 		total_order_qty = 0
+		total_planned_qty = 0
 		total_cutting_planned = 0
 		total_cutting_finished = 0
 		total_stitching_planned = 0
@@ -589,8 +590,9 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None, order_
 			print(f"  - Total Packing Planned (so far): {total_packing_planned}")
 			print(f"  - Total Packing Finished (so far): {total_packing_finished}")
 			
-			# Add order_qty (only once per finished item)
+			# Add order_qty and planned_qty (only once per finished item)
 			total_order_qty += row.order_qty or 0
+			total_planned_qty += row.planned_qty or 0
 		
 		# Calculate summary
 		print(f"\n{'='*80}")
@@ -601,40 +603,37 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None, order_
 		print(f"  - Total Cutting Planned (qty): {total_cutting_planned}")
 		print(f"  - Total Cutting Finished (qty): {total_cutting_finished}")
 		
-		# Cutting % = (Finished finished-item qty / order qty) × 100
-		if total_order_qty > 0:
-			cutting_progress = (total_cutting_finished / total_order_qty) * 100
-			print(f"  - Calculation: ({total_cutting_finished:.2f} / {total_order_qty}) * 100 = {cutting_progress:.1f}%")
+		# Cutting % = finished / planned × 100
+		if total_cutting_planned > 0:
+			cutting_progress = (total_cutting_finished / total_cutting_planned) * 100
+			print(f"  - Calculation: ({total_cutting_finished:.2f} / {total_cutting_planned}) * 100 = {cutting_progress:.1f}%")
 		else:
 			cutting_progress = 0
-			print(f"  - No order qty, progress = 0%")
+			print(f"  - No planned qty, progress = 0%")
 		
 		print(f"\n[Stitching Progress]")
-		print(f"  - Total Order Qty: {total_order_qty}")
 		print(f"  - Total Stitching Planned (qty): {total_stitching_planned}")
 		print(f"  - Total Stitching Finished (qty): {total_stitching_finished}")
 		
-		# Stitching % = (Finished finished-item qty / order qty) × 100
-		if total_order_qty > 0:
-			stitching_progress = (total_stitching_finished / total_order_qty) * 100
-			print(f"  - Calculation: ({total_stitching_finished:.2f} / {total_order_qty}) * 100 = {stitching_progress:.1f}%")
+		# Stitching % = finished / planned × 100
+		if total_stitching_planned > 0:
+			stitching_progress = (total_stitching_finished / total_stitching_planned) * 100
+			print(f"  - Calculation: ({total_stitching_finished:.2f} / {total_stitching_planned}) * 100 = {stitching_progress:.1f}%")
 		else:
 			stitching_progress = 0
-			print(f"  - No order qty, progress = 0%")
+			print(f"  - No planned qty, progress = 0%")
 		
 		print(f"\n[Packing Progress]")
 		print(f"  - Total Packing Finished: {total_packing_finished}")
-		print(f"  - Total Order Qty: {total_order_qty}")
 		print(f"  - Total Packing Planned: {total_packing_planned}")
 		
-		# Packing % = (Finished Packing Qty / order qty) × 100
-		# Allow percentage above 100% if finished exceeds order qty
-		if total_order_qty > 0:
-			packing_progress = (total_packing_finished / total_order_qty) * 100
-			print(f"  - Calculation: ({total_packing_finished} / {total_order_qty}) * 100 = {packing_progress:.1f}%")
+		# Packing % = finished / planned × 100
+		if total_packing_planned > 0:
+			packing_progress = (total_packing_finished / total_packing_planned) * 100
+			print(f"  - Calculation: ({total_packing_finished} / {total_packing_planned}) * 100 = {packing_progress:.1f}%")
 		else:
 			packing_progress = 0
-			print(f"  - No order qty, progress = 0%")
+			print(f"  - No planned qty, progress = 0%")
 		
 		# Overall progress: For finished items, get packing data from finished item rows (not bundle items)
 		# Sum up packing_finished from parent rows (finished items) only
@@ -645,18 +644,23 @@ def get_dashboard_data(customer=None, sales_order=None, order_sheet=None, order_
 				total_packing_finished_finished_items += detail_row.get("packing_finished", 0)
 		
 		print(f"\n[Overall Progress]")
-		print(f"  - Total Order Qty: {total_order_qty}")
+		print(f"  - Total Planned Qty: {total_planned_qty}")
 		print(f"  - Total Packing Finished (finished items): {total_packing_finished_finished_items}")
 		
-		# Overall progress = (finished items packed / total order qty) * 100
-		overall_progress = (total_packing_finished_finished_items / total_order_qty * 100) if total_order_qty > 0 else 0
-		print(f"  - Overall Progress: ({total_packing_finished_finished_items} / {total_order_qty}) * 100 = {overall_progress:.1f}%")
+		# Overall progress = packed finished items / total planned qty × 100
+		overall_progress = (
+			(total_packing_finished_finished_items / total_planned_qty * 100) if total_planned_qty > 0 else 0
+		)
+		print(
+			f"  - Overall Progress: ({total_packing_finished_finished_items} / {total_planned_qty}) * 100 = {overall_progress:.1f}%"
+		)
 		
 		print(f"{'='*80}\n")
 		
 		summary = {
 			"total_orders": len(order_sheet_names),
 			"total_order_qty": total_order_qty,
+			"total_planned_qty": total_planned_qty,
 			"cutting_planned": total_cutting_planned,
 			"cutting_finished": total_cutting_finished,
 			"cutting_progress": cutting_progress,

@@ -342,6 +342,14 @@
 
 		const $filters = $main.find(".cp-filter-row");
 
+		function linkOrUndefined(ctrl) {
+			const v = ctrl.get_value();
+			return v && String(v).trim() ? v : undefined;
+		}
+
+		/** Prevents customer onchange from clearing order_sheet when we sync customer from OS. */
+		let cp_filter_syncing = false;
+
 		const ctrls = {};
 		ctrls.from_date = frappe.ui.form.make_control({
 			parent: $filters,
@@ -372,6 +380,70 @@
 				fieldname: "customer",
 				label: __("Customer"),
 				options: "Customer",
+				onchange: () => {
+					if (cp_filter_syncing) {
+						console.log("[CP] customer onchange skipped (syncing from Order Sheet)");
+						return;
+					}
+					const cust = linkOrUndefined(ctrls.customer);
+					const os = linkOrUndefined(ctrls.order_sheet);
+					console.log("[CP] customer onchange", { cust, os });
+					if (!os || !ctrls.order_sheet) {
+						return;
+					}
+					frappe.db.get_value("Order Sheet", os, "customer").then((r) => {
+						const osCust = (r && r.message && r.message.customer) || (r && r.customer);
+						if (osCust && cust && osCust === cust) {
+							console.log("[CP] order_sheet kept — matches customer", os);
+							return;
+						}
+						console.log("[CP] clearing order_sheet (customer changed)", { osCust, cust });
+						ctrls.order_sheet.set_value("");
+					});
+				},
+			},
+			render_input: true,
+		});
+		ctrls.order_sheet = frappe.ui.form.make_control({
+			parent: $filters,
+			df: {
+				fieldtype: "Link",
+				fieldname: "order_sheet",
+				label: __("Order Sheet"),
+				options: "Order Sheet",
+				get_query: () => {
+					const customer = linkOrUndefined(ctrls.customer);
+					const query = customer
+						? { filters: { docstatus: ["<", 2], customer: customer } }
+						: { filters: { docstatus: ["<", 2] } };
+					console.log("[CP] order_sheet get_query", query);
+					return query;
+				},
+				onchange: () => {
+					const os = linkOrUndefined(ctrls.order_sheet);
+					console.log("[CP] order_sheet onchange", os, "syncing=", cp_filter_syncing);
+					if (!os) {
+						return;
+					}
+					frappe.db.get_value("Order Sheet", os, "customer").then((r) => {
+						const cust = (r && r.message && r.message.customer) || (r && r.customer);
+						console.log("[CP] order_sheet loaded customer", { os, cust, raw: r });
+						if (!cust || !ctrls.customer) {
+							return;
+						}
+						const currentCust = linkOrUndefined(ctrls.customer);
+						if (currentCust === cust) {
+							console.log("[CP] customer already matches, no sync");
+							return;
+						}
+						cp_filter_syncing = true;
+						ctrls.customer.set_value(cust);
+						setTimeout(() => {
+							cp_filter_syncing = false;
+							console.log("[CP] customer set from order sheet", cust);
+						}, 400);
+					});
+				},
 			},
 			render_input: true,
 		});
@@ -866,20 +938,17 @@
 			);
 		}
 
-		function linkOrUndefined(ctrl) {
-			const v = ctrl.get_value();
-			return v && String(v).trim() ? v : undefined;
-		}
-
 		function load() {
 			const args = {
 				from_date: ctrls.from_date.get_value() || frappe.datetime.month_start(),
 				to_date: ctrls.to_date.get_value() || frappe.datetime.month_end(),
 				customer: linkOrUndefined(ctrls.customer),
+				order_sheet: linkOrUndefined(ctrls.order_sheet),
 				so_item: linkOrUndefined(ctrls.cp_so_item),
 				combo_item: linkOrUndefined(ctrls.cp_combo_item),
 				supplier: linkOrUndefined(ctrls.cp_supplier),
 			};
+			console.log("[CP] load()", args);
 			$meta.text(__("Loading…"));
 			frappe
 				.xcall(
@@ -887,9 +956,16 @@
 					args
 				)
 				.then((data) => {
-					$meta.text(
-						``
-					);
+					const parts = [
+						frappe.datetime.str_to_user(args.from_date),
+						frappe.datetime.str_to_user(args.to_date),
+					];
+					if (args.order_sheet) {
+						parts.unshift(args.order_sheet);
+						$meta.text(__("Order Sheet {0} · {1} to {2}", parts));
+					} else {
+						$meta.text(__("{0} to {1}", parts));
+					}
 					renderContractorDrilldown($contractor, data);
 					renderMatrix($matrix, data);
 					renderDetailTableGeneric($cut, data.cutting, "cutting-report");

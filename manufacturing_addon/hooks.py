@@ -35,7 +35,9 @@ doctype_js = {
     "Purchase Receipt" : "public/js/purchase_receipt.js",
     "Purchase Order" : "public/js/purchase_order.js",
     "Production Plan" : "public/js/production_plan.js",
-
+    "Order Sheet": [
+        "public/js/contractor_performance_embed.js",
+    ],
     }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order_list.js",

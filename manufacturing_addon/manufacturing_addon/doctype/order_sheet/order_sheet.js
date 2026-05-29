@@ -120,8 +120,9 @@ frappe.ui.form.on("Order Sheet", {
 		if (frm.fields_dict.dashboard) {
 			orderSheetDashboard.render(frm);
 		}
-		if (frm.fields_dict.contractor_dashboard) {
-			contractorDashboardInForm.render(frm);
+		if (frm.fields_dict.contractor_dasbhaord) {
+			orderSheetContractorDashboard.render(frm);
+			orderSheetContractorDashboard.bind_tab_refresh(frm);
 		}
 		if (frm.fields_dict.quality_dashboard) {
 			qualityDashboardInForm.render(frm);
@@ -809,7 +810,7 @@ const orderSheetDashboard = {
 						</div>
 					</div>
 					<div class="mt-2" style="font-size:12px;color:#6c757d;">
-						Complete: ${this._fmt_num(s.packing_finished_finished_items || s.packing_finished || 0)} / Total: ${this._fmt_num(s.total_order_qty || 0)}
+						Complete: ${this._fmt_num(s.packing_finished_finished_items || s.packing_finished || 0)} / Planned: ${this._fmt_num(s.total_planned_qty || 0)}
 					</div>
 				</div>
 			</div>`
@@ -1111,193 +1112,41 @@ const orderSheetDashboard = {
 	format_percentage(n) { return this._fmt_pct(n); },
 };
 
-function contractorProgressPct(finished, planned, orderQty) {
-	const plan = Number(planned) > 0 ? Number(planned) : Number(orderQty) || 0;
-	if (!plan) {
-		return 0;
-	}
-	return Math.min(100, (Number(finished) || 0) / plan * 100);
-}
-
-function contractorProgressGrade(pct) {
-	const p = Number(pct) || 0;
-	if (p >= 100) {
-		return { bg: "#d4edda", color: "#155724", border: "#b7dfc5", bar: "bg-success", status: __("Complete") };
-	}
-	if (p >= 75) {
-		return { bg: "#d1ecf1", color: "#0c5460", border: "#bee5eb", bar: "bg-info", status: __("On Track") };
-	}
-	if (p >= 50) {
-		return { bg: "#fff3cd", color: "#856404", border: "#ffeeba", bar: "bg-warning", status: __("In Progress") };
-	}
-	if (p > 0) {
-		return { bg: "#ffe8cc", color: "#8a4500", border: "#ffd8a8", bar: "bg-warning", status: __("Started") };
-	}
-	return { bg: "#f8d7da", color: "#721c24", border: "#f1aeb5", bar: "bg-danger", status: __("Not Started") };
-}
-
-function contractorProgressLegend() {
-	return `
-		<div class="contractor-grade-legend">
-			<span><i class="contractor-grade-swatch" style="background:#f8d7da;"></i> 0%</span>
-			<span><i class="contractor-grade-swatch" style="background:#ffe8cc;"></i> 1–49%</span>
-			<span><i class="contractor-grade-swatch" style="background:#fff3cd;"></i> 50–74%</span>
-			<span><i class="contractor-grade-swatch" style="background:#d1ecf1;"></i> 75–99%</span>
-			<span><i class="contractor-grade-swatch" style="background:#d4edda;"></i> 100%</span>
-		</div>
-	`;
-}
-
-function contractorInjectStyles() {
-	if (document.getElementById("contractor-dash-grade-styles")) {
-		return;
-	}
-	const style = document.createElement("style");
-	style.id = "contractor-dash-grade-styles";
-	style.textContent = `
-		.contractor-dashboard-panel { padding: 12px 4px 16px; }
-		.contractor-grade-legend { display:flex; flex-wrap:wrap; gap:12px; font-size:11px; color:#6c757d; margin-bottom:14px; align-items:center; }
-		.contractor-grade-swatch { display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:middle; margin-right:4px; border:1px solid rgba(0,0,0,.1); }
-		.contractor-kpi-card { transition: transform .15s ease; }
-		.contractor-kpi-card:hover { transform: translateY(-2px); }
-		.contractor-grade-cell { white-space: nowrap; }
-		.contractor-dashboard-panel .table thead th { background:#f8f9fa; font-weight:600; font-size:12px; }
-	`;
-	document.head.appendChild(style);
-}
-
-const contractorDashboardInForm = {
-	kpiCard(label, pct, displayValue) {
-		const g = contractorProgressGrade(pct);
-		const barPct = Math.min(Number(pct) || 0, 100);
-		return `
-			<div class="col-md-3 col-sm-6 mb-3">
-				<div class="contractor-kpi-card" style="background:${g.bg};border:1px solid ${g.border};color:${g.color};border-radius:10px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.08);">
-					<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:.9;">${label}</div>
-					<div style="font-size:28px;font-weight:700;line-height:1.2;margin:8px 0 6px;">${displayValue}</div>
-					<div class="progress" style="height:10px;background:rgba(0,0,0,.1);border-radius:5px;margin-bottom:6px;">
-						<div class="progress-bar ${g.bar}" style="width:${barPct}%;"></div>
-					</div>
-					<small style="font-weight:600;">${g.status} · ${this.pct(pct)}%</small>
-				</div>
-			</div>
-		`;
-	},
-
-	qtyCell(finished, planned, orderQty) {
-		const pct = contractorProgressPct(finished, planned, orderQty);
-		const g = contractorProgressGrade(pct);
-		return `
-			<td class="text-right contractor-grade-cell" style="background:${g.bg};color:${g.color};font-weight:600;"
-				title="${g.status}: ${this.pct(pct)}% of ${this.fmt(planned || orderQty)}">
-				<div>${this.fmt(finished)}</div>
-				<div style="font-size:10px;font-weight:500;opacity:.9;">${this.pct(pct)}%</div>
-			</td>
-		`;
-	},
-
-	render(frm) {
-		const $wrapper = frm.fields_dict.contractor_dashboard.$wrapper;
-		if (!$wrapper) return;
-
-		contractorInjectStyles();
-
-		if (!frm.doc.name || frm.doc.__islocal) {
-			$wrapper.html(`
-				<div style="padding:20px; text-align:center; color:#6c757d;">
-					${__("Save the document to load contractor dashboard.")}
-				</div>
-			`);
-			return;
-		}
-
-		$wrapper.html(`
-			<div class="contractor-dashboard-panel">
-				<div class="text-muted text-center p-3"><i class="fa fa-spinner fa-spin"></i> ${__("Loading...")}</div>
-			</div>
-		`);
-
-		frappe.call({
-			method: "manufacturing_addon.manufacturing_addon.page.order_tracking.order_tracking.get_dashboard_data",
-			args: { order_sheet: frm.doc.name },
-			callback: (r) => {
-				const data = r.message || {};
-				const summary = data.summary || {};
-				const details = data.details || [];
-				const cuttingPct = Number(summary.cutting_progress) || 0;
-				const stitchingPct = Number(summary.stitching_progress) || 0;
-				const packingPct = Number(summary.packing_progress) || 0;
-				const overallPct = Number(summary.overall_progress) || packingPct;
-
-				const html = `
-					<div class="contractor-dashboard-panel">
-						<div class="text-muted" style="margin-bottom:10px;font-size:12px;">
-							${__("Order Sheet")}: <b>${frappe.utils.escape_html(frm.doc.name)}</b>
-						</div>
-						${contractorProgressLegend()}
-						<div class="row">
-							<div class="col-md-3 col-sm-6 mb-3">
-								<div class="contractor-kpi-card" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
-									<div style="font-size:11px;font-weight:700;text-transform:uppercase;opacity:.9;">${__("Order Qty")}</div>
-									<div style="font-size:28px;font-weight:700;margin:8px 0;">${this.fmt(summary.total_order_qty)}</div>
-									<small style="opacity:.9;">${__("Total ordered quantity")}</small>
-								</div>
-							</div>
-							${this.kpiCard(__("Cutting %"), cuttingPct, `${this.pct(cuttingPct)}%`)}
-							${this.kpiCard(__("Stitching %"), stitchingPct, `${this.pct(stitchingPct)}%`)}
-							${this.kpiCard(__("Packing %"), packingPct, `${this.pct(packingPct)}%`)}
-						</div>
-						<div class="row" style="margin-bottom:12px;">
-							${this.kpiCard(__("Overall %"), overallPct, `${this.pct(overallPct)}%`)}
-						</div>
-						<div class="table-responsive">
-							<table class="table table-bordered table-sm table-hover">
-								<thead>
-									<tr>
-										<th>${__("Item")}</th>
-										<th>${__("Bundle Item")}</th>
-										<th class="text-right">${__("Order Qty")}</th>
-										<th class="text-right">${__("Planned Qty")}</th>
-										<th class="text-right">${__("Cutting")}</th>
-										<th class="text-right">${__("Stitching")}</th>
-										<th class="text-right">${__("Packing")}</th>
-									</tr>
-								</thead>
-								<tbody>
-									${details.length ? details.map((d) => {
-										const oq = d.order_qty || 0;
-										const pq = d.planned_qty || 0;
-										return `
-										<tr>
-											<td>${frappe.utils.escape_html(d.item || "")}</td>
-											<td>${frappe.utils.escape_html(d.bundle_item || "—")}</td>
-											<td class="text-right">${this.fmt(oq)}</td>
-											<td class="text-right">${this.fmt(pq)}</td>
-											${this.qtyCell(d.cutting_finished, pq, oq)}
-											${this.qtyCell(d.stitching_finished, pq, oq)}
-											${this.qtyCell(d.packing_finished, pq, oq)}
-										</tr>
-									`;
-									}).join("") : `<tr><td colspan="7" class="text-center text-muted">${__("No data found")}</td></tr>`}
-								</tbody>
-							</table>
-						</div>
-					</div>
-				`;
-				$wrapper.html(html);
-			},
-			error: () => {
-				$wrapper.html(`<div style="padding:20px;color:#dc3545;">${__("Failed to load contractor dashboard.")}</div>`);
-			},
+const orderSheetContractorDashboard = {
+	bind_tab_refresh(frm) {
+		if (frm._cp_contractor_tab_bound) return;
+		frm._cp_contractor_tab_bound = true;
+		const tabField = "contractor_dashbaord_tab";
+		frm.$wrapper.on("shown.bs.tab", `.nav-link[data-fieldname="${tabField}"]`, () => {
+			orderSheetContractorDashboard.render(frm);
 		});
 	},
 
-	fmt(n) {
-		return (n == null ? 0 : Number(n)).toLocaleString("en-US", { maximumFractionDigits: 2 });
-	},
+	render(frm) {
+		const $wrapper = frm.fields_dict.contractor_dasbhaord?.$wrapper;
+		if (!$wrapper) return;
 
-	pct(n) {
-		return (n == null ? 0 : Number(n)).toFixed(1);
+		if (!frm.doc.name || frm.doc.__islocal) {
+			$wrapper.html(
+				`<div class="text-muted text-center p-4">${__("Save the document to load the contractor dashboard.")}</div>`
+			);
+			return;
+		}
+
+		if (!manufacturing_addon.contractor_performance?.render_panel) {
+			$wrapper.html(
+				`<div class="alert alert-warning">${__("Contractor dashboard script not loaded. Run bench build.")}</div>`
+			);
+			return;
+		}
+
+		manufacturing_addon.contractor_performance.render_panel($wrapper, {
+			order_sheet: frm.doc.name,
+			customer: frm.doc.customer,
+			title: __("Contractor performance"),
+			show_filters: false,
+			all_dates: true,
+		});
 	},
 };
 

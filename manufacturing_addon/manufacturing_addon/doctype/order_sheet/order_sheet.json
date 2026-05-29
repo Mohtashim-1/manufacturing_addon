@@ -47,7 +47,7 @@
   "dashboard_tab",
   "dashboard",
   "contractor_dashbaord_tab",
-  "contractor_dashboard",
+  "contractor_dasbhaord",
   "quality_dashboard_tab",
   "quality_dashboard"
  ],
@@ -338,12 +338,12 @@
   {
    "fieldname": "contractor_dashbaord_tab",
    "fieldtype": "Tab Break",
-   "label": "Contractor Dashbaord"
+   "label": "Contractor Dashboard"
   },
   {
-   "fieldname": "contractor_dashboard",
+   "fieldname": "contractor_dasbhaord",
    "fieldtype": "HTML",
-   "label": "Dashboard"
+   "label": "Contractor Dashboard"
   },
   {
    "fieldname": "quality_dashboard_tab",
@@ -366,7 +366,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-29 22:09:02.846171",
+ "modified": "2026-05-30 01:12:11.904249",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

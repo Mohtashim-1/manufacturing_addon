@@ -11,8 +11,6 @@
    "description": "Order Sheet this production plan was created from",
    "docstatus": 0,
    "dt": "Production Plan",
-   "fetch_from": "custom_order_sheet.customer",
-   "fetch_if_empty": 1,
    "fieldname": "custom_order_sheet",
    "fieldtype": "Link",
    "hidden": 0,

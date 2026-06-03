@@ -29,7 +29,10 @@ app_include_js = "/assets/manufacturing_addon/js/sales_addon_workspace_v2.js"
 
 # include js in doctype views
 doctype_js = {
-    "Sales Order" : "public/js/sales_order.js",
+    "Sales Order": [
+        "public/js/sales_order.js",
+        "public/js/sales_order_connection_dashboard.js",
+    ],
     "Item" : "public/js/item.js",
     "BOM" : "public/js/bom.js",
     "Purchase Receipt" : "public/js/purchase_receipt.js",

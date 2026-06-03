@@ -20,13 +20,6 @@ MANUFACTURING_CONNECTION_ITEMS = ("Order Sheet",) + INDIRECT_VIA_ORDER_SHEET
 
 
 def get_data(data=None):
-	frappe.log_error("sales_order_dashboard")
-	try:
-		frappe.log_error("[Manufacturing Addon] get_data called for Sales Order dashboard override")
-		if data:
-			frappe.log_error(f"[Manufacturing Addon] Incoming data keys: {list(data.keys())}")
-	except Exception as e:
-		frappe.log_error(f"Sales Order dashboard logging failed: {e}", "Manufacturing Addon Dashboard Log Error")
 	dashboard = {
 		"fieldname": "sales_order",
 		"non_standard_fieldnames": {
@@ -121,18 +114,19 @@ def get_open_count(doctype: str, name: str, items=None):
 			)
 			continue
 
+		total = frappe.db.count(linked_doctype, {"order_sheet": ["in", order_sheet_names]})
 		names = frappe.get_all(
 			linked_doctype,
 			filters={"order_sheet": ["in", order_sheet_names]},
 			pluck="name",
-			limit=100,
+			limit=500,
 			distinct=True,
-			order_by=None,
+			order_by="modified desc",
 		)
 		out["count"]["internal_links_found"].append(
 			{
 				"doctype": linked_doctype,
-				"count": len(names),
+				"count": total,
 				"open_count": 0,
 				"names": names,
 			}

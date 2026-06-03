@@ -129,21 +129,28 @@ frappe.ui.form.on("Sales Order", {
     },
 
     dashboard_update: function(frm) {
-        const dashboardData = frm.dashboard_data || {};
-        const transactions = dashboardData.transactions || [];
-        const count = dashboardData.count || {};
+        const count = (frm.dashboard_data && frm.dashboard_data.count) || {};
         const internalLinks = count.internal_links_found || [];
+        const manufacturing = (frm.dashboard_data && frm.dashboard_data.transactions || [])
+            .find((group) => group.label === __("Manufacturing"));
 
-        console.log("[Manufacturing Addon][Sales Order] dashboard_update", {
-            sales_order: frm.doc.name,
-            transactions,
-            internal_links_found: internalLinks,
-            manufacturing_group: transactions.find(group => group.label === "Manufacturing"),
-            order_sheet_link: internalLinks.find(link => link.doctype === "Order Sheet"),
-            cutting_report_link: internalLinks.find(link => link.doctype === "Cutting Report"),
-            stitching_report_link: internalLinks.find(link => link.doctype === "Stitching Report"),
-            packing_report_link: internalLinks.find(link => link.doctype === "Packing Report")
+        // Re-enable links when indirect manufacturing docs exist (via Order Sheet).
+        internalLinks.forEach((link) => {
+            if (!link.names || !link.names.length) return;
+            const $el = $(frm.dashboard.transactions_area).find(
+                `.document-link[data-doctype="${link.doctype}"]`
+            );
+            $el.attr("data-names", link.names.join(","));
+            $el.find("a").removeAttr("disabled");
         });
+
+        if (manufacturing && frappe.boot.developer_mode) {
+            console.log("[Manufacturing Addon][Sales Order] connections", {
+                sales_order: frm.doc.name,
+                cutting: internalLinks.find((l) => l.doctype === "Cutting Report"),
+                stitching: internalLinks.find((l) => l.doctype === "Stitching Report"),
+            });
+        }
     }
 });
 

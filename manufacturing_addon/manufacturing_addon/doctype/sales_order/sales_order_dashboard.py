@@ -96,7 +96,23 @@ def get_open_count(doctype: str, name: str, items=None):
 			items.extend(group.get("items"))
 
 	cleaned = [item for item in items if item not in INDIRECT_VIA_ORDER_SHEET]
-	out = frappe_get_open_count(doctype, name, cleaned)
+
+	# Allow slower prod DB; default frappe desk timeout is 1s.
+	frappe.db.set_execution_timeout(5)
+	try:
+		out = frappe_get_open_count(doctype, name, cleaned)
+	finally:
+		frappe.db.set_execution_timeout(0)
+
+	count = out.setdefault("count", {})
+	internal = count.setdefault("internal_links_found", [])
+	external = count.setdefault("external_links_found", [])
+
+	# Drop wrong external rows (filter sales_order on doctypes that only link via Order Sheet).
+	count["external_links_found"] = [
+		row for row in external if row.get("doctype") not in INDIRECT_VIA_ORDER_SHEET
+	]
+	internal_by_dt = {row.get("doctype"): row for row in internal if row.get("doctype")}
 
 	order_sheet_names = frappe.get_all(
 		"Order Sheet",
@@ -107,29 +123,30 @@ def get_open_count(doctype: str, name: str, items=None):
 	for linked_doctype in items:
 		if linked_doctype not in INDIRECT_VIA_ORDER_SHEET:
 			continue
-
-		if not order_sheet_names:
-			out["count"]["internal_links_found"].append(
-				{"doctype": linked_doctype, "count": 0, "open_count": 0, "names": []}
-			)
+		if not frappe.db.exists("DocType", linked_doctype):
 			continue
 
-		total = frappe.db.count(linked_doctype, {"order_sheet": ["in", order_sheet_names]})
-		names = frappe.get_all(
-			linked_doctype,
-			filters={"order_sheet": ["in", order_sheet_names]},
-			pluck="name",
-			limit=500,
-			distinct=True,
-			order_by="modified desc",
-		)
-		out["count"]["internal_links_found"].append(
-			{
+		if not order_sheet_names:
+			row = {"doctype": linked_doctype, "count": 0, "open_count": 0, "names": []}
+		else:
+			filters = {"order_sheet": ["in", order_sheet_names]}
+			total = frappe.db.count(linked_doctype, filters)
+			names = frappe.get_all(
+				linked_doctype,
+				filters=filters,
+				pluck="name",
+				limit=500,
+				distinct=True,
+				order_by="modified desc",
+			)
+			row = {
 				"doctype": linked_doctype,
 				"count": total,
 				"open_count": 0,
 				"names": names,
 			}
-		)
 
+		internal_by_dt[linked_doctype] = row
+
+	count["internal_links_found"] = list(internal_by_dt.values())
 	return out

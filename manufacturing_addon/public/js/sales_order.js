@@ -1,3 +1,87 @@
+/** Manufacturing links on Sales Order Connections (prod-safe if dashboard hook/cache is stale). */
+const SO_INDIRECT_CONNECTIONS = [
+	"Order Sheet",
+	"Cutting Report",
+	"Stitching Report",
+	"Packing Report",
+	"Daily Checking",
+	"Inline Stitching",
+	"Final Inspection",
+];
+const SO_OPEN_COUNT_METHOD =
+	"manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order_dashboard.get_open_count";
+
+function ensure_sales_order_manufacturing_connections(frm) {
+	if (frm.is_new() || !frm.meta) return false;
+
+	if (!frm.meta.__dashboard) {
+		frm.meta.__dashboard = {
+			fieldname: "sales_order",
+			transactions: [],
+			internal_links: {},
+			non_standard_fieldnames: {},
+		};
+	}
+
+	const dash = frm.meta.__dashboard;
+	dash.method = SO_OPEN_COUNT_METHOD;
+	dash.fieldname = dash.fieldname || "sales_order";
+	dash.transactions = dash.transactions || [];
+	dash.internal_links = dash.internal_links || {};
+
+	let mfgGroup = dash.transactions.find((g) => g.label === __("Manufacturing"));
+	if (!mfgGroup) {
+		mfgGroup = { label: __("Manufacturing"), items: [] };
+		dash.transactions.push(mfgGroup);
+	}
+
+	let changed = false;
+	SO_INDIRECT_CONNECTIONS.forEach((dt) => {
+		if (!frappe.model.can_read(dt)) return;
+		if (!mfgGroup.items.includes(dt)) {
+			mfgGroup.items.push(dt);
+			changed = true;
+		}
+	});
+
+	if (changed && frm.dashboard) {
+		frm.dashboard.data = null;
+		frm.dashboard.data_rendered = false;
+		frm.dashboard._fetched_counts = false;
+	}
+
+	return changed;
+}
+
+function sync_sales_order_indirect_connection_links(frm) {
+	const count = (frm.dashboard_data && frm.dashboard_data.count) || {};
+	const internalLinks = count.internal_links_found || [];
+
+	internalLinks.forEach((link) => {
+		if (!link || !SO_INDIRECT_CONNECTIONS.includes(link.doctype)) return;
+
+		const $el = $(frm.dashboard.transactions_area).find(
+			`.document-link[data-doctype="${link.doctype}"]`
+		);
+		if (!$el.length) return;
+
+		const names = (link.names || []).filter(Boolean);
+		if (names.length) {
+			$el.attr("data-names", names.join(","));
+			$el.find("a.badge-link").removeAttr("disabled");
+			$el.find(".count")
+				.removeClass("hidden")
+				.text(
+					cint(link.count) > 99 ? "99+" : cint(link.count || names.length)
+				);
+		} else {
+			$el.removeAttr("data-names");
+			$el.find("a.badge-link").attr("disabled", true);
+			$el.find(".count").addClass("hidden").text("");
+		}
+	});
+}
+
 // Validate item-customer restriction when item_code is selected
 frappe.ui.form.on("Sales Order Item", {
     item_code: function(frm, cdt, cdn) {
@@ -41,7 +125,13 @@ frappe.ui.form.on("Sales Order Item", {
 
 // Add custom button on Sales Order
 frappe.ui.form.on("Sales Order", {
+    onload(frm) {
+        ensure_sales_order_manufacturing_connections(frm);
+    },
+
     refresh: function(frm) {
+        ensure_sales_order_manufacturing_connections(frm);
+
         console.log("[Manufacturing Addon][Sales Order] refresh", {
             name: frm.doc.name,
             is_new: frm.is_new(),
@@ -129,29 +219,19 @@ frappe.ui.form.on("Sales Order", {
     },
 
     dashboard_update: function(frm) {
-        const count = (frm.dashboard_data && frm.dashboard_data.count) || {};
-        const internalLinks = count.internal_links_found || [];
-        const manufacturing = (frm.dashboard_data && frm.dashboard_data.transactions || [])
-            .find((group) => group.label === __("Manufacturing"));
+        sync_sales_order_indirect_connection_links(frm);
 
-        // Re-enable links when indirect manufacturing docs exist (via Order Sheet).
-        internalLinks.forEach((link) => {
-            if (!link.names || !link.names.length) return;
-            const $el = $(frm.dashboard.transactions_area).find(
-                `.document-link[data-doctype="${link.doctype}"]`
-            );
-            $el.attr("data-names", link.names.join(","));
-            $el.find("a").removeAttr("disabled");
-        });
-
-        if (manufacturing && frappe.boot.developer_mode) {
+        if (frappe.boot.developer_mode) {
+            const internalLinks =
+                ((frm.dashboard_data && frm.dashboard_data.count) || {}).internal_links_found || [];
             console.log("[Manufacturing Addon][Sales Order] connections", {
                 sales_order: frm.doc.name,
+                method: (frm.meta.__dashboard && frm.meta.__dashboard.method) || null,
                 cutting: internalLinks.find((l) => l.doctype === "Cutting Report"),
                 stitching: internalLinks.find((l) => l.doctype === "Stitching Report"),
             });
         }
-    }
+    },
 });
 
 

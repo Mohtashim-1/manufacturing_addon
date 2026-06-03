@@ -173,10 +173,12 @@ scheduler_events = {
 	"cron": {
 		"0 0 * * *": [
 			"manufacturing_addon.manufacturing_addon.daily_order_sheet_email.send_daily_active_order_sheet_email",
+			"manufacturing_addon.manufacturing_addon.daily_contractor_performance_email.send_daily_contractor_performance_email",
 			"manufacturing_addon.manufacturing_addon.page.production_progress.production_progress.send_scheduled_production_progress_email",
 		],
 		"0 12 * * *": [
 			"manufacturing_addon.manufacturing_addon.daily_order_sheet_email.send_daily_active_order_sheet_email",
+			"manufacturing_addon.manufacturing_addon.daily_contractor_performance_email.send_daily_contractor_performance_email",
 			"manufacturing_addon.manufacturing_addon.page.production_progress.production_progress.send_scheduled_production_progress_email",
 		]
 	}

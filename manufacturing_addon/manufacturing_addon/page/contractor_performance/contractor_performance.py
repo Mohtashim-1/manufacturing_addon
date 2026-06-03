@@ -490,7 +490,7 @@ def get_contractor_performance_data(
 
 	if skip_date_filter:
 		from_date = getdate("2000-01-01")
-		to_date = getdate(nowdate())
+		to_date = getdate(nowdate())	
 	else:
 		from_date, to_date = _date_range(from_date, to_date)
 

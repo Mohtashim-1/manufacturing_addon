@@ -195,16 +195,17 @@ const sales_order_list_dashboard = (() => {
 		const yearly = data.yearly_trend || [];
 		const territory = data.territory_breakdown || [];
 		const currencyBreakdown = data.currency_breakdown || [];
+		const topCustomers = data.top_customers || [];
 		const filters = data.filters || {};
 		host.querySelector('[data-role="meta"]').textContent =
 			`${filters.company || "All companies"} · ${filters.from_date || "--"} to ${filters.to_date || "--"}`;
 
 		host.querySelector('[data-role="body"]').innerHTML = `
 			<div class="sold-kpis">
-				${kpi_card("Total Sales Value", format_currency_short(kpis.total_value, currency), format_currency_full(kpis.total_value, currency), "#2563eb")}
+				${kpi_card("Total Sales Value", format_currency_full(kpis.total_value, currency), "Matching list filters", "#2563eb")}
 				${kpi_card("Total Orders", String(kpis.total_orders || 0), `${kpis.total_orders || 0} matching orders`, "#7c3aed")}
-				${kpi_card("Pending Value", format_currency_short(kpis.pending_value, currency), "To Deliver / Bill", "#d97706")}
-				${kpi_card("Completed + Closed", format_currency_short((flt(kpis.completed_value) + flt(kpis.closed_value)), currency), "Delivered lifecycle", "#059669")}
+				${kpi_card("Pending Value", format_currency_full(kpis.pending_value, currency), "To Deliver / Bill", "#d97706")}
+				${kpi_card("Completed + Closed", format_currency_full(flt(kpis.completed_value) + flt(kpis.closed_value), currency), "Delivered lifecycle", "#059669")}
 			</div>
 			<div class="sold-grid">
 				<div class="sold-card">
@@ -219,12 +220,17 @@ const sales_order_list_dashboard = (() => {
 					<h3>Top Territories by Sales Value</h3>
 					<div class="sold-territories" data-role="territories"></div>
 				</div>
+				<div class="sold-card sold-card-wide">
+					<h3>Top 5 Customers by Sales Value</h3>
+					<div class="sold-customers" data-role="customers"></div>
+				</div>
 			</div>
 		`;
 
 		render_area_chart(host.querySelector('[data-chart="yearly"]'), yearly, currency);
 		render_currency_cards(host.querySelector('[data-role="currencies"]'), currencyBreakdown, currency);
 		render_territory_cards(host.querySelector('[data-role="territories"]'), territory, currency);
+		render_customer_cards(host.querySelector('[data-role="customers"]'), topCustomers, currency);
 	}
 
 	function kpi_card(label, value, sub, accent) {
@@ -273,7 +279,7 @@ const sales_order_list_dashboard = (() => {
 			yaxis: {
 				labels: {
 					style: axis_style("#94a3b8", 10),
-					formatter: (value) => format_currency_short(value, currency),
+					formatter: (value) => format_currency_full(value, currency),
 				},
 			},
 			markers: { size: 6, strokeWidth: 3, strokeColors: "#fff", hover: { size: 8 } },
@@ -295,8 +301,7 @@ const sales_order_list_dashboard = (() => {
 			<div class="sold-currency-card">
 				<div class="sold-currency-swatch" style="background:${BAR_COLORS[index % BAR_COLORS.length]}"></div>
 				<div class="sold-currency-name">${frappe.utils.escape_html(row.name)}</div>
-				<div class="sold-currency-value">${frappe.utils.escape_html(format_currency_short(row.currency_value, row.name))}</div>
-				<div class="sold-currency-sub">${frappe.utils.escape_html(format_currency_full(row.currency_value, row.name))}</div>
+				<div class="sold-currency-value">${frappe.utils.escape_html(format_currency_full(row.currency_value, row.name))}</div>
 				<div class="sold-currency-base">${frappe.utils.escape_html(`${currency}: ${format_currency_full(row.base_value, currency)}`)}</div>
 				<div class="sold-currency-count">${row.order_count || 0} orders</div>
 			</div>
@@ -315,10 +320,35 @@ const sales_order_list_dashboard = (() => {
 					<div class="sold-territory-name">${frappe.utils.escape_html(row.name)}</div>
 					<div class="sold-territory-count">${row.order_count || 0} orders</div>
 				</div>
-				<div class="sold-territory-value" style="color:${BAR_COLORS[index % BAR_COLORS.length]}">${frappe.utils.escape_html(format_currency_short(row.value, currency))}</div>
-				<div class="sold-territory-sub">${frappe.utils.escape_html(format_currency_full(row.value, currency))}</div>
+				<div class="sold-territory-value" style="color:${BAR_COLORS[index % BAR_COLORS.length]}">${frappe.utils.escape_html(format_currency_full(row.value, currency))}</div>
 			</div>
 		`).join("");
+	}
+
+	function render_customer_cards(container, rows, currency) {
+		if (!container) return;
+		if (!rows.length) {
+			container.innerHTML = '<div class="sold-empty">No customer data available.</div>';
+			return;
+		}
+		container.innerHTML = rows
+			.map((row, index) => {
+				const rank = index + 1;
+				const nameHtml = row.customer
+					? `<a class="sold-customer-link" href="/app/customer/${encodeURIComponent(row.customer)}">${frappe.utils.escape_html(row.name)}</a>`
+					: `<span class="sold-customer-name">${frappe.utils.escape_html(row.name)}</span>`;
+				return `
+			<div class="sold-customer-card">
+				<div class="sold-customer-rank" style="background:${BAR_COLORS[index % BAR_COLORS.length]}22;color:${BAR_COLORS[index % BAR_COLORS.length]}">#${rank}</div>
+				<div class="sold-customer-top">
+					<div class="sold-customer-name-wrap">${nameHtml}</div>
+					<div class="sold-customer-count">${row.order_count || 0} orders</div>
+				</div>
+				<div class="sold-customer-value" style="color:${BAR_COLORS[index % BAR_COLORS.length]}">${frappe.utils.escape_html(format_currency_full(row.value, currency))}</div>
+			</div>
+		`;
+			})
+			.join("");
 	}
 
 	function load_apexcharts() {
@@ -359,17 +389,17 @@ const sales_order_list_dashboard = (() => {
 		};
 	}
 
-	function format_currency_short(value, currency) {
-		const amount = flt(value);
-		const prefix = currency === "PKR" ? "Rs " : `${currency} `;
-		if (amount >= 10000000) return `${prefix}${(amount / 10000000).toFixed(1)}Cr`;
-		if (amount >= 100000) return `${prefix}${(amount / 100000).toFixed(1)}L`;
-		if (amount >= 1000) return `${prefix}${(amount / 1000).toFixed(0)}K`;
-		return `${prefix}${amount.toFixed(0)}`;
-	}
-
 	function format_currency_full(value, currency) {
-		return `${currency} ${flt(value).toLocaleString("en-PK", { maximumFractionDigits: 2 })}`;
+		const amount = flt(value);
+		const curr = currency || frappe.defaults.get_default("currency") || "PKR";
+		// frappe.format(Currency) returns HTML; use plain format_currency for custom dashboard text.
+		if (typeof frappe.utils?.format_currency === "function") {
+			return frappe.utils.format_currency(amount, curr);
+		}
+		return `${curr} ${amount.toLocaleString("en-PK", {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
+		})}`;
 	}
 
 	function flt(value) {
@@ -465,10 +495,12 @@ const sales_order_list_dashboard = (() => {
 				margin-bottom: 6px;
 			}
 			#${BLOCK_ID} .sold-kpi-value {
-				font-size: 26px;
+				font-size: 22px;
 				font-weight: 700;
-				font-family: "Instrument Sans", sans-serif;
+				font-family: "JetBrains Mono", monospace;
 				color: #0f172a;
+				line-height: 1.35;
+				word-break: break-word;
 			}
 			#${BLOCK_ID} .sold-kpi-sub {
 				margin-top: 6px;
@@ -501,6 +533,62 @@ const sales_order_list_dashboard = (() => {
 				grid-template-columns: repeat(3, minmax(0, 1fr));
 				gap: 14px;
 			}
+			#${BLOCK_ID} .sold-customers {
+				display: grid;
+				grid-template-columns: repeat(5, minmax(0, 1fr));
+				gap: 14px;
+			}
+			#${BLOCK_ID} .sold-customer-card {
+				padding: 18px;
+				border-radius: 18px;
+				background: #fff;
+				border: 1px solid #e2e8f0;
+				box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+				animation: sold-fade-up 0.55s ease both;
+			}
+			#${BLOCK_ID} .sold-customer-rank {
+				display: inline-block;
+				font-size: 11px;
+				font-weight: 700;
+				padding: 4px 8px;
+				border-radius: 999px;
+				margin-bottom: 12px;
+				font-family: "JetBrains Mono", monospace;
+			}
+			#${BLOCK_ID} .sold-customer-top {
+				display: flex;
+				align-items: flex-start;
+				justify-content: space-between;
+				gap: 10px;
+				margin-bottom: 12px;
+			}
+			#${BLOCK_ID} .sold-customer-name-wrap {
+				font-size: 13px;
+				font-weight: 700;
+				color: #334155;
+				line-height: 1.35;
+				word-break: break-word;
+			}
+			#${BLOCK_ID} .sold-customer-link {
+				color: #2563eb;
+				text-decoration: none;
+			}
+			#${BLOCK_ID} .sold-customer-link:hover {
+				text-decoration: underline;
+			}
+			#${BLOCK_ID} .sold-customer-count {
+				font-size: 11px;
+				color: #94a3b8;
+				font-family: "JetBrains Mono", monospace;
+				white-space: nowrap;
+			}
+			#${BLOCK_ID} .sold-customer-value {
+				font-size: 18px;
+				font-weight: 700;
+				font-family: "JetBrains Mono", monospace;
+				line-height: 1.35;
+				word-break: break-word;
+			}
 			#${BLOCK_ID} .sold-currency-grid {
 				display: grid;
 				grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -527,16 +615,13 @@ const sales_order_list_dashboard = (() => {
 				margin-bottom: 8px;
 			}
 			#${BLOCK_ID} .sold-currency-value {
-				font-size: 24px;
+				font-size: 18px;
 				font-weight: 700;
-				font-family: "Instrument Sans", sans-serif;
+				font-family: "JetBrains Mono", monospace;
 				color: #0f172a;
-				margin-bottom: 4px;
-			}
-			#${BLOCK_ID} .sold-currency-sub {
-				font-size: 12px;
-				color: #64748b;
-				margin-bottom: 6px;
+				margin-bottom: 8px;
+				line-height: 1.35;
+				word-break: break-word;
 			}
 			#${BLOCK_ID} .sold-currency-base {
 				font-size: 11px;
@@ -573,6 +658,11 @@ const sales_order_list_dashboard = (() => {
 			#${BLOCK_ID} .sold-currency-card:nth-child(2) { animation-delay: 0.08s; }
 			#${BLOCK_ID} .sold-territory-card:nth-child(5) { animation-delay: 0.23s; }
 			#${BLOCK_ID} .sold-territory-card:nth-child(6) { animation-delay: 0.28s; }
+			#${BLOCK_ID} .sold-customer-card:nth-child(1) { animation-delay: 0.03s; }
+			#${BLOCK_ID} .sold-customer-card:nth-child(2) { animation-delay: 0.08s; }
+			#${BLOCK_ID} .sold-customer-card:nth-child(3) { animation-delay: 0.13s; }
+			#${BLOCK_ID} .sold-customer-card:nth-child(4) { animation-delay: 0.18s; }
+			#${BLOCK_ID} .sold-customer-card:nth-child(5) { animation-delay: 0.23s; }
 			#${BLOCK_ID} .sold-territory-top {
 				display: flex;
 				align-items: center;
@@ -591,14 +681,11 @@ const sales_order_list_dashboard = (() => {
 				font-family: "JetBrains Mono", monospace;
 			}
 			#${BLOCK_ID} .sold-territory-value {
-				font-size: 24px;
+				font-size: 18px;
 				font-weight: 700;
-				font-family: "Instrument Sans", sans-serif;
-				margin-bottom: 4px;
-			}
-			#${BLOCK_ID} .sold-territory-sub {
-				font-size: 12px;
-				color: #64748b;
+				font-family: "JetBrains Mono", monospace;
+				line-height: 1.35;
+				word-break: break-word;
 			}
 			#${BLOCK_ID} .sold-chart {
 				min-height: 230px;
@@ -629,7 +716,8 @@ const sales_order_list_dashboard = (() => {
 					grid-template-columns: 1fr 1fr;
 				}
 				#${BLOCK_ID} .sold-currency-grid,
-				#${BLOCK_ID} .sold-territories {
+				#${BLOCK_ID} .sold-territories,
+				#${BLOCK_ID} .sold-customers {
 					grid-template-columns: 1fr 1fr;
 				}
 			}
@@ -643,7 +731,8 @@ const sales_order_list_dashboard = (() => {
 					grid-template-columns: 1fr;
 				}
 				#${BLOCK_ID} .sold-currency-grid,
-				#${BLOCK_ID} .sold-territories {
+				#${BLOCK_ID} .sold-territories,
+				#${BLOCK_ID} .sold-customers {
 					grid-template-columns: 1fr;
 				}
 			}

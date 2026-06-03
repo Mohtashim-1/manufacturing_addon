@@ -478,16 +478,27 @@
 			render_input: true,
 		});
 
-		$filters.append(
-			$(`<div class="ml-auto">
-				<button type="button" class="btn btn-dark btn-sm">${__("Refresh")}</button>
-			</div>`).on("click", "button", () => load())
+		const $actions = $(`<div class="ml-auto d-flex align-items-end flex-wrap" style="gap:6px;"></div>`);
+		$filters.append($actions);
+
+		$actions.append(
+			$(`<button type="button" class="btn btn-dark btn-sm">${__("Refresh")}</button>`).on("click", () => load())
 		);
+
+		if (frappe.user.has_role("System Manager")) {
+			$actions.append(
+				$(`<button type="button" class="btn btn-success btn-sm">${__("Send Email")}</button>`).on(
+					"click",
+					() => triggerDailyContractorPerformanceEmail()
+				)
+			);
+		}
 
 		Object.values(ctrls).forEach((c) => c.refresh());
 
-		ctrls.from_date.set_value(frappe.datetime.month_start());
-		ctrls.to_date.set_value(frappe.datetime.month_end());
+		const queryParams = frappe.utils.get_query_params() || {};
+		ctrls.from_date.set_value(queryParams.from_date || frappe.datetime.month_start());
+		ctrls.to_date.set_value(queryParams.to_date || frappe.datetime.month_end());
 
 		$main.find(".cp-tabs .cp-tab-btn").on("click", function (e) {
 			e.preventDefault();
@@ -981,4 +992,36 @@
 
 		load();
 	};
+
+	function triggerDailyContractorPerformanceEmail() {
+		frappe.confirm(
+			__(
+				"Send Contractor Performance email now? Recipients: all System Managers. Date filter: today only."
+			),
+			function () {
+				frappe.call({
+					method:
+						"manufacturing_addon.manufacturing_addon.daily_contractor_performance_email.trigger_daily_contractor_performance_email",
+					freeze: true,
+					freeze_message: __("Sending contractor performance email..."),
+					callback: function (r) {
+						frappe.msgprint({
+							title: __("Email Queued"),
+							indicator: "green",
+							message: __(r.message || "Contractor performance email has been queued."),
+						});
+					},
+					error: function () {
+						frappe.msgprint({
+							title: __("Error"),
+							indicator: "red",
+							message: __("Unable to send email. Check permissions and email queue."),
+						});
+					},
+				});
+			}
+		);
+	}
+
+	window.triggerDailyContractorPerformanceEmail = triggerDailyContractorPerformanceEmail;
 })();

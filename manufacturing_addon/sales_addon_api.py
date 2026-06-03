@@ -402,6 +402,27 @@ def get_sales_order_listview_dashboard(from_date=None, to_date=None, company=Non
 		as_dict=True,
 	)
 
+	customer_rows = frappe.db.sql(
+		f"""
+		select
+			coalesce(nullif(so.customer, ''), '') as customer,
+			coalesce(
+				nullif(max(so.customer_name), ''),
+				nullif(so.customer, ''),
+				'Unassigned'
+			) as name,
+			sum(ifnull(so.base_grand_total, 0)) as value,
+			count(so.name) as order_count
+		from `tabSales Order` so
+		{where_clause}
+		group by coalesce(nullif(so.customer, ''), '')
+		order by value desc
+		limit 5
+		""",
+		params,
+		as_dict=True,
+	)
+
 	trend_map = {row.sort_key: row for row in trend_rows}
 	yearly_trend = []
 	for month_offset in range(12):
@@ -452,6 +473,15 @@ def get_sales_order_listview_dashboard(from_date=None, to_date=None, company=Non
 				"order_count": int(row.order_count or 0),
 			}
 			for row in currency_rows
+		],
+		"top_customers": [
+			{
+				"name": row.name,
+				"customer": row.customer or None,
+				"value": flt(row.value),
+				"order_count": int(row.order_count or 0),
+			}
+			for row in customer_rows
 		],
 	}
 

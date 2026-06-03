@@ -202,10 +202,10 @@ const sales_order_list_dashboard = (() => {
 
 		host.querySelector('[data-role="body"]').innerHTML = `
 			<div class="sold-kpis">
-				${kpi_card("Total Sales Value", format_currency_full(kpis.total_value, currency), "Matching list filters", "#2563eb")}
+				${kpi_card("Total Sales Value", format_currency_full(kpis.total_value, currency), "In millions (M)", "#2563eb")}
 				${kpi_card("Total Orders", String(kpis.total_orders || 0), `${kpis.total_orders || 0} matching orders`, "#7c3aed")}
-				${kpi_card("Pending Value", format_currency_full(kpis.pending_value, currency), "To Deliver / Bill", "#d97706")}
-				${kpi_card("Completed + Closed", format_currency_full(flt(kpis.completed_value) + flt(kpis.closed_value), currency), "Delivered lifecycle", "#059669")}
+				${kpi_card("Pending Value", format_currency_full(kpis.pending_value, currency), "In millions (M)", "#d97706")}
+				${kpi_card("Completed + Closed", format_currency_full(flt(kpis.completed_value) + flt(kpis.closed_value), currency), "In millions (M)", "#059669")}
 			</div>
 			<div class="sold-grid">
 				<div class="sold-card">
@@ -279,7 +279,7 @@ const sales_order_list_dashboard = (() => {
 			yaxis: {
 				labels: {
 					style: axis_style("#94a3b8", 10),
-					formatter: (value) => format_currency_full(value, currency),
+					formatter: (value) => format_millions_axis(value),
 				},
 			},
 			markers: { size: 6, strokeWidth: 3, strokeColors: "#fff", hover: { size: 8 } },
@@ -389,17 +389,22 @@ const sales_order_list_dashboard = (() => {
 		};
 	}
 
+	/** Display amounts in millions (e.g. PKR 812.75M). */
 	function format_currency_full(value, currency) {
 		const amount = flt(value);
 		const curr = currency || frappe.defaults.get_default("currency") || "PKR";
-		// frappe.format(Currency) returns HTML; use plain format_currency for custom dashboard text.
-		if (typeof frappe.utils?.format_currency === "function") {
-			return frappe.utils.format_currency(amount, curr);
-		}
-		return `${curr} ${amount.toLocaleString("en-PK", {
+		const sign = amount < 0 ? "-" : "";
+		const millions = Math.abs(amount) / 1_000_000;
+		const num = millions.toLocaleString("en-US", {
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 2,
-		})}`;
+		});
+		return `${sign}${curr} ${num}M`;
+	}
+
+	function format_millions_axis(value) {
+		const millions = flt(value) / 1_000_000;
+		return `${millions.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 1 })}M`;
 	}
 
 	function flt(value) {

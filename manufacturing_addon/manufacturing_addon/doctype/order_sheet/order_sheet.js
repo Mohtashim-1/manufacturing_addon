@@ -127,6 +127,12 @@ frappe.ui.form.on("Order Sheet", {
 		if (frm.fields_dict.quality_dashboard) {
 			qualityDashboardInForm.render(frm);
 		}
+		if (frm.fields_dict.daily_checking_dashboard) {
+			dailyCheckingDashboardInForm.render(frm);
+		}
+		if (frm.fields_dict.inline_stitching_dashboard) {
+			inlineStitchingDashboardInForm.render(frm);
+		}
 	},
 
 	before_save(frm) {
@@ -1236,6 +1242,12 @@ function osQualityInjectDashStyles() {
 		.os-order-sheet-quality .os-q-op-badge-high { background:#ffc107; color:#333; }
 		.os-order-sheet-quality .os-q-op-badge-ok { background:#28a745; color:#fff; }
 		.os-order-sheet-quality .os-q-inspection-totals td { font-weight:600; }
+		.os-order-sheet-quality .chart-container.chart-sm { height:220px; }
+		.os-order-sheet-quality .qd-op-worst, .os-order-sheet-quality .os-q-op-worst { background:#f8d7da !important; }
+		.os-order-sheet-quality .qd-op-high, .os-order-sheet-quality .os-q-op-high { background:#fff3cd !important; }
+		.os-order-sheet-quality .qd-badge-worst, .os-order-sheet-quality .os-q-op-badge-worst { background:#dc3545; color:#fff; }
+		.os-order-sheet-quality .qd-badge-high, .os-order-sheet-quality .os-q-op-badge-high { background:#ffc107; color:#333; }
+		.os-order-sheet-quality .qd-badge-ok, .os-order-sheet-quality .os-q-op-badge-ok { background:#28a745; color:#fff; }
 	`;
 	document.head.appendChild(style);
 }
@@ -1863,5 +1875,580 @@ const qualityDashboardInForm = {
 
 	pct(n) {
 		return (n == null ? 0 : Number(n)).toFixed(1);
+	},
+};
+
+const dailyCheckingDashboardInForm = {
+	charts: {},
+
+	render(frm) {
+		const $wrapper = frm.fields_dict.daily_checking_dashboard?.$wrapper;
+		if (!$wrapper) return;
+
+		osQualityInjectDashStyles();
+
+		if (!frm.doc.name || frm.doc.__islocal) {
+			$wrapper.html(
+				`<div class="text-muted text-center p-4">${__("Save the document to load the Daily Checking dashboard.")}</div>`
+			);
+			return;
+		}
+
+		$wrapper.html(`
+			<div class="daily-stitching-dashboard os-order-sheet-quality os-daily-checking-dash">
+				<div class="text-center text-muted p-4"><i class="fa fa-spinner fa-spin"></i> ${__("Loading Daily Checking dashboard...")}</div>
+			</div>
+		`);
+
+		loadOrderSheetQualityChartJS()
+			.then(() => this.load(frm, $wrapper))
+			.catch(() => {
+				$wrapper.html(
+					`<div class="alert alert-warning">${__("Could not load Daily Checking dashboard.")}</div>`
+				);
+			});
+	},
+
+	load(frm, $wrapper) {
+		frappe.call({
+			method: "quality_addon.api.order_sheet_quality_dashboard.get_order_sheet_daily_checking_dashboard",
+			args: { order_sheet: frm.doc.name },
+			callback: (r) => this.render_dashboard($wrapper, r.message || {}),
+			error: () => {
+				$wrapper.html(
+					`<div class="alert alert-danger">${__("Failed to load Daily Checking dashboard.")}</div>`
+				);
+			},
+		});
+	},
+
+	destroy_charts() {
+		Object.keys(this.charts).forEach((key) => {
+			try {
+				this.charts[key]?.destroy?.();
+			} catch (e) {
+				/* ignore */
+			}
+		});
+		this.charts = {};
+	},
+
+	make_chart(key, canvasId, config) {
+		this.charts[key]?.destroy?.();
+		const helper = typeof quality_addon !== "undefined" ? quality_addon.chartjs : null;
+		if (helper) {
+			this.charts[key] = helper.create(key, canvasId, config);
+			return;
+		}
+		const el = document.getElementById(canvasId);
+		if (el && typeof Chart !== "undefined") {
+			this.charts[key] = new Chart(el.getContext("2d"), config);
+		}
+	},
+
+	fmt(n) {
+		return frappe.format(n || 0, { fieldtype: "Float", precision: 0 });
+	},
+
+	pct(n) {
+		return (Number(n) || 0).toFixed(1);
+	},
+
+	summary_card(title, value, icon, cls, sub) {
+		return `
+			<div class="col-md-2 col-sm-4 col-xs-6">
+				<div class="card summary-card">
+					<div class="card-body">
+						<div class="d-flex justify-content-between">
+							<div>
+								<h6 class="card-title text-muted">${title}</h6>
+								<h3 class="mb-0 ${cls || ""}">${value}</h3>
+								${sub ? `<small class="text-muted">${sub}</small>` : ""}
+							</div>
+							<div class="align-self-center"><i class="fa ${icon} fa-2x ${cls || "text-primary"}"></i></div>
+						</div>
+					</div>
+				</div>
+			</div>`;
+	},
+
+	render_person_table(perf) {
+		const persons = perf.persons || [];
+		if (!persons.length) {
+			return `<p class="text-muted text-center p-3">${__("No Daily Checking data for this Order Sheet.")}</p>`;
+		}
+		const worst = perf.worst_person;
+		return `
+			${worst ? `<div class="alert alert-danger py-2 mb-2"><strong>${__("Worst Checker")}:</strong> ${frappe.utils.escape_html(worst)}</div>` : ""}
+			<table class="table table-bordered table-sm table-hover mb-0">
+				<thead><tr>
+					<th>#</th><th>${__("Checker")}</th>
+					<th class="text-right">${__("Pcs")}</th>
+					<th class="text-right">${__("Major")}</th><th class="text-right">${__("Minor")}</th><th class="text-right">${__("Critical")}</th>
+					<th class="text-right">${__("Defects")}</th><th class="text-right">${__("Defect %")}</th><th>${__("Status")}</th>
+				</tr></thead>
+				<tbody>${persons
+					.map((p) => {
+						const sk = p.status_key || "ok";
+						const rowCls = sk === "worst" ? "qd-op-worst" : sk === "high" ? "qd-op-high" : "";
+						let badge = "qd-badge-ok";
+						if (sk === "worst") badge = "qd-badge-worst";
+						else if (sk === "high") badge = "qd-badge-high";
+						else if (sk === "watch") badge = "badge badge-warning";
+						return `<tr class="${rowCls}">
+							<td>${p.rank}</td>
+							<td><strong>${frappe.utils.escape_html(p.person)}</strong></td>
+							<td class="text-right">${this.fmt(p.pcs_checked)}</td>
+							<td class="text-right">${this.fmt(p.major)}</td>
+							<td class="text-right">${this.fmt(p.minor)}</td>
+							<td class="text-right">${this.fmt(p.critical)}</td>
+							<td class="text-right"><strong>${this.fmt(p.defect_qty)}</strong></td>
+							<td class="text-right"><strong>${this.pct(p.defect_rate)}%</strong></td>
+							<td><span class="badge ${badge}">${frappe.utils.escape_html(p.status)}</span></td>
+						</tr>`;
+					})
+					.join("")}</tbody>
+			</table>`;
+	},
+
+	render_details_table(details) {
+		if (!details.length) {
+			return `<p class="text-muted text-center p-3">${__("No detail rows.")}</p>`;
+		}
+		return `
+			<table class="table table-bordered table-sm mb-0" style="font-size:12px;">
+				<thead><tr>
+					<th>${__("Article")}</th><th>${__("Size")}</th><th>${__("Color")}</th><th>${__("Design")}</th>
+					<th class="text-right">${__("Plan Qty")}</th><th class="text-right">${__("Pcs Checked")}</th>
+					<th class="text-right">${__("Major")}</th><th class="text-right">${__("Minor")}</th><th class="text-right">${__("Critical")}</th>
+					<th class="text-right">${__("Defects")}</th><th class="text-right">${__("Defect %")}</th><th class="text-right">${__("Progress %")}</th>
+				</tr></thead>
+				<tbody>${details
+					.slice(0, 100)
+					.map(
+						(r) => `<tr>
+						<td>${frappe.utils.escape_html(r.article)}</td>
+						<td>${frappe.utils.escape_html(r.size)}</td>
+						<td>${frappe.utils.escape_html(r.color)}</td>
+						<td>${frappe.utils.escape_html(r.design)}</td>
+						<td class="text-right">${this.fmt(r.plan_qty)}</td>
+						<td class="text-right">${this.fmt(r.pcs_checked)}</td>
+						<td class="text-right text-danger">${this.fmt(r.major)}</td>
+						<td class="text-right text-warning">${this.fmt(r.minor)}</td>
+						<td class="text-right">${this.fmt(r.critical)}</td>
+						<td class="text-right">${this.fmt(r.defect_qty)}</td>
+						<td class="text-right">${this.pct(r.defect_rate)}%</td>
+						<td class="text-right">${this.pct(r.progress_pct)}%</td>
+					</tr>`
+					)
+					.join("")}</tbody>
+			</table>`;
+	},
+
+	dim_bar(key, canvasId, dimData, datasetLabel, valueKey = "defect_qty") {
+		if (!dimData?.labels?.length) return;
+		const values = dimData[valueKey] || dimData.defect_qty || [];
+		this.make_chart(key, canvasId, {
+			type: "bar",
+			data: {
+				labels: dimData.labels,
+				datasets: [{ label: datasetLabel, data: values, backgroundColor: "#667eea" }],
+			},
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				plugins: { legend: { display: false } },
+				scales: { x: { ticks: { maxRotation: 45, minRotation: 0 } } },
+			},
+		});
+	},
+
+	trend_chart(key, canvasId, trend) {
+		const t = trend || {};
+		if (!t.labels?.length) return;
+		this.make_chart(key, canvasId, {
+			type: "line",
+			data: {
+				labels: t.labels,
+				datasets: (t.datasets || []).map((ds) => ({
+					label: ds.name,
+					data: ds.values,
+					borderColor: "#4facfe",
+					backgroundColor: "transparent",
+					tension: 0.3,
+				})),
+			},
+			options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+		});
+	},
+
+	render_dashboard($wrapper, data) {
+		const s = data.summary || {};
+		const perf = data.checker_performance || {};
+		const prefix = "os_dc_";
+		const $root = $wrapper.find(".os-daily-checking-dash");
+
+		this.destroy_charts();
+
+		$root.html(`
+			<div class="d-flex justify-content-between align-items-center mb-3">
+				<div>
+					<h5 class="mb-0">${__("Daily Checking")}</h5>
+					<small class="text-muted">${__("All Daily Checking documents linked to this Order Sheet")}</small>
+				</div>
+				<button type="button" class="btn btn-default btn-sm" data-action="refresh-dc">${__("Refresh")}</button>
+			</div>
+			<div class="row">${this.summary_card(__("Pcs Checked"), this.fmt(s.pcs_checked), "fa-check-square", "text-primary")}
+				${this.summary_card(__("Major"), this.fmt(s.major), "fa-times-circle", "text-danger")}
+				${this.summary_card(__("Minor"), this.fmt(s.minor), "fa-exclamation-circle", "text-warning")}
+				${this.summary_card(__("Critical"), this.fmt(s.critical), "fa-ban", "text-danger")}
+				${this.summary_card(__("Total Defects"), this.fmt(s.total_defects), "fa-bug", "text-warning")}
+				${this.summary_card(__("Defect Rate"), `${this.pct(s.defect_rate)}%`, "fa-percent", "text-danger", `${s.document_count || 0} ${__("docs")}`)}
+			</div>
+			<div class="row">
+				<div class="col-md-6"><div class="card"><div class="card-header gradient-header-success"><h5 class="mb-0">${__("Major vs Minor")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}severity_pie"></canvas></div></div></div></div>
+				<div class="col-md-6"><div class="card"><div class="card-header gradient-header-danger"><h5 class="mb-0">${__("Worst Checkers")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}worst_bar"></canvas></div></div></div></div>
+			</div>
+			<div class="row">
+				<div class="col-md-6"><div class="card"><div class="card-header gradient-header"><h5 class="mb-0">${__("Defects by Article")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}article_bar"></canvas></div></div></div></div>
+				<div class="col-md-6"><div class="card"><div class="card-header gradient-header"><h5 class="mb-0">${__("Pcs Checked by Size")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}size_bar"></canvas></div></div></div></div>
+			</div>
+			<div class="row">
+				<div class="col-md-6"><div class="card"><div class="card-header gradient-header-info"><h5 class="mb-0">${__("By Color")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}color_bar"></canvas></div></div></div></div>
+				<div class="col-md-6"><div class="card"><div class="card-header gradient-header-info"><h5 class="mb-0">${__("Activity Trend")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}trend"></canvas></div></div></div></div>
+			</div>
+			<div class="row">
+				<div class="col-md-5"><div class="card"><div class="card-header gradient-header-danger"><h5 class="mb-0"><i class="fa fa-user"></i> ${__("Checker Performance")}</h5></div>
+					<div class="card-body table-responsive" style="max-height:360px;overflow:auto;">${this.render_person_table(perf)}</div></div></div>
+				<div class="col-md-7"><div class="card"><div class="card-header gradient-header"><h5 class="mb-0"><i class="fa fa-table"></i> ${__("By Article / Size / Color / Design")}</h5></div>
+					<div class="card-body table-responsive" style="max-height:360px;overflow:auto;">${this.render_details_table(data.details || [])}</div></div></div>
+			</div>
+		`);
+
+		$root.find('[data-action="refresh-dc"]').on("click", () => {
+			const frm = $wrapper.closest(".form-page")?.[0]?.cur_frm;
+			if (frm) this.render(frm);
+		});
+
+		setTimeout(() => {
+			this.make_chart(`${prefix}severity`, `${prefix}severity_pie`, {
+				type: "pie",
+				data: {
+					labels: [__("Major"), __("Minor"), __("Critical")],
+					datasets: [
+						{
+							data: [s.major || 0, s.minor || 0, s.critical || 0],
+							backgroundColor: ["#dc3545", "#ffc107", "#6c757d"],
+						},
+					],
+				},
+				options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+			});
+
+			const topCheckers = (perf.persons || []).slice(0, 8).reverse();
+			if (topCheckers.length) {
+				this.make_chart(`${prefix}worst`, `${prefix}worst_bar`, {
+					type: "bar",
+					data: {
+						labels: topCheckers.map((p) => p.person),
+						datasets: [{ label: __("Defects"), data: topCheckers.map((p) => p.defect_qty), backgroundColor: "#dc3545" }],
+					},
+					options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+				});
+			}
+
+			this.dim_bar(`${prefix}article`, `${prefix}article_bar`, data.by_article, __("Defects"));
+			this.dim_bar(`${prefix}size`, `${prefix}size_bar`, data.by_size, __("Pcs Checked"), "pcs_checked");
+			this.dim_bar(`${prefix}color`, `${prefix}color_bar`, data.by_color, __("Defects"));
+			this.trend_chart(`${prefix}trend`, `${prefix}trend`, data.trend);
+
+			const helper = typeof quality_addon !== "undefined" ? quality_addon.chartjs : null;
+			if (helper?.instances) {
+				Object.values(helper.instances).forEach((c) => c.resize && c.resize());
+			}
+		}, 80);
+	},
+};
+
+const inlineStitchingDashboardInForm = {
+	charts: {},
+
+	render(frm) {
+		const $wrapper = frm.fields_dict.inline_stitching_dashboard?.$wrapper;
+		if (!$wrapper) return;
+
+		osQualityInjectDashStyles();
+
+		if (!frm.doc.name || frm.doc.__islocal) {
+			$wrapper.html(
+				`<div class="text-muted text-center p-4">${__("Save the document to load the Inline Stitching dashboard.")}</div>`
+			);
+			return;
+		}
+
+		$wrapper.html(`
+			<div class="daily-stitching-dashboard os-order-sheet-quality os-inline-stitching-dash">
+				<div class="text-center text-muted p-4"><i class="fa fa-spinner fa-spin"></i> ${__("Loading Inline Stitching dashboard...")}</div>
+			</div>
+		`);
+
+		loadOrderSheetQualityChartJS()
+			.then(() => this.load(frm, $wrapper))
+			.catch(() => {
+				$wrapper.html(
+					`<div class="alert alert-warning">${__("Could not load Inline Stitching dashboard.")}</div>`
+				);
+			});
+	},
+
+	load(frm, $wrapper) {
+		frappe.call({
+			method: "quality_addon.api.order_sheet_quality_dashboard.get_order_sheet_inline_stitching_dashboard",
+			args: { order_sheet: frm.doc.name },
+			callback: (r) => this.render_dashboard($wrapper, r.message || {}),
+			error: () => {
+				$wrapper.html(
+					`<div class="alert alert-danger">${__("Failed to load Inline Stitching dashboard.")}</div>`
+				);
+			},
+		});
+	},
+
+	destroy_charts() {
+		Object.keys(this.charts).forEach((key) => {
+			try {
+				this.charts[key]?.destroy?.();
+			} catch (e) {
+				/* ignore */
+			}
+		});
+		this.charts = {};
+	},
+
+	make_chart(key, canvasId, config) {
+		this.charts[key]?.destroy?.();
+		const helper = typeof quality_addon !== "undefined" ? quality_addon.chartjs : null;
+		if (helper) {
+			this.charts[key] = helper.create(key, canvasId, config);
+			return;
+		}
+		const el = document.getElementById(canvasId);
+		if (el && typeof Chart !== "undefined") {
+			this.charts[key] = new Chart(el.getContext("2d"), config);
+		}
+	},
+
+	fmt(n) {
+		return frappe.format(n || 0, { fieldtype: "Float", precision: 0 });
+	},
+
+	pct(n) {
+		return (Number(n) || 0).toFixed(1);
+	},
+
+	summary_card(title, value, icon, cls, sub) {
+		return `
+			<div class="col-md-2 col-sm-4 col-xs-6">
+				<div class="card summary-card">
+					<div class="card-body">
+						<div class="d-flex justify-content-between">
+							<div>
+								<h6 class="card-title text-muted">${title}</h6>
+								<h3 class="mb-0 ${cls || ""}">${value}</h3>
+								${sub ? `<small class="text-muted">${sub}</small>` : ""}
+							</div>
+							<div class="align-self-center"><i class="fa ${icon} fa-2x ${cls || "text-primary"}"></i></div>
+						</div>
+					</div>
+				</div>
+			</div>`;
+	},
+
+	render_person_table(perf) {
+		const persons = perf.persons || [];
+		const label = perf.person_label || __("Operator");
+		if (!persons.length) {
+			return `<p class="text-muted text-center p-3">${__("No Inline Stitching data for this Order Sheet.")}</p>`;
+		}
+		const worst = perf.worst_person;
+		return `
+			${worst ? `<div class="alert alert-danger py-2 mb-2"><strong>${__("Worst")} ${label}:</strong> ${frappe.utils.escape_html(worst)}</div>` : ""}
+			<table class="table table-bordered table-sm table-hover mb-0">
+				<thead><tr>
+					<th>#</th><th>${label}</th>
+					<th class="text-right">${__("Pcs")}</th>
+					<th class="text-right">${__("Defects")}</th><th class="text-right">${__("Defect %")}</th><th>${__("Status")}</th>
+				</tr></thead>
+				<tbody>${persons
+					.map((p) => {
+						const sk = p.status_key || "ok";
+						const rowCls = sk === "worst" ? "qd-op-worst" : sk === "high" ? "qd-op-high" : "";
+						let badge = "qd-badge-ok";
+						if (sk === "worst") badge = "qd-badge-worst";
+						else if (sk === "high") badge = "qd-badge-high";
+						else if (sk === "watch") badge = "badge badge-warning";
+						return `<tr class="${rowCls}">
+							<td>${p.rank}</td>
+							<td><strong>${frappe.utils.escape_html(p.person)}</strong></td>
+							<td class="text-right">${this.fmt(p.pcs_checked)}</td>
+							<td class="text-right"><strong>${this.fmt(p.defect_qty)}</strong></td>
+							<td class="text-right"><strong>${this.pct(p.defect_rate)}%</strong></td>
+							<td><span class="badge ${badge}">${frappe.utils.escape_html(p.status)}</span></td>
+						</tr>`;
+					})
+					.join("")}</tbody>
+			</table>`;
+	},
+
+	render_details_table(details) {
+		if (!details.length) {
+			return `<p class="text-muted text-center p-3">${__("No detail rows.")}</p>`;
+		}
+		return `
+			<table class="table table-bordered table-sm mb-0" style="font-size:12px;">
+				<thead><tr>
+					<th>${__("Article")}</th><th>${__("Size")}</th><th>${__("Color")}</th><th>${__("Design")}</th>
+					<th class="text-right">${__("Plan Qty")}</th><th class="text-right">${__("Pcs Checked")}</th>
+					<th class="text-right">${__("Defects")}</th><th class="text-right">${__("Defect %")}</th><th class="text-right">${__("Progress %")}</th>
+				</tr></thead>
+				<tbody>${details
+					.slice(0, 100)
+					.map(
+						(r) => `<tr>
+						<td>${frappe.utils.escape_html(r.article)}</td>
+						<td>${frappe.utils.escape_html(r.size)}</td>
+						<td>${frappe.utils.escape_html(r.color)}</td>
+						<td>${frappe.utils.escape_html(r.design)}</td>
+						<td class="text-right">${this.fmt(r.plan_qty)}</td>
+						<td class="text-right">${this.fmt(r.pcs_checked)}</td>
+						<td class="text-right">${this.fmt(r.defect_qty)}</td>
+						<td class="text-right">${this.pct(r.defect_rate)}%</td>
+						<td class="text-right">${this.pct(r.progress_pct)}%</td>
+					</tr>`
+					)
+					.join("")}</tbody>
+			</table>`;
+	},
+
+	dim_bar(key, canvasId, dimData, datasetLabel, valueKey = "defect_qty") {
+		if (!dimData?.labels?.length) return;
+		const values = dimData[valueKey] || dimData.defect_qty || [];
+		this.make_chart(key, canvasId, {
+			type: "bar",
+			data: {
+				labels: dimData.labels,
+				datasets: [{ label: datasetLabel, data: values, backgroundColor: "#667eea" }],
+			},
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				plugins: { legend: { display: false } },
+				scales: { x: { ticks: { maxRotation: 45, minRotation: 0 } } },
+			},
+		});
+	},
+
+	trend_chart(key, canvasId, trend) {
+		const t = trend || {};
+		if (!t.labels?.length) return;
+		this.make_chart(key, canvasId, {
+			type: "line",
+			data: {
+				labels: t.labels,
+				datasets: (t.datasets || []).map((ds) => ({
+					label: ds.name,
+					data: ds.values,
+					borderColor: "#fa709a",
+					backgroundColor: "transparent",
+					tension: 0.3,
+				})),
+			},
+			options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+		});
+	},
+
+	render_dashboard($wrapper, data) {
+		const s = data.summary || {};
+		const perf = data.operator_performance || {};
+		const prefix = "os_is_";
+		const $root = $wrapper.find(".os-inline-stitching-dash");
+
+		this.destroy_charts();
+
+		$root.html(`
+			<div class="d-flex justify-content-between align-items-center mb-3">
+				<div>
+					<h5 class="mb-0">${__("Inline Stitching")}</h5>
+					<small class="text-muted">${__("All Inline Stitching documents linked to this Order Sheet")}</small>
+				</div>
+				<button type="button" class="btn btn-default btn-sm" data-action="refresh-is">${__("Refresh")}</button>
+			</div>
+			<div class="row">${this.summary_card(__("Pcs Checked"), this.fmt(s.pcs_checked), "fa-check-square", "text-primary")}
+				${this.summary_card(__("Total Defect Pcs"), this.fmt(s.total_defects), "fa-bug", "text-warning")}
+				${this.summary_card(__("Defect Rate"), `${this.pct(s.defect_rate)}%`, "fa-percent", "text-danger")}
+				${this.summary_card(__("Lines"), s.line_count || 0, "fa-list", "text-info")}
+				${this.summary_card(__("Documents"), s.document_count || 0, "fa-file", "text-success")}
+			</div>
+			<div class="row">
+				<div class="col-md-6"><div class="card"><div class="card-header gradient-header-danger"><h5 class="mb-0">${__("Worst Operators")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}worst_bar"></canvas></div></div></div></div>
+				<div class="col-md-6"><div class="card"><div class="card-header gradient-header-success"><h5 class="mb-0">${__("Defects by Article")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}article_bar"></canvas></div></div></div></div>
+			</div>
+			<div class="row">
+				<div class="col-md-4"><div class="card"><div class="card-header gradient-header"><h5 class="mb-0">${__("By Size")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}size_bar"></canvas></div></div></div></div>
+				<div class="col-md-4"><div class="card"><div class="card-header gradient-header"><h5 class="mb-0">${__("By Color")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}color_bar"></canvas></div></div></div></div>
+				<div class="col-md-4"><div class="card"><div class="card-header gradient-header-info"><h5 class="mb-0">${__("By Design")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}design_bar"></canvas></div></div></div></div>
+			</div>
+			<div class="row">
+				<div class="col-md-12"><div class="card"><div class="card-header gradient-header-info"><h5 class="mb-0">${__("Activity Trend")}</h5></div>
+					<div class="card-body p-0"><div class="chart-container chart-sm"><canvas id="${prefix}trend"></canvas></div></div></div></div>
+			</div>
+			<div class="row">
+				<div class="col-md-5"><div class="card"><div class="card-header gradient-header-danger"><h5 class="mb-0"><i class="fa fa-user"></i> ${__("Operator Performance")}</h5></div>
+					<div class="card-body table-responsive" style="max-height:360px;overflow:auto;">${this.render_person_table(perf)}</div></div></div>
+				<div class="col-md-7"><div class="card"><div class="card-header gradient-header"><h5 class="mb-0"><i class="fa fa-table"></i> ${__("By Article / Size / Color / Design")}</h5></div>
+					<div class="card-body table-responsive" style="max-height:360px;overflow:auto;">${this.render_details_table(data.details || [])}</div></div></div>
+			</div>
+		`);
+
+		$root.find('[data-action="refresh-is"]').on("click", () => {
+			const frm = $wrapper.closest(".form-page")?.[0]?.cur_frm;
+			if (frm) this.render(frm);
+		});
+
+		setTimeout(() => {
+			const topOps = (perf.persons || []).slice(0, 8).reverse();
+			if (topOps.length) {
+				this.make_chart(`${prefix}worst`, `${prefix}worst_bar`, {
+					type: "bar",
+					data: {
+						labels: topOps.map((p) => p.person),
+						datasets: [{ label: __("Defect Pcs"), data: topOps.map((p) => p.defect_qty), backgroundColor: "#dc3545" }],
+					},
+					options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+				});
+			}
+
+			this.dim_bar(`${prefix}article`, `${prefix}article_bar`, data.by_article, __("Defect Pcs"));
+			this.dim_bar(`${prefix}size`, `${prefix}size_bar`, data.by_size, __("Pcs Checked"), "pcs_checked");
+			this.dim_bar(`${prefix}color`, `${prefix}color_bar`, data.by_color, __("Defect Pcs"));
+			this.dim_bar(`${prefix}design`, `${prefix}design_bar`, data.by_design, __("Defect Pcs"));
+			this.trend_chart(`${prefix}trend`, `${prefix}trend`, data.trend);
+
+			const helper = typeof quality_addon !== "undefined" ? quality_addon.chartjs : null;
+			if (helper?.instances) {
+				Object.values(helper.instances).forEach((c) => c.resize && c.resize());
+			}
+		}, 80);
 	},
 };

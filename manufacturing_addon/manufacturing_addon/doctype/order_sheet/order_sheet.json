@@ -49,7 +49,11 @@
   "contractor_dashbaord_tab",
   "contractor_dasbhaord",
   "quality_dashboard_tab",
-  "quality_dashboard"
+  "quality_dashboard",
+  "daily_checking_tab",
+  "daily_checking_dashboard",
+  "inline_stitching_tab",
+  "inline_stitching_dashboard"
  ],
  "fields": [
   {
@@ -361,12 +365,32 @@
    "fieldtype": "Select",
    "label": "Series",
    "options": ".{sales_order}.-.{#}."
+  },
+  {
+   "fieldname": "daily_checking_tab",
+   "fieldtype": "Tab Break",
+   "label": "Daily Checking"
+  },
+  {
+   "fieldname": "daily_checking_dashboard",
+   "fieldtype": "HTML",
+   "label": "Daily Checking Dashboard"
+  },
+  {
+   "fieldname": "inline_stitching_tab",
+   "fieldtype": "Tab Break",
+   "label": "Inline Stitching"
+  },
+  {
+   "fieldname": "inline_stitching_dashboard",
+   "fieldtype": "HTML",
+   "label": "Inline Stitching Dashboard"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-30 01:12:11.904249",
+ "modified": "2026-06-03 14:19:53.679569",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Order Sheet",

@@ -139,7 +139,7 @@ const sales_order_list_dashboard = (() => {
 			<div class="sold-head">
 				<div>
 					<h2 class="sold-title">KPIs & Charts</h2>
-					<div class="sold-meta" data-role="meta">Loading current list summary...</div>
+					<div class="sold-meta" data-role="meta">Loading submitted Sales Order summary...</div>
 				</div>
 				<button class="sold-btn" type="button" data-action="refresh">Refresh</button>
 			</div>
@@ -200,12 +200,14 @@ const sales_order_list_dashboard = (() => {
 		host.querySelector('[data-role="meta"]').textContent =
 			`${filters.company || "All companies"} · ${filters.from_date || "--"} to ${filters.to_date || "--"}`;
 
+		const amountUnitLabel = is_pkr(currency) ? __("In crores (cr)") : __("In millions (M)");
+
 		host.querySelector('[data-role="body"]').innerHTML = `
 			<div class="sold-kpis">
-				${kpi_card("Total Sales Value", format_currency_full(kpis.total_value, currency), "In millions (M)", "#2563eb")}
-				${kpi_card("Total Orders", String(kpis.total_orders || 0), `${kpis.total_orders || 0} matching orders`, "#7c3aed")}
-				${kpi_card("Pending Value", format_currency_full(kpis.pending_value, currency), "In millions (M)", "#d97706")}
-				${kpi_card("Completed + Closed", format_currency_full(flt(kpis.completed_value) + flt(kpis.closed_value), currency), "In millions (M)", "#059669")}
+				${kpi_card("Total Sales Value", format_currency_display(kpis.total_value, currency), amountUnitLabel, "#2563eb")}
+				${kpi_card("Total Orders", String(kpis.total_orders || 0), `${kpis.total_orders || 0} submitted orders`, "#7c3aed")}
+				${kpi_card("Pending Value", format_currency_display(kpis.pending_value, currency), amountUnitLabel, "#d97706")}
+				${kpi_card("Completed + Closed", format_currency_display(flt(kpis.completed_value) + flt(kpis.closed_value), currency), amountUnitLabel, "#059669")}
 			</div>
 			<div class="sold-grid">
 				<div class="sold-card">
@@ -279,14 +281,14 @@ const sales_order_list_dashboard = (() => {
 			yaxis: {
 				labels: {
 					style: axis_style("#94a3b8", 10),
-					formatter: (value) => format_millions_axis(value),
+					formatter: (value) => format_amount_axis(value, currency),
 				},
 			},
 			markers: { size: 6, strokeWidth: 3, strokeColors: "#fff", hover: { size: 8 } },
 			dataLabels: { enabled: false },
 			tooltip: {
 				theme: "light",
-				y: { formatter: (value) => format_currency_full(value, currency) },
+				y: { formatter: (value) => format_currency_display(value, currency) },
 			},
 		}).render();
 	}
@@ -301,8 +303,8 @@ const sales_order_list_dashboard = (() => {
 			<div class="sold-currency-card">
 				<div class="sold-currency-swatch" style="background:${BAR_COLORS[index % BAR_COLORS.length]}"></div>
 				<div class="sold-currency-name">${frappe.utils.escape_html(row.name)}</div>
-				<div class="sold-currency-value">${frappe.utils.escape_html(format_currency_full(row.currency_value, row.name))}</div>
-				<div class="sold-currency-base">${frappe.utils.escape_html(`${currency}: ${format_currency_full(row.base_value, currency)}`)}</div>
+				<div class="sold-currency-value">${frappe.utils.escape_html(format_currency_display(row.currency_value, row.name))}</div>
+				<div class="sold-currency-base">${frappe.utils.escape_html(`${currency}: ${format_currency_display(row.base_value, currency)}`)}</div>
 				<div class="sold-currency-count">${row.order_count || 0} orders</div>
 			</div>
 		`).join("");
@@ -320,7 +322,7 @@ const sales_order_list_dashboard = (() => {
 					<div class="sold-territory-name">${frappe.utils.escape_html(row.name)}</div>
 					<div class="sold-territory-count">${row.order_count || 0} orders</div>
 				</div>
-				<div class="sold-territory-value" style="color:${BAR_COLORS[index % BAR_COLORS.length]}">${frappe.utils.escape_html(format_currency_full(row.value, currency))}</div>
+				<div class="sold-territory-value" style="color:${BAR_COLORS[index % BAR_COLORS.length]}">${frappe.utils.escape_html(format_currency_display(row.value, currency))}</div>
 			</div>
 		`).join("");
 	}
@@ -344,7 +346,7 @@ const sales_order_list_dashboard = (() => {
 					<div class="sold-customer-name-wrap">${nameHtml}</div>
 					<div class="sold-customer-count">${row.order_count || 0} orders</div>
 				</div>
-				<div class="sold-customer-value" style="color:${BAR_COLORS[index % BAR_COLORS.length]}">${frappe.utils.escape_html(format_currency_full(row.value, currency))}</div>
+				<div class="sold-customer-value" style="color:${BAR_COLORS[index % BAR_COLORS.length]}">${frappe.utils.escape_html(format_currency_display(row.value, currency))}</div>
 			</div>
 		`;
 			})
@@ -389,12 +391,27 @@ const sales_order_list_dashboard = (() => {
 		};
 	}
 
-	/** Display amounts in millions (e.g. PKR 812.75M). */
-	function format_currency_full(value, currency) {
+	function is_pkr(currency) {
+		return String(currency || frappe.defaults.get_default("currency") || "PKR").toUpperCase() === "PKR";
+	}
+
+	/** PKR in crores; other currencies in millions. */
+	function format_currency_display(value, currency) {
 		const amount = flt(value);
-		const curr = currency || frappe.defaults.get_default("currency") || "PKR";
+		const curr = String(currency || frappe.defaults.get_default("currency") || "PKR").toUpperCase();
 		const sign = amount < 0 ? "-" : "";
-		const millions = Math.abs(amount) / 1_000_000;
+		const abs = Math.abs(amount);
+
+		if (is_pkr(curr)) {
+			const crores = abs / 10_000_000;
+			const num = crores.toLocaleString("en-US", {
+				minimumFractionDigits: 2,
+				maximumFractionDigits: 2,
+			});
+			return `${sign}${curr} ${num} cr`;
+		}
+
+		const millions = abs / 1_000_000;
 		const num = millions.toLocaleString("en-US", {
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 2,
@@ -402,7 +419,12 @@ const sales_order_list_dashboard = (() => {
 		return `${sign}${curr} ${num}M`;
 	}
 
-	function format_millions_axis(value) {
+	function format_amount_axis(value, currency) {
+		const curr = String(currency || "PKR").toUpperCase();
+		if (is_pkr(curr)) {
+			const crores = flt(value) / 10_000_000;
+			return `${crores.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 1 })} cr`;
+		}
 		const millions = flt(value) / 1_000_000;
 		return `${millions.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 1 })}M`;
 	}

@@ -33,7 +33,10 @@ doctype_js = {
         "public/js/sales_order.js",
         "public/js/sales_order_connection_dashboard.js",
     ],
-    "Item" : "public/js/item.js",
+    "Item": [
+        "public/js/item.js",
+        "public/js/item_connections.js",
+    ],
     "BOM" : "public/js/bom.js",
     "Purchase Receipt" : "public/js/purchase_receipt.js",
     "Purchase Order" : "public/js/purchase_order.js",
@@ -208,6 +211,7 @@ override_doctype_dashboards = {
 	"Raw Material Transfer Planning": "manufacturing_addon.manufacturing_addon.doctype.raw_material_transfer_planning.raw_material_transfer_planning_dashboard.get_data",
 	"Production Plan": "manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan_dashboard.get_data",
 	"Sales Order": "manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order_dashboard.get_data",
+	"Item": "manufacturing_addon.manufacturing_addon.doctype.item.item_dashboard.get_data",
 	}
 
 # exempt linked doctypes from being automatically cancelled

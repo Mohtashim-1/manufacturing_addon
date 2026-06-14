@@ -9,6 +9,7 @@
   "supplier",
   "cutting",
   "stitching",
+  "checking",
   "packing"
  ],
  "fields": [
@@ -29,6 +30,12 @@
    "fieldname": "stitching",
    "fieldtype": "Check",
    "label": "Stitching"
+  },
+  {
+   "default": "0",
+   "fieldname": "checking",
+   "fieldtype": "Check",
+   "label": "Checking"
   },
   {
    "default": "0",

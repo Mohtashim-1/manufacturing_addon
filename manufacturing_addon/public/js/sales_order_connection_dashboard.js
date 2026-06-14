@@ -103,6 +103,12 @@ const salesOrderConnectionDashboard = {
 				{ key: "order_sheet", label: __("Order Sheet"), doctype: "Order Sheet" },
 				{ key: "supplier", label: __("Supplier") },
 			])}
+			${this.tableSection(__("Checking Reports"), data.checking_reports_count, data.checking_report_rows || [], [
+				{ key: "name", label: __("Name"), doctype: "Checking Report" },
+				{ key: "date", label: __("Date") },
+				{ key: "order_sheet", label: __("Order Sheet"), doctype: "Order Sheet" },
+				{ key: "supplier", label: __("Supplier") },
+			])}
 			${this.tableSection(__("Packing Reports"), data.packing_reports_count, data.packing_report_rows || [], [
 				{ key: "name", label: __("Name"), doctype: "Packing Report" },
 				{ key: "date", label: __("Date") },

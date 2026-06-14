@@ -12,6 +12,7 @@ PRODUCTION_CONNECTION_ITEMS = (
 	"Order Sheet",
 	"Cutting Report",
 	"Stitching Report",
+	"Checking Report",
 	"Packing Report",
 )
 
@@ -19,6 +20,7 @@ CHILD_TABLE_BY_DOCTYPE = {
 	"Order Sheet": "Order Sheet CT",
 	"Cutting Report": "Cutting Report CT",
 	"Stitching Report": "Stitching Report CT",
+	"Checking Report": "Checking Report CT",
 	"Packing Report": "Packing Report CT",
 }
 

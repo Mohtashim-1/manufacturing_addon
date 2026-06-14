@@ -75,6 +75,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Checking Report",
+   "link_count": 0,
+   "link_to": "Checking Report",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Packing Report",
    "link_count": 0,
    "link_to": "Packing Report",

@@ -14,6 +14,7 @@ def get_data():
 					"Production Plan",
 					"Cutting Report",
 					"Stitching Report",
+					"Checking Report",
 					"Packing Report",
 				],
 			},

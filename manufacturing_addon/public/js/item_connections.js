@@ -3,6 +3,7 @@ const ITEM_PRODUCTION_CONNECTIONS = [
 	"Order Sheet",
 	"Cutting Report",
 	"Stitching Report",
+	"Checking Report",
 	"Packing Report",
 ];
 const ITEM_OPEN_COUNT_METHOD =

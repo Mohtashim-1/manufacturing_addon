@@ -3,6 +3,7 @@ const SO_INDIRECT_CONNECTIONS = [
 	"Order Sheet",
 	"Cutting Report",
 	"Stitching Report",
+	"Checking Report",
 	"Packing Report",
 	"Daily Checking",
 	"Inline Stitching",

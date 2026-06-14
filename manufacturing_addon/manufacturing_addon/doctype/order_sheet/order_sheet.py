@@ -603,7 +603,6 @@ def find_or_create_standard_size(standard_size_str):
 					"width_in_cm_copy": width_in_cm
 				})
 				doc.insert(ignore_permissions=True)
-				frappe.db.commit()
 				return doc.name
 			except frappe.exceptions.DuplicateEntryError:
 				# If duplicate, find and return existing
@@ -703,7 +702,6 @@ def find_or_create_size(size_value):
 			"size": normalized_size or size_value
 		})
 		doc.insert(ignore_permissions=True)
-		frappe.db.commit()
 		print(f"[find_or_create_size] Created new Stitching Size: '{doc.name}' with size='{size_value}'")
 		return doc.name
 	except frappe.exceptions.DuplicateEntryError:

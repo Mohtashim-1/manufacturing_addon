@@ -466,7 +466,6 @@ class PackingReport(Document):
                 
                 try:
                     self.save(ignore_permissions=True)
-                    frappe.db.commit()
                     print(f"[get_data1] ✓ Saved successfully")
                 except Exception as e:
                     print(f"[get_data1] ERROR saving: {str(e)}")
@@ -1348,7 +1347,6 @@ class PackingReport(Document):
                             # Save again to persist the restored rates
                             print(f"[on_submit] Saving Stock Entry with {restored_count} restored rates...")
                             stock_entry.save(ignore_permissions=True)
-                            frappe.db.commit()
                             print(f"[on_submit] ✓ Stock Entry saved with restored rates")
                         else:
                             print(f"[on_submit] WARNING: No rates were restored (items might have changed)")

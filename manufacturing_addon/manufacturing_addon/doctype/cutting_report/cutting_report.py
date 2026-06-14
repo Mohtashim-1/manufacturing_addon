@@ -276,7 +276,6 @@ class CuttingReport(Document):
                 
                 try:
                     self.save(ignore_permissions=True)
-                    frappe.db.commit()
                     print(f"[get_data1] ✓ Saved successfully")
                 except Exception as e:
                     print(f"[get_data1] ERROR saving: {str(e)}")

@@ -7,6 +7,15 @@ from frappe.model.document import Document
 from frappe import _
 from frappe.utils import flt
 
+from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
+    append_style_contractors,
+    validate_mandatory_contractors,
+)
+from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
+    load_nested_style_contractors,
+    save_nested_style_contractors,
+)
+
 # Patch Stock Entry's set_rate_for_outgoing_items to respect set_basic_rate_manually and already set rates
 _original_set_rate_for_outgoing_items = None
 
@@ -59,7 +68,56 @@ if not hasattr(frappe, '_stock_entry_rate_patch_applied'):
         print(f"[Packing Report] Warning: Could not patch StockEntry.set_rate_for_outgoing_items: {str(e)}")
 
 
+@frappe.whitelist()
+def get_style_contractors_for_line(so_item, combo_item=None, article=None, operation="Packing"):
+    """Return style contractor rows for one report line (client-side populate)."""
+    from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
+        build_style_contractor_rows,
+    )
+
+    return build_style_contractor_rows(
+        so_item, operation=operation, combo_item=combo_item, article=article
+    )
+
+
 class PackingReport(Document):
+    def load_from_db(self):
+        super().load_from_db()
+        load_nested_style_contractors(self, "packing_report_ct", "Packing Report CT")
+        return self
+
+    def update_children(self):
+        super().update_children()
+        save_nested_style_contractors(self, "packing_report_ct", "Packing Report CT")
+        load_nested_style_contractors(self, "packing_report_ct", "Packing Report CT")
+
+    def _append_packing_ct_row(self, row_data):
+        self.append("packing_report_ct", row_data)
+        ct_row = self.packing_report_ct[-1]
+        append_style_contractors(
+            ct_row,
+            row_data.get("so_item"),
+            operation="Packing",
+            combo_item=row_data.get("combo_item"),
+            article=row_data.get("article"),
+        )
+        return ct_row
+
+    @frappe.whitelist()
+    def load_style_contractors(self):
+        """Refresh nested style_contractors from Item master for all CT rows."""
+        for row in self.packing_report_ct or []:
+            if not row.so_item:
+                continue
+            append_style_contractors(
+                row,
+                row.so_item,
+                operation="Packing",
+                combo_item=row.combo_item,
+                article=row.article,
+            )
+        return len(self.packing_report_ct or [])
+
     @staticmethod
     def _parse_carton_dimension(dimension_text):
         """Parse dimension text like '60x40x30' into (L, W, H) in cm."""
@@ -415,7 +473,7 @@ class PackingReport(Document):
                         print(f"  Qty: {planned_qty} (same as planned_qty for finished item)")
                         print(f"{'='*60}")
                         
-                        new_row = self.append("packing_report_ct", {
+                        new_row = self._append_packing_ct_row({
                         "customer": r.get("customer"),
                         "design": r.get("design"),
                         "colour": r.get("colour"),
@@ -488,6 +546,11 @@ class PackingReport(Document):
         self.calculate_finished_quality_qty()
         self.calculate_finished_packaging_qty()
         self.packing_condition()
+        validate_mandatory_contractors(
+            self.packing_report_ct,
+            qty_field="packaging_qty",
+            report_label="Packing Report",
+        )
         self.total_qty()
         self.total_percentage()
         self.total()

@@ -6,8 +6,65 @@ from frappe.model.document import Document
 from frappe import _
 from frappe.utils import flt
 
+from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
+    append_style_contractors,
+    validate_mandatory_contractors,
+)
+from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
+    load_nested_style_contractors,
+    save_nested_style_contractors,
+)
+
+
+@frappe.whitelist()
+def get_style_contractors_for_line(so_item, combo_item=None, article=None, operation="Cutting"):
+    """Return style contractor rows for one report line (client-side populate)."""
+    from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
+        build_style_contractor_rows,
+    )
+
+    return build_style_contractor_rows(
+        so_item, operation=operation, combo_item=combo_item, article=article
+    )
+
 
 class CuttingReport(Document):
+    def load_from_db(self):
+        super().load_from_db()
+        load_nested_style_contractors(self, "cutting_report_ct", "Cutting Report CT")
+        return self
+
+    def update_children(self):
+        super().update_children()
+        save_nested_style_contractors(self, "cutting_report_ct", "Cutting Report CT")
+        load_nested_style_contractors(self, "cutting_report_ct", "Cutting Report CT")
+
+    def _append_cutting_ct_row(self, row_data):
+        self.append("cutting_report_ct", row_data)
+        ct_row = self.cutting_report_ct[-1]
+        append_style_contractors(
+            ct_row,
+            row_data.get("so_item"),
+            operation="Cutting",
+            combo_item=row_data.get("combo_item"),
+            article=row_data.get("article"),
+        )
+
+    @frappe.whitelist()
+    def load_style_contractors(self):
+        """Refresh nested style_contractors from Item master for all CT rows."""
+        for row in self.cutting_report_ct or []:
+            if not row.so_item:
+                continue
+            append_style_contractors(
+                row,
+                row.so_item,
+                operation="Cutting",
+                combo_item=row.combo_item,
+                article=row.article,
+            )
+        return len(self.cutting_report_ct or [])
+
     @frappe.whitelist()
     def get_data1(self):
         print(f"\n{'='*60}")
@@ -141,7 +198,7 @@ class CuttingReport(Document):
                                 print(f"  - qty_ctn: {r.get('qty_ctn')} (from Order Sheet CT)")
                                 print(f"{'='*60}")
                                 
-                                self.append("cutting_report_ct", {
+                                self._append_cutting_ct_row({
                                     "customer": r.get("customer"),
                                     "design": r.get("design"),
                                     "colour": r.get("colour"),
@@ -227,7 +284,7 @@ class CuttingReport(Document):
                                             print(f"  - qty_ctn: {r.get('qty_ctn')} (from Order Sheet CT)")
                                             print(f"{'='*60}")
                                             
-                                            self.append("cutting_report_ct", {
+                                            self._append_cutting_ct_row({
                                                 "customer": r.get("customer"),
                                                 "design": r.get("design"),
                                                 "colour": r.get("colour"),
@@ -293,6 +350,11 @@ class CuttingReport(Document):
 
     def validate(self):
         self.calculate_finished_cutting_qty()
+        validate_mandatory_contractors(
+            self.cutting_report_ct,
+            qty_field="cutting_qty",
+            report_label="Cutting Report",
+        )
         self.total_qty()
         self.total_percentage()
         self.total()

@@ -44,6 +44,12 @@ doctype_js = {
     "Order Sheet": [
         "public/js/contractor_performance_embed.js",
     ],
+    "Cutting Report": [
+        "public/js/report_style_contractors.js",
+    ],
+    "Packing Report": [
+        "public/js/report_style_contractors.js",
+    ],
     }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order_list.js",

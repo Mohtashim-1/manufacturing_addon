@@ -10,101 +10,34 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
     append_style_contractors,
     validate_mandatory_contractors,
 )
+from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
+    load_nested_style_contractors,
+    save_nested_style_contractors,
+)
 
 
 @frappe.whitelist()
-def get_style_contractors_for_line(so_item, combo_item=None, article=None):
+def get_style_contractors_for_line(so_item, combo_item=None, article=None, operation="Stitching"):
     """Return style contractor rows for one report line (client-side populate)."""
     from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
         build_style_contractor_rows,
     )
 
-    return build_style_contractor_rows(so_item, combo_item=combo_item, article=article)
+    return build_style_contractor_rows(
+        so_item, operation=operation, combo_item=combo_item, article=article
+    )
 
 
 class StitchingReport(Document):
     def load_from_db(self):
         super().load_from_db()
-        self._load_nested_style_contractors()
+        load_nested_style_contractors(self, "stitching_report_ct", "Stitching Report CT")
         return self
-
-    def _load_nested_style_contractors(self):
-        for row in self.get("stitching_report_ct") or []:
-            if not row.name:
-                continue
-
-            nested_rows = frappe.get_all(
-                "Report Style Contractor",
-                filters={
-                    "parent": row.name,
-                    "parenttype": "Stitching Report CT",
-                    "parentfield": "style_contractors",
-                },
-                fields=["*"],
-                order_by="idx asc",
-            )
-
-            row.set("style_contractors", [])
-            for sc_data in nested_rows:
-                row.append("style_contractors", sc_data)
 
     def update_children(self):
         super().update_children()
-        self._save_nested_style_contractors()
-        self._load_nested_style_contractors()
-
-    def _save_nested_style_contractors(self):
-        for ct_row in self.get("stitching_report_ct") or []:
-            if not ct_row.name:
-                continue
-            self._save_style_contractors_for_ct_row(ct_row)
-
-    def _save_style_contractors_for_ct_row(self, ct_row):
-        style_rows = ct_row.get("style_contractors") or []
-        parent_filters = {
-            "parent": ct_row.name,
-            "parenttype": "Stitching Report CT",
-            "parentfield": "style_contractors",
-        }
-
-        keep_names = [
-            row.get("name")
-            for row in style_rows
-            if row.get("name") and not row.get("__islocal")
-        ]
-        if keep_names:
-            frappe.db.delete(
-                "Report Style Contractor",
-                {**parent_filters, "name": ("not in", keep_names)},
-            )
-        else:
-            frappe.db.delete("Report Style Contractor", parent_filters)
-
-        for idx, row in enumerate(style_rows, start=1):
-            values = {
-                "style": row.get("style"),
-                "contractor": row.get("contractor"),
-                "qty": flt(row.get("qty") or 1) or 1,
-                "rate": flt(row.get("rate")),
-                "amount": flt(row.get("amount")),
-                "is_mandatory": 1 if row.get("is_mandatory") else 0,
-                "operation": row.get("operation"),
-                "combo_item": row.get("combo_item"),
-                "item_style_row": row.get("item_style_row"),
-                "parent": ct_row.name,
-                "parenttype": "Stitching Report CT",
-                "parentfield": "style_contractors",
-                "idx": idx,
-            }
-
-            if row.get("name") and not row.get("__islocal"):
-                frappe.db.set_value("Report Style Contractor", row.name, values)
-            else:
-                doc = frappe.get_doc({"doctype": "Report Style Contractor", **values})
-                doc.insert(ignore_permissions=True)
-                row.name = doc.name
-                if hasattr(row, "__islocal"):
-                    row.__islocal = 0
+        save_nested_style_contractors(self, "stitching_report_ct", "Stitching Report CT")
+        load_nested_style_contractors(self, "stitching_report_ct", "Stitching Report CT")
 
     def _append_stitching_ct_row(self, row_data):
         self.append("stitching_report_ct", row_data)
@@ -112,6 +45,7 @@ class StitchingReport(Document):
         append_style_contractors(
             ct_row,
             row_data.get("so_item"),
+            operation="Stitching",
             combo_item=row_data.get("combo_item"),
             article=row_data.get("article"),
         )
@@ -125,6 +59,7 @@ class StitchingReport(Document):
             append_style_contractors(
                 row,
                 row.so_item,
+                operation="Stitching",
                 combo_item=row.combo_item,
                 article=row.article,
             )
@@ -417,7 +352,11 @@ class StitchingReport(Document):
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
         self.stitching_condition()
-        validate_mandatory_contractors(self.stitching_report_ct)
+        validate_mandatory_contractors(
+            self.stitching_report_ct,
+            qty_field="stitching_qty",
+            report_label="Stitching Report",
+        )
         self.total_qty()
         self.total_percentage()
         self.total()

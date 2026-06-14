@@ -6,7 +6,22 @@ from frappe import _
 from frappe.utils import cstr, flt
 
 
-ITEM_STITCHING_STYLE_FIELD = "custom_stitching_style"
+OPERATION_CONFIG = {
+	"Cutting": {
+		"item_style_field": "custom_cutting_style",
+		"operation": "Cutting",
+	},
+	"Stitching": {
+		"item_style_field": "custom_stitching_style",
+		"operation": "Stitching",
+	},
+	"Packing": {
+		"item_style_field": "custom_packing",
+		"operation": "Packing",
+	},
+}
+
+ITEM_STITCHING_STYLE_FIELD = OPERATION_CONFIG["Stitching"]["item_style_field"]
 ITEM_STITCHING_STYLE_DOCTYPE = "Stitching Style"
 
 
@@ -15,7 +30,7 @@ def _normalize(value):
 
 
 def _style_row_matches_report_line(style_row, so_item, combo_item, article):
-	"""Match Item stitching style row to a report CT line."""
+	"""Match Item style row to a report CT line."""
 	combo_code = _normalize(combo_item)
 	article_text = _normalize(article)
 	style_article = _normalize(style_row.get("combo_item"))
@@ -41,13 +56,18 @@ def _style_row_matches_report_line(style_row, so_item, combo_item, article):
 	return False
 
 
-def get_item_stitching_styles(item_code, combo_item=None, article=None, mandatory_only=False):
+def get_item_styles(item_code, operation="Stitching", combo_item=None, article=None, mandatory_only=False):
+	config = OPERATION_CONFIG.get(operation)
+	if not config:
+		return []
+
+	item_style_field = config["item_style_field"]
 	if not item_code or not frappe.db.exists("Item", item_code):
 		return []
 
 	item = frappe.get_doc("Item", item_code)
 	out = []
-	for row in item.get(ITEM_STITCHING_STYLE_FIELD) or []:
+	for row in item.get(item_style_field) or []:
 		if not row.get("style"):
 			continue
 		if mandatory_only and not row.get("is_mandatory"):
@@ -58,10 +78,26 @@ def get_item_stitching_styles(item_code, combo_item=None, article=None, mandator
 	return out
 
 
-def build_style_contractor_rows(item_code, combo_item=None, article=None, mandatory_only=False):
+def get_item_stitching_styles(item_code, combo_item=None, article=None, mandatory_only=False):
+	return get_item_styles(
+		item_code, operation="Stitching", combo_item=combo_item, article=article, mandatory_only=mandatory_only
+	)
+
+
+def build_style_contractor_rows(
+	item_code, operation="Stitching", combo_item=None, article=None, mandatory_only=False
+):
+	config = OPERATION_CONFIG.get(operation)
+	if not config:
+		return []
+
 	rows = []
-	for style_row in get_item_stitching_styles(
-		item_code, combo_item=combo_item, article=article, mandatory_only=mandatory_only
+	for style_row in get_item_styles(
+		item_code,
+		operation=operation,
+		combo_item=combo_item,
+		article=article,
+		mandatory_only=mandatory_only,
 	):
 		qty = flt(style_row.get("qty") or 1) or 1
 		rate = flt(style_row.get("rate"))
@@ -73,7 +109,7 @@ def build_style_contractor_rows(item_code, combo_item=None, article=None, mandat
 				"rate": rate,
 				"amount": rate * qty,
 				"is_mandatory": 1 if style_row.get("is_mandatory") else 0,
-				"operation": "Stitching",
+				"operation": config["operation"],
 				"combo_item": style_row.get("combo_item"),
 				"item_style_row": style_row.name,
 			}
@@ -81,11 +117,17 @@ def build_style_contractor_rows(item_code, combo_item=None, article=None, mandat
 	return rows
 
 
-def append_style_contractors(ct_row, item_code, combo_item=None, article=None, mandatory_only=False):
-	"""Populate nested style_contractors on a Stitching Report CT row."""
+def append_style_contractors(
+	ct_row, item_code, operation="Stitching", combo_item=None, article=None, mandatory_only=False
+):
+	"""Populate nested style_contractors on a report CT row."""
 	ct_row.style_contractors = []
 	for row_data in build_style_contractor_rows(
-		item_code, combo_item=combo_item, article=article, mandatory_only=mandatory_only
+		item_code,
+		operation=operation,
+		combo_item=combo_item,
+		article=article,
+		mandatory_only=mandatory_only,
 	):
 		ct_row.append("style_contractors", row_data)
 

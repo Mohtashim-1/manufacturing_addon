@@ -29,7 +29,9 @@
   "total_copy1",
   "planned_percentage_copy",
   "qty_percentage_copy",
-  "percentage_copy"
+  "percentage_copy",
+  "section_break_styles",
+  "style_contractors"
  ],
  "fields": [
   {
@@ -244,6 +246,17 @@
    "in_standard_filter": 1,
    "label": "Percentage",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_break_styles",
+   "fieldtype": "Section Break",
+   "label": "Style Contractors"
+  },
+  {
+   "fieldname": "style_contractors",
+   "fieldtype": "Table",
+   "label": "Style Contractors",
+   "options": "Report Style Contractor"
   }
  ],
  "index_web_pages_for_search": 1,

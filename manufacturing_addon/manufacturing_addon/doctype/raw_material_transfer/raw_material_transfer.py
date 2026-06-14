@@ -279,7 +279,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
             
             # Check if transfer_qty exceeds what's available in warehouse
             # Allow all transfers - users can transfer any quantity they want
-            if not frappe.flags.in_test and flt(item.transfer_qty) > actual_qty:
+            if not frappe.in_test and flt(item.transfer_qty) > actual_qty:
                 if additional_transfer_qty > 0:
                     # User is intentionally transferring more than available stock
                     print(f"🔍 DEBUG: Allowing additional transfer for {item.item_code}. Available: {actual_qty}, Transfer: {item.transfer_qty}, Additional: {additional_transfer_qty}")
@@ -295,7 +295,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
             frappe.throw("Work Order Transfer Manager is required")
         wotm_doc = frappe.get_doc("Work Order Transfer Manager", self.work_order_transfer_manager)
         # Skip submission check during tests
-        if not frappe.flags.in_test and wotm_doc.docstatus != 1:
+        if not frappe.in_test and wotm_doc.docstatus != 1:
             frappe.throw("Work Order Transfer Manager must be submitted before creating Raw Material Transfer")
 
     def validate_stock_entry_type(self):
@@ -481,7 +481,7 @@ class RawMaterialTransfer(frappe.model.document.Document):
             return
             
         # Skip all allocation validation during tests
-        if frappe.flags.in_test:
+        if frappe.in_test:
             return
             
         # Get work orders for this sales order
@@ -1185,7 +1185,7 @@ def create_raw_material_transfer_from_pending(work_order_transfer_manager, selec
     try:
         wotm_doc = frappe.get_doc("Work Order Transfer Manager", work_order_transfer_manager)
         # Skip submission check during tests
-        if not frappe.flags.in_test and wotm_doc.docstatus != 1:
+        if not frappe.in_test and wotm_doc.docstatus != 1:
             frappe.throw("Work Order Transfer Manager must be submitted first")
 
         # Selected filter

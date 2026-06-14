@@ -798,15 +798,15 @@ class TestRawMaterialTransfer(FrappeTestCase):
         
         # Test that validation works when not in test mode
         # Temporarily disable test flag to test actual validation
-        original_test_flag = frappe.flags.in_test
-        frappe.flags.in_test = False
+        original_test_flag = frappe.in_test
+        frappe.in_test = False
         
         try:
             with self.assertRaises(frappe.ValidationError):
                 rmt.validate_allocation()
         finally:
             # Restore test flag
-            frappe.flags.in_test = original_test_flag
+            frappe.in_test = original_test_flag
     
     def test_get_bom_allocation_debug_info(self):
         """Test BOM allocation debug info method"""

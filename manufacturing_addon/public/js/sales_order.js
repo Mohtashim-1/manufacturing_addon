@@ -12,6 +12,94 @@ const SO_INDIRECT_CONNECTIONS = [
 const SO_OPEN_COUNT_METHOD =
 	"manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order_dashboard.get_open_count";
 
+const SO_COST_HIGHLIGHT_STYLE_ID = "so-cost-over-rate-style";
+
+function inject_sales_order_cost_highlight_styles() {
+	if (document.getElementById(SO_COST_HIGHLIGHT_STYLE_ID)) return;
+	const style = document.createElement("style");
+	style.id = SO_COST_HIGHLIGHT_STYLE_ID;
+	style.textContent = `
+		.grid-row.so-cost-over-rate .data-row,
+		.grid-row.so-cost-over-rate .grid-static-col,
+		.grid-row.so-cost-over-rate .col,
+		.grid-row.so-cost-over-rate .row-index,
+		.grid-row.so-cost-over-rate .btn-open-row {
+			background-color: #fecaca !important;
+		}
+		.grid-row.so-cost-over-rate .row-index,
+		.grid-row.so-cost-over-rate .row-index span {
+			color: #991b1b !important;
+			font-weight: 600;
+		}
+		.form-grid .grid-row.so-cost-over-rate:hover .data-row,
+		.form-grid .grid-row.so-cost-over-rate:hover .grid-static-col,
+		.form-grid .grid-row.so-cost-over-rate:hover .col {
+			background-color: #fca5a5 !important;
+		}
+	`;
+	document.head.appendChild(style);
+}
+
+function so_flt(value) {
+	return typeof flt === "function" ? flt(value) : parseFloat(value) || 0;
+}
+
+function should_highlight_cost_row(row) {
+	if (!row || !row.item_code) return false;
+	return so_flt(row.custom_cost_of_product) >= so_flt(row.rate);
+}
+
+function highlight_sales_order_cost_rows(frm) {
+	inject_sales_order_cost_highlight_styles();
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid) return;
+
+	const highlight_by_name = {};
+	(frm.doc.items || []).forEach((row) => {
+		if (row.name) {
+			highlight_by_name[row.name] = should_highlight_cost_row(row);
+		}
+	});
+
+	(grid.grid_rows || []).forEach((grid_row) => {
+		if (!grid_row || !grid_row.wrapper) return;
+		const row_name = grid_row.doc && grid_row.doc.name;
+		const highlight = row_name ? highlight_by_name[row_name] : should_highlight_cost_row(grid_row.doc);
+		$(grid_row.wrapper).toggleClass("so-cost-over-rate", !!highlight);
+	});
+
+	// Fallback: match rendered rows by data-name when grid_rows is stale
+	const $rows = $(grid.wrapper).find(".grid-body .rows .grid-row[data-name]");
+	$rows.each(function () {
+		const name = $(this).attr("data-name");
+		if (!name || highlight_by_name[name] === undefined) return;
+		$(this).toggleClass("so-cost-over-rate", !!highlight_by_name[name]);
+	});
+}
+
+function schedule_cost_row_highlight(frm) {
+	[0, 300, 1000, 2000].forEach((delay) => {
+		setTimeout(() => highlight_sales_order_cost_rows(frm), delay);
+	});
+}
+
+function bind_sales_order_cost_row_highlight(frm) {
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid || grid._so_cost_highlight_bound) return;
+	grid._so_cost_highlight_bound = true;
+
+	const original_refresh = grid.refresh.bind(grid);
+	grid.refresh = function (...args) {
+		const result = original_refresh(...args);
+		schedule_cost_row_highlight(frm);
+		return result;
+	};
+
+	if (grid.wrapper) {
+		$(grid.wrapper).on("grid-row-render", () => schedule_cost_row_highlight(frm));
+	}
+}
+
 function ensure_sales_order_manufacturing_connections(frm) {
 	if (frm.is_new() || !frm.meta) return false;
 
@@ -121,17 +209,28 @@ frappe.ui.form.on("Sales Order Item", {
 
     bom_no: function(frm, cdt, cdn) {
         update_cost_of_product(frm, cdt, cdn);
-    }
+    },
+
+    rate: function(frm) {
+        schedule_cost_row_highlight(frm);
+    },
+
+    custom_cost_of_product: function(frm) {
+        schedule_cost_row_highlight(frm);
+    },
 });
 
 // Add custom button on Sales Order
 frappe.ui.form.on("Sales Order", {
     onload(frm) {
         ensure_sales_order_manufacturing_connections(frm);
+        bind_sales_order_cost_row_highlight(frm);
     },
 
     refresh: function(frm) {
         ensure_sales_order_manufacturing_connections(frm);
+        bind_sales_order_cost_row_highlight(frm);
+        schedule_cost_row_highlight(frm);
 
         console.log("[Manufacturing Addon][Sales Order] refresh", {
             name: frm.doc.name,
@@ -146,6 +245,7 @@ frappe.ui.form.on("Sales Order", {
                     update_cost_of_product(frm, row.doctype, row.name);
                 }
             });
+            schedule_cost_row_highlight(frm);
 
             frm.add_custom_button(__("Create Order Sheet"), function () {
                 frappe.call({
@@ -310,7 +410,8 @@ function update_cost_of_product(frm, cdt, cdn) {
                 cdt,
                 cdn,
                 "custom_cost_of_product",
-                (r.message && r.message.cost_of_product) || 0
+                (r.message && r.message.cost_of_product) || 0,
+                () => schedule_cost_row_highlight(frm)
             );
         }
     });
@@ -323,6 +424,7 @@ function refresh_cost_of_product_for_all_rows(frm) {
             update_cost_of_product(frm, row.doctype, row.name);
         }
     });
+    schedule_cost_row_highlight(frm);
 }
 
 

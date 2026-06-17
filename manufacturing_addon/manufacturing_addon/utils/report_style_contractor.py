@@ -29,10 +29,30 @@ OPERATION_CONFIG = {
 		"item_style_field": None,
 		"operation": "Checking",
 	},
+	"Quality": {
+		"item_style_field": "custom_stitching_style",
+		"operation": "Quality",
+	},
 }
 
 ITEM_STITCHING_STYLE_FIELD = OPERATION_CONFIG["Stitching"]["item_style_field"]
 ITEM_STITCHING_STYLE_DOCTYPE = "Stitching Style"
+
+
+def item_style_unit_amount(style_row):
+	"""Per finished-unit amount from Item style tab (rate × qty or amount field)."""
+	if flt(style_row.get("amount")):
+		return flt(style_row.amount)
+	rate = flt(style_row.get("rate"))
+	qty = flt(style_row.get("qty") or 1) or 1
+	return rate * qty
+
+
+def billing_amount_for_work(style_row, work_qty):
+	work_qty = flt(work_qty)
+	if work_qty <= 0:
+		return 0
+	return work_qty * item_style_unit_amount(style_row)
 
 
 def _normalize(value):

@@ -6,6 +6,12 @@ from frappe import _
 from frappe.utils import cstr, flt
 
 
+ITEM_STYLE_TABLES = (
+	"custom_cutting_style",
+	"custom_stitching_style",
+	"custom_packing",
+)
+
 OPERATION_CONFIG = {
 	"Cutting": {
 		"item_style_field": "custom_cutting_style",
@@ -18,6 +24,10 @@ OPERATION_CONFIG = {
 	"Packing": {
 		"item_style_field": "custom_packing",
 		"operation": "Packing",
+	},
+	"Checking": {
+		"item_style_field": None,
+		"operation": "Checking",
 	},
 }
 
@@ -56,20 +66,54 @@ def _style_row_matches_report_line(style_row, so_item, combo_item, article):
 	return False
 
 
+def _iter_item_style_rows(item, operation):
+	"""Yield style rows for a report operation.
+
+	- Rows from the operation's own style table are always included.
+	- Rows marked Subassembly on any style table are included in every report.
+	- Checking has no own table, so it only receives subassembly rows.
+	"""
+	config = OPERATION_CONFIG.get(operation)
+	if not config:
+		return
+
+	own_field = config.get("item_style_field")
+	seen = set()
+
+	for table_field in ITEM_STYLE_TABLES:
+		for row in item.get(table_field) or []:
+			if not row.get("style"):
+				continue
+
+			row_key = row.name or f"{table_field}:{row.idx}:{row.style}"
+			if row_key in seen:
+				continue
+
+			is_subassembly = bool(row.get("is_subassembly"))
+			is_own_table = table_field == own_field
+
+			if own_field and is_own_table:
+				pass
+			elif is_subassembly:
+				pass
+			else:
+				continue
+
+			seen.add(row_key)
+			yield row
+
+
 def get_item_styles(item_code, operation="Stitching", combo_item=None, article=None, mandatory_only=False):
 	config = OPERATION_CONFIG.get(operation)
 	if not config:
 		return []
 
-	item_style_field = config["item_style_field"]
 	if not item_code or not frappe.db.exists("Item", item_code):
 		return []
 
 	item = frappe.get_doc("Item", item_code)
 	out = []
-	for row in item.get(item_style_field) or []:
-		if not row.get("style"):
-			continue
+	for row in _iter_item_style_rows(item, operation):
 		if mandatory_only and not row.get("is_mandatory"):
 			continue
 		if not _style_row_matches_report_line(row, item_code, combo_item, article):

@@ -47,6 +47,9 @@ doctype_js = {
     "Cutting Report": [
         "public/js/report_style_contractors.js",
     ],
+    "Checking Report": [
+        "public/js/report_style_contractors.js",
+    ],
     "Packing Report": [
         "public/js/report_style_contractors.js",
     ],

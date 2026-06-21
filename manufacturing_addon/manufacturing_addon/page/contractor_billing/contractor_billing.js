@@ -12,6 +12,7 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 	const state = {
 		process: "All",
 		status: "All",
+		view: "overview",
 		data: null,
 		expanded: new Set(),
 		charts: {},
@@ -45,19 +46,33 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 	};
 
 	page.add_inner_button(__("Refresh"), () => load_data());
+	page.add_menu_item(__("Export billing details"), () => export_rows());
+	page.add_menu_item(__("Reset filters"), () => {
+		filters.order_sheet.set_value("");
+		filters.contractor.set_value("");
+		filters.from_date.set_value(frappe.datetime.add_months(frappe.datetime.get_today(), -12));
+		filters.to_date.set_value(frappe.datetime.get_today());
+		state.process = "All";
+		state.status = "All";
+		$("#cb-search").val("");
+		$("#cb-status-filter").val("All");
+		$tabs.find(".cb-tab").removeClass("active");
+		$tabs.find('[data-process="All"]').addClass("active");
+		load_data();
+	});
 
 	const $root = $(`
 		<div class="cb-dashboard">
 			<div class="cb-hero">
 				<div class="cb-hero-main">
-					<div class="cb-hero-eyebrow">${__("Manufacturing")}</div>
+					<div class="cb-hero-eyebrow"><span></span>${__("Contractor finance")}</div>
 					<h2>${__("Contractor Billing")}</h2>
 					<p class="cb-hero-sub">${__(
-						"Billable work from submitted Cutting, Stitching, Packing & Quality reports, valued using each Item's Style tab rates."
+						"Monitor production liabilities, contractor settlements and rate coverage from one place."
 					)}</p>
-					<div class="cb-hero-stats" id="cb-hero-stats"></div>
 				</div>
 				<div class="cb-hero-side">
+					<div class="cb-hero-side-copy"><span>${__("Payment health")}</span><strong id="cb-hero-due"></strong></div>
 					<div class="cb-hero-ring" id="cb-hero-ring">
 						<svg viewBox="0 0 120 120"><circle class="cb-ring-bg" cx="60" cy="60" r="52"/><circle class="cb-ring-fill" id="cb-ring-fill" cx="60" cy="60" r="52"/></svg>
 						<div class="cb-hero-ring-label">
@@ -75,7 +90,17 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 					<span class="cb-period" id="cb-period"></span>
 				</div>
 			</div>
+			<div class="cb-viewbar">
+				<div class="cb-view-tabs" role="tablist" aria-label="${__("Dashboard views")}">
+					<button class="cb-view-tab active" data-view="overview" role="tab">${__("Overview")}</button>
+					<button class="cb-view-tab" data-view="contractors" role="tab">${__("Contractors")}</button>
+					<button class="cb-view-tab" data-view="operations" role="tab">${__("Operations")}</button>
+					<button class="cb-view-tab" data-view="details" role="tab">${__("Billing details")}</button>
+				</div>
+				<div class="cb-updated" id="cb-updated"></div>
+			</div>
 			<div class="cb-kpi-grid" id="cb-kpis"></div>
+			<div class="cb-view-panel" data-view-panel="overview">
 			<div class="cb-charts-grid cb-charts-grid--trend">
 				<div class="cb-card cb-card-chart">
 					<div class="cb-card-head"><div><h4>${__("Monthly billing & quantity")}</h4><span class="cb-card-hint">${__("Billed amount (bars) and work qty (line)")}</span></div></div>
@@ -87,6 +112,13 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 					<div class="cb-chart-canvas-wrap"><canvas id="cb-payment-chart"></canvas></div>
 				</div>
 			</div>
+			<div class="cb-insights" id="cb-insights"></div>
+			<div class="cb-explain">
+				<div class="cb-explain-icon">i</div>
+				<div><strong>${__("How billing is calculated")}</strong><span>${__("Submitted production quantity × the matching rate and quantity configured on the Item Style tab. Paid amounts come from submitted Contractor Settlements and linked Purchase Invoices.")}</span></div>
+			</div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="contractors" hidden>
 			<div class="cb-charts-grid cb-charts-grid--3">
 				<div class="cb-card cb-card-chart cb-card-span-2">
 					<div class="cb-card-head"><div><h4>${__("Contractor ledger")}</h4><span class="cb-card-hint">${__("Paid vs due per contractor — click bar to filter")}</span></div></div>
@@ -97,6 +129,8 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 					<div class="cb-chart-canvas-wrap"><canvas id="cb-process-chart"></canvas></div>
 				</div>
 			</div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="operations" hidden>
 			<div class="cb-charts-grid cb-charts-grid--3">
 				<div class="cb-card cb-card-chart">
 					<div class="cb-card-head"><div><h4>${__("Production volume")}</h4><span class="cb-card-hint">${__("Submitted report rows by process")}</span></div></div>
@@ -121,7 +155,8 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--md"><canvas id="cb-qty-chart"></canvas></div>
 				</div>
 			</div>
-			<div class="cb-insights" id="cb-insights"></div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="details" hidden>
 			<div class="cb-card cb-card-table">
 				<div class="cb-table-head">
 					<div>
@@ -161,6 +196,7 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 					</table>
 				</div>
 			</div>
+			</div>
 		</div>
 	`);
 
@@ -182,6 +218,15 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		state.process = $(this).data("process");
 		state.expanded.clear();
 		load_data();
+	});
+
+	$(".cb-view-tabs").on("click", ".cb-view-tab", function () {
+		state.view = $(this).data("view");
+		$(".cb-view-tab").removeClass("active").attr("aria-selected", "false");
+		$(this).addClass("active").attr("aria-selected", "true");
+		$("[data-view-panel]").prop("hidden", true);
+		$(`[data-view-panel="${state.view}"]`).prop("hidden", false);
+		requestAnimationFrame(() => Object.values(state.charts).forEach((chart) => chart.resize()));
 	});
 
 	$("#cb-status-filter").on("change", function () {
@@ -261,24 +306,13 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		render_order_chart(data.order_chart || {});
 		render_qty_chart(data.process_qty || {});
 		render_table(data.rows || []);
+		const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+		$("#cb-updated").text(`${__("Updated")} ${now}`);
 	}
 
 	function render_hero(k, filters) {
 		const cleared = Math.min(k.cleared_pct || 0, 100);
-		$("#cb-hero-stats").html(`
-			<div class="cb-hero-stat">
-				<span class="cb-hero-stat-label">${__("Total billed")}</span>
-				<strong>${format_currency(k.total_billed)}</strong>
-			</div>
-			<div class="cb-hero-stat">
-				<span class="cb-hero-stat-label">${__("Amount due")}</span>
-				<strong class="cb-text-danger">${format_currency(k.total_due)}</strong>
-			</div>
-			<div class="cb-hero-stat">
-				<span class="cb-hero-stat-label">${__("Contractors")}</span>
-				<strong>${k.contractor_count || 0}</strong>
-			</div>
-		`);
+		$("#cb-hero-due").text(`${format_currency(k.total_due)} ${__("outstanding")}`);
 		$("#cb-ring-pct").text(`${cleared}%`);
 		const circumference = 2 * Math.PI * 52;
 		const offset = circumference - (cleared / 100) * circumference;
@@ -293,7 +327,7 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 
 	function render_coverage_alert(k) {
 		const total = k.report_qty_rows || 0;
-		const billed = k.line_count || 0;
+		const billed = k.rated_report_rows || 0;
 		const $alert = $("#cb-coverage-alert");
 		if (!total || billed >= total) {
 			$alert.prop("hidden", true).empty();
@@ -314,40 +348,45 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 	}
 
 	function render_kpis(k) {
+		const coverage = k.report_qty_rows
+			? Math.round(((k.rated_report_rows || 0) / k.report_qty_rows) * 100)
+			: 0;
 		$("#cb-kpis").html(`
-			<div class="cb-kpi cb-kpi-primary">
+			<div class="cb-kpi cb-kpi-billed">
 				<div class="cb-kpi-top">
-					<span class="cb-kpi-label">${__("Amount paid")}</span>
-					<span class="cb-kpi-badge cb-kpi-badge-success">${k.cleared_pct || 0}%</span>
+					<span class="cb-kpi-icon">↗</span>
+					<span class="cb-kpi-badge">${k.contractor_count || 0} ${__("contractors")}</span>
 				</div>
+				<span class="cb-kpi-label">${__("Total billed")}</span>
+				<div class="cb-kpi-value">${format_currency(k.total_billed)}</div>
+				<div class="cb-kpi-sub">${format_number(k.line_count || 0)} ${__("billable style lines")}</div>
+			</div>
+			<div class="cb-kpi cb-kpi-paid">
+				<div class="cb-kpi-top">
+					<span class="cb-kpi-icon">✓</span>
+					<span class="cb-kpi-badge cb-kpi-badge-success">${k.cleared_pct || 0}% ${__("cleared")}</span>
+				</div>
+				<span class="cb-kpi-label">${__("Amount paid")}</span>
 				<div class="cb-kpi-value">${format_currency(k.total_paid)}</div>
 				<div class="cb-kpi-bar"><span class="cb-kpi-bar-fill cb-kpi-bar-success" style="width:${Math.min(k.cleared_pct || 0, 100)}%"></span></div>
 			</div>
-			<div class="cb-kpi">
+			<div class="cb-kpi cb-kpi-outstanding">
 				<div class="cb-kpi-top">
-					<span class="cb-kpi-label">${__("Report lines")}</span>
-					<span class="cb-kpi-badge">${k.line_count || 0} ${__("rated")}</span>
+					<span class="cb-kpi-icon">!</span>
+					<span class="cb-kpi-badge cb-kpi-badge-danger">${k.bills_due || 0} ${__("open")}</span>
 				</div>
-				<div class="cb-kpi-value cb-kpi-num">${format_number(k.report_qty_rows || 0)}</div>
-				<div class="cb-kpi-sub">${__("submitted production rows in range")}</div>
+				<span class="cb-kpi-label">${__("Outstanding")}</span>
+				<div class="cb-kpi-value">${format_currency(k.total_due)}</div>
+				<div class="cb-kpi-sub">${k.bills_partial || 0} ${__("partial")} · ${k.bills_draft || 0} ${__("draft settlements")}</div>
 			</div>
-			<div class="cb-kpi">
+			<div class="cb-kpi cb-kpi-coverage">
 				<div class="cb-kpi-top">
-					<span class="cb-kpi-label">${__("Settlements")}</span>
+					<span class="cb-kpi-icon">◎</span>
+					<span class="cb-kpi-badge">${k.rated_report_rows || 0} / ${k.report_qty_rows || 0}</span>
 				</div>
-				<div class="cb-kpi-split">
-					<div><span class="cb-kpi-mini">${__("Paid")}</span><strong>${k.bills_paid || 0}</strong></div>
-					<div><span class="cb-kpi-mini">${__("Partial")}</span><strong>${k.bills_partial || 0}</strong></div>
-					<div><span class="cb-kpi-mini">${__("Draft")}</span><strong>${k.bills_draft || 0}</strong></div>
-				</div>
-			</div>
-			<div class="cb-kpi cb-kpi-danger-soft">
-				<div class="cb-kpi-top">
-					<span class="cb-kpi-label">${__("Outstanding bills")}</span>
-					<span class="cb-kpi-badge cb-kpi-badge-danger">${k.bills_due || 0}</span>
-				</div>
-				<div class="cb-kpi-value cb-text-danger">${format_currency(k.total_due)}</div>
-				<div class="cb-kpi-sub">${__("pending contractor settlements")}</div>
+				<span class="cb-kpi-label">${__("Rate coverage")}</span>
+				<div class="cb-kpi-value">${coverage}%</div>
+				<div class="cb-kpi-sub">${format_number(k.report_qty_rows || 0)} ${__("submitted production rows")}</div>
 			</div>
 		`);
 	}
@@ -363,7 +402,7 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 			<div class="cb-insight"><span class="cb-insight-label">${__("Avg per row")}</span><strong>${format_currency(avgBill)}</strong></div>
 			<div class="cb-insight"><span class="cb-insight-label">${__("Top process")}</span><strong>${topProc ? frappe.utils.escape_html(topProc[0]) : "—"}</strong><small>${topProc ? format_currency(topProc[1]) : ""}</small></div>
 			<div class="cb-insight"><span class="cb-insight-label">${__("Largest bill")}</span><strong>${topRow ? frappe.utils.escape_html(topRow.contractor || "") : "—"}</strong><small>${topRow ? format_currency(topRow.total_bill) : ""}</small></div>
-			<div class="cb-insight"><span class="cb-insight-label">${__("Coverage")}</span><strong>${k.report_qty_rows ? Math.round(((k.line_count || 0) / k.report_qty_rows) * 100) : 0}%</strong><small>${k.line_count || 0} / ${k.report_qty_rows || 0} ${__("lines rated")}</small></div>
+			<div class="cb-insight"><span class="cb-insight-label">${__("Coverage")}</span><strong>${k.report_qty_rows ? Math.round(((k.rated_report_rows || 0) / k.report_qty_rows) * 100) : 0}%</strong><small>${k.rated_report_rows || 0} / ${k.report_qty_rows || 0} ${__("lines rated")}</small></div>
 		`);
 	}
 
@@ -442,8 +481,10 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 						type: "bar",
 						label: __("Billed"),
 						data: chart.billed || [],
-						backgroundColor: "rgba(79, 70, 229, 0.85)",
+						backgroundColor: "#2563eb",
+						hoverBackgroundColor: "#1d4ed8",
 						borderRadius: 6,
+						maxBarThickness: 56,
 						yAxisID: "y",
 						order: 2,
 					},
@@ -451,8 +492,8 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 						type: "line",
 						label: __("Work Qty"),
 						data: chart.qty || [],
-						borderColor: "#f59e0b",
-						backgroundColor: "rgba(245, 158, 11, 0.12)",
+						borderColor: "#0f766e",
+						backgroundColor: "rgba(15, 118, 110, 0.08)",
 						borderWidth: 2.5,
 						tension: 0.35,
 						fill: true,
@@ -1055,6 +1096,23 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		return frappe.format(value || 0, { fieldtype: "Currency" });
 	}
 
+	function export_rows() {
+		const rows = state.data?.rows || [];
+		if (!rows.length) {
+			frappe.show_alert({ message: __("There are no billing rows to export."), indicator: "orange" });
+			return;
+		}
+		const columns = ["Contractor", "Supplier", "Process", "Order Sheet", "Quantity", "Status", "Total Bill", "Paid", "Due", "Progress %"];
+		const csvValue = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+		const lines = [columns, ...rows.map((r) => [r.contractor, r.supplier, r.process, r.order_sheet, r.qty, r.status, r.total_bill, r.paid, r.due, r.progress])];
+		const blob = new Blob(["\ufeff" + lines.map((line) => line.map(csvValue).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+		const link = document.createElement("a");
+		link.href = URL.createObjectURL(blob);
+		link.download = `contractor-billing-${frappe.datetime.get_today()}.csv`;
+		link.click();
+		URL.revokeObjectURL(link.href);
+	}
+
 	function format_number(value) {
 		return flt(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
 	}
@@ -1096,7 +1154,9 @@ function load_chartjs() {
 }
 
 function inject_cb_styles() {
-	const styleId = "cb-dashboard-styles-v4";
+	const styleId = "cb-dashboard-styles-v6";
+	document.getElementById("cb-dashboard-styles-v5")?.remove();
+	document.getElementById("cb-dashboard-styles-v4")?.remove();
 	document.getElementById("cb-dashboard-styles-v3")?.remove();
 	document.getElementById("cb-dashboard-styles-v2")?.remove();
 	document.getElementById("cb-dashboard-styles")?.remove();
@@ -1226,6 +1286,31 @@ function inject_cb_styles() {
 		}
 		.cb-toolbar-actions { margin-left: auto; }
 		.cb-period { font-size: 12px; color: var(--cb-muted); font-weight: 500; }
+		.cb-viewbar {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 16px;
+			margin: 4px 0 16px;
+			border-bottom: 1px solid #dbe2ea;
+		}
+		.cb-view-tabs { display: flex; gap: 4px; overflow-x: auto; }
+		.cb-view-tab {
+			appearance: none;
+			border: 0;
+			border-bottom: 2px solid transparent;
+			background: transparent;
+			color: var(--cb-muted);
+			padding: 11px 14px;
+			font-size: 13px;
+			font-weight: 700;
+			white-space: nowrap;
+			cursor: pointer;
+		}
+		.cb-view-tab:hover { color: var(--cb-text); }
+		.cb-view-tab.active { color: var(--cb-primary); border-bottom-color: var(--cb-primary); }
+		.cb-updated { flex: none; color: var(--cb-muted); font-size: 11px; }
+		.cb-view-panel[hidden] { display: none !important; }
 		.cb-kpi-grid {
 			display: grid;
 			grid-template-columns: repeat(4, 1fr);
@@ -1293,6 +1378,20 @@ function inject_cb_styles() {
 		.cb-insight-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--cb-muted); }
 		.cb-insight strong { font-size: 15px; font-weight: 800; color: var(--cb-text); }
 		.cb-insight small { font-size: 11px; color: var(--cb-muted); }
+		.cb-explain {
+			display: flex;
+			align-items: flex-start;
+			gap: 12px;
+			margin-bottom: 16px;
+			padding: 14px 16px;
+			border: 1px solid #c7d2fe;
+			border-radius: 14px;
+			background: #f5f7ff;
+			color: #3730a3;
+		}
+		.cb-explain-icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%; background: #4f46e5; color: #fff; font-size: 12px; font-weight: 800; }
+		.cb-explain strong { display: block; margin-bottom: 3px; font-size: 12px; }
+		.cb-explain span { display: block; color: #64748b; font-size: 12px; line-height: 1.5; }
 		.cb-chart-canvas-wrap { position: relative; height: 280px; padding: 4px 8px 8px; }
 		.cb-chart-canvas-wrap--lg { height: 320px; }
 		.cb-chart-canvas-wrap--md { height: 300px; }
@@ -1439,7 +1538,106 @@ function inject_cb_styles() {
 		.cb-detail-table { margin: 0; background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid var(--cb-border); }
 		.cb-detail-table th { font-size: 10px; background: #f1f5f9; }
 		.cb-report-link { color: var(--cb-primary); font-weight: 600; }
-		.layout-main-section .page-content { background: #eef2f7; }
+		/* Refined financial dashboard visual system */
+		.cb-dashboard {
+			--cb-bg: #f6f8fb;
+			--cb-border: #e2e8f0;
+			--cb-text: #111827;
+			--cb-muted: #64748b;
+			--cb-primary: #2563eb;
+			background: var(--cb-bg);
+			padding: 24px;
+			border: 1px solid #edf1f5;
+			border-radius: 12px;
+			font-size: 13px;
+		}
+		.cb-hero {
+			min-height: 132px;
+			margin-bottom: 18px;
+			padding: 24px 28px;
+			background: #101827;
+			border: 1px solid #1e293b;
+			border-radius: 14px;
+			box-shadow: 0 10px 30px rgba(15, 23, 42, .12);
+		}
+		.cb-hero::after {
+			right: -55px;
+			top: -100px;
+			width: 300px;
+			height: 300px;
+			background: radial-gradient(circle, rgba(37,99,235,.28), rgba(37,99,235,0) 68%);
+		}
+		.cb-hero-eyebrow { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; color: #93c5fd; opacity: 1; }
+		.cb-hero-eyebrow span { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.12); }
+		.cb-hero h2 { color: #fff !important; font-size: 26px; line-height: 1.2; margin-bottom: 7px; }
+		.cb-hero-sub { color: #aeb9c9; opacity: 1; margin: 0; max-width: 680px; font-size: 13px; }
+		.cb-hero-side { display: flex; align-items: center; gap: 20px; }
+		.cb-hero-side-copy { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+		.cb-hero-side-copy span { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+		.cb-hero-side-copy strong { color: #e2e8f0; font-size: 13px; font-weight: 700; white-space: nowrap; }
+		.cb-hero-ring { width: 82px; height: 82px; }
+		.cb-ring-bg { stroke: rgba(255,255,255,.1); stroke-width: 8; }
+		.cb-ring-fill { stroke: #38bdf8; stroke-width: 8; }
+		.cb-hero-ring-label span { color: #fff; font-size: 17px; }
+		.cb-hero-ring-label small { color: #94a3b8; font-size: 9px; }
+		.cb-alert { background: #fffbeb; border: 0; border-left: 3px solid #f59e0b; border-radius: 8px; color: #92400e; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+		.cb-alert-icon { background: #fef3c7; color: #b45309; border-radius: 50%; }
+		.cb-toolbar { padding: 10px 14px; border-radius: 10px; box-shadow: none; }
+		.cb-tab { border-color: transparent; background: #f1f5f9; border-radius: 7px; padding: 6px 12px; color: #475569; }
+		.cb-tab:hover { border-color: #bfdbfe; color: #1d4ed8; }
+		.cb-tab.active { background: #1e293b; border-color: #1e293b; box-shadow: none; }
+		.cb-viewbar { background: transparent; margin-top: 2px; }
+		.cb-view-tab { padding: 11px 12px; font-size: 12px; }
+		.cb-view-tab.active { color: #1d4ed8; border-bottom-color: #2563eb; }
+		.cb-kpi-grid { gap: 12px; margin-bottom: 18px; }
+		.cb-kpi {
+			position: relative;
+			min-height: 146px;
+			padding: 17px 18px 15px;
+			border: 1px solid var(--cb-border);
+			border-radius: 11px;
+			background: #fff;
+			box-shadow: 0 1px 3px rgba(15,23,42,.045);
+			overflow: hidden;
+		}
+		.cb-kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: #2563eb; }
+		.cb-kpi-paid::before { background: #10b981; }
+		.cb-kpi-outstanding::before { background: #f43f5e; }
+		.cb-kpi-coverage::before { background: #f59e0b; }
+		.cb-kpi:hover { transform: none; box-shadow: 0 5px 18px rgba(15,23,42,.07); }
+		.cb-kpi-top { margin-bottom: 12px; }
+		.cb-kpi-icon { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 7px; background: #eff6ff; color: #2563eb; font-size: 13px; font-weight: 800; }
+		.cb-kpi-paid .cb-kpi-icon { background: #ecfdf5; color: #059669; }
+		.cb-kpi-outstanding .cb-kpi-icon { background: #fff1f2; color: #e11d48; }
+		.cb-kpi-coverage .cb-kpi-icon { background: #fffbeb; color: #d97706; }
+		.cb-kpi-label { display: block; color: #64748b; font-size: 10px; }
+		.cb-kpi-value { margin-top: 5px; color: #111827 !important; font-size: 24px; text-align: left !important; letter-spacing: -.025em; }
+		.cb-kpi-outstanding .cb-kpi-value { color: #be123c !important; }
+		.cb-kpi-sub { margin-top: 7px; color: #8491a3; font-size: 11px; }
+		.cb-kpi-bar { margin-top: 11px; height: 4px; }
+		.cb-card { border-radius: 11px; border-color: var(--cb-border); box-shadow: 0 1px 3px rgba(15,23,42,.045); }
+		.cb-card-head h4, .cb-table-head h4 { color: #111827; font-size: 14px; }
+		.cb-card-hint { color: #8491a3; font-size: 11px; }
+		.cb-charts-grid--trend { grid-template-columns: minmax(0, 1.65fr) minmax(320px, .75fr); }
+		.cb-chart-canvas-wrap--lg { height: 285px; }
+		.cb-chart-canvas-wrap { height: 268px; }
+		.cb-insights { gap: 10px; }
+		.cb-insight { min-height: 82px; padding: 13px 15px; border-radius: 9px; box-shadow: 0 1px 2px rgba(15,23,42,.03); }
+		.cb-insight-label { color: #8491a3; }
+		.cb-insight strong { color: #1e293b; font-size: 14px; }
+		.cb-explain { background: #f8fafc; border-color: #dbeafe; color: #1e40af; border-radius: 9px; }
+		.cb-explain-icon { background: #2563eb; }
+		.cb-payment-total { color: #111827; font-size: 16px; }
+		.cb-card-table { border-radius: 11px; }
+		@media (max-width: 640px) {
+			.cb-dashboard { padding: 12px; margin: -8px -12px 8px; border-radius: 0; }
+			.cb-hero { padding: 22px 18px; border-radius: 16px; }
+			.cb-hero h2 { font-size: 23px; }
+			.cb-viewbar { align-items: flex-start; flex-direction: column; gap: 0; }
+			.cb-updated { padding: 0 14px 8px; }
+			.cb-insights { grid-template-columns: 1fr; }
+			.cb-detail-panel { padding-left: 12px; }
+		}
 	`;
 	const style = document.createElement("style");
 	style.id = styleId;

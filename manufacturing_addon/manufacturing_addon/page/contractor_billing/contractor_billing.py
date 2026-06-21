@@ -310,6 +310,7 @@ def _fetch_billing_lines(filters, ct_rows=None):
 					"operation": op,
 					"order_sheet": ct_row.order_sheet or "",
 					"report_name": ct_row.report_name,
+					"ct_row_name": ct_row.ct_row_name,
 					"report_date": ct_row.report_date,
 					"so_item": so_item,
 					"combo_item": ct_row.combo_item,
@@ -471,10 +472,12 @@ def _apply_payment_split(rows, payment_map):
 		pay = payment_map.get(contractor, {})
 		contractor_paid = flt(pay.get("paid"))
 		share = row["total_bill"] / total_work if total_work else 0
-		row["paid"] = round(contractor_paid * share, 2)
+		# A settlement may include work outside the selected process or date range.
+		# Never present more of that payment than this filtered billing row can clear.
+		row["paid"] = min(round(contractor_paid * share, 2), row["total_bill"])
 		row["due"] = max(row["total_bill"] - row["paid"], 0)
 		row["supplier"] = _supplier_label(contractor)
-		row["progress"] = round((row["paid"] / row["total_bill"]) * 100, 1) if row["total_bill"] else 0
+		row["progress"] = min(round((row["paid"] / row["total_bill"]) * 100, 1), 100) if row["total_bill"] else 0
 
 		if row["due"] <= 0.01 and row["total_bill"] > 0:
 			row["status"] = "Paid"
@@ -495,7 +498,7 @@ def _filter_lines_by_process(lines, process_filter=None):
 		if process_filter == "Sub-Assembly":
 			if row.get("is_subassembly"):
 				filtered.append(row)
-		elif op == process_filter:
+		elif op == process_filter and not row.get("is_subassembly"):
 			filtered.append(row)
 	return filtered
 
@@ -597,15 +600,16 @@ def _build_process_qty_chart(lines):
 
 
 def _build_coverage_chart(ct_rows, billed_lines):
-	billed_keys = {(l.get("report_name"), l.get("so_item"), l.get("operation")) for l in billed_lines}
+	# CT row names are unique. Using report/item/operation makes repeated Item rows in
+	# one report appear rated when only one of them actually has a matching Style rate.
+	billed_keys = {l.get("ct_row_name") for l in billed_lines if l.get("ct_row_name")}
 	by_op = {}
 	for row in ct_rows:
 		if flt(row.work_qty) <= 0 or not row.so_item:
 			continue
 		op = row.operation or "Other"
 		entry = by_op.setdefault(op, {"rated": 0, "missing": 0})
-		key = (row.report_name, row.so_item, row.operation)
-		if key in billed_keys:
+		if row.ct_row_name in billed_keys:
 			entry["rated"] += 1
 		else:
 			entry["missing"] += 1
@@ -625,9 +629,17 @@ def get_contractor_billing_data(filters=None):
 	process_filter = (filters.get("process") or "All").strip()
 
 	ct_rows = _fetch_report_ct_rows(filters)
-	report_qty_rows = sum(1 for r in ct_rows if flt(r.work_qty) > 0 and r.so_item)
 	lines = _fetch_billing_lines(filters, ct_rows=ct_rows)
 	filtered_lines = _filter_lines_by_process(lines, process_filter)
+	if process_filter == "All":
+		filtered_ct_rows = ct_rows
+	elif process_filter == "Sub-Assembly":
+		filtered_names = {line.get("ct_row_name") for line in filtered_lines}
+		filtered_ct_rows = [row for row in ct_rows if row.ct_row_name in filtered_names]
+	else:
+		filtered_ct_rows = [row for row in ct_rows if row.operation == process_filter]
+	report_qty_rows = sum(1 for r in filtered_ct_rows if flt(r.work_qty) > 0 and r.so_item)
+	rated_report_rows = len({line.get("ct_row_name") for line in filtered_lines if line.get("ct_row_name")})
 	rows = _aggregate_lines(filtered_lines, process_filter=None)
 	payment_map, bill_counts = _fetch_settlement_payments(filters)
 	rows = _apply_payment_split(rows, payment_map)
@@ -662,6 +674,7 @@ def get_contractor_billing_data(filters=None):
 		"bills_partial": bill_counts.get("partial", 0),
 		"bills_draft": bill_counts.get("draft", 0),
 		"line_count": len(filtered_lines),
+		"rated_report_rows": rated_report_rows,
 		"report_qty_rows": report_qty_rows,
 	}
 
@@ -676,9 +689,9 @@ def get_contractor_billing_data(filters=None):
 		"process_chart": _build_process_chart(rows),
 		"contractor_stacked": _build_contractor_stacked_chart(rows),
 		"order_chart": _build_order_chart(rows),
-		"report_volume": _build_report_volume_chart(ct_rows),
+		"report_volume": _build_report_volume_chart(filtered_ct_rows),
 		"process_qty": _build_process_qty_chart(filtered_lines),
-		"coverage_chart": _build_coverage_chart(ct_rows, filtered_lines),
+		"coverage_chart": _build_coverage_chart(filtered_ct_rows, filtered_lines),
 		"process_totals": process_totals,
 		"trend_chart": _build_trend_chart(filtered_lines),
 		"status_summary": _build_status_summary(rows),

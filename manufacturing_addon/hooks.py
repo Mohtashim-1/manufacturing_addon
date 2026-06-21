@@ -53,6 +53,7 @@ doctype_js = {
     "Packing Report": [
         "public/js/report_style_contractors.js",
     ],
+    "Subcontracting Order": "public/js/subcontracting_order.js",
     }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order_list.js",

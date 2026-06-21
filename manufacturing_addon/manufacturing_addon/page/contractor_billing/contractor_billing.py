@@ -503,17 +503,22 @@ def _filter_lines_by_process(lines, process_filter=None):
 	return filtered
 
 
-def _build_trend_chart(lines):
+def _build_trend_chart(rows):
 	by_month = {}
-	for row in lines:
-		month = str(row.get("report_date"))[:7] if row.get("report_date") else "Unknown"
-		entry = by_month.setdefault(month, {"billed": 0, "qty": 0})
-		entry["billed"] += flt(row.get("amount"))
-		entry["qty"] += flt(row.get("qty"))
+	for row in rows:
+		total = flt(row.get("total_bill"))
+		for detail in row.get("details") or []:
+			month = str(detail.get("report_date"))[:7] if detail.get("report_date") else "Unknown"
+			entry = by_month.setdefault(month, {"billed": 0, "paid": 0, "qty": 0})
+			amount = flt(detail.get("amount"))
+			entry["billed"] += amount
+			entry["qty"] += flt(detail.get("qty"))
+			entry["paid"] += flt(row.get("paid")) * (amount / total if total else 0)
 	labels = sorted(by_month.keys())
 	return {
 		"labels": labels,
 		"billed": [by_month[m]["billed"] for m in labels],
+		"paid": [by_month[m]["paid"] for m in labels],
 		"qty": [by_month[m]["qty"] for m in labels],
 	}
 
@@ -623,6 +628,31 @@ def _build_coverage_chart(ct_rows, billed_lines):
 	}
 
 
+def _build_unbilled_rows(ct_rows, billed_lines):
+	"""Production rows which cannot be valued because no eligible Style rate matched."""
+	billed_keys = {line.get("ct_row_name") for line in billed_lines if line.get("ct_row_name")}
+	rows = []
+	for row in ct_rows:
+		if row.ct_row_name in billed_keys or flt(row.work_qty) <= 0 or not row.so_item:
+			continue
+		rows.append(
+			{
+				"report_doctype": row.report_doctype,
+				"report_name": row.report_name,
+				"report_date": str(row.report_date) if row.report_date else "",
+				"process": row.operation or "Other",
+				"order_sheet": row.order_sheet or "",
+				"item_code": row.so_item,
+				"combo_item": row.combo_item or "",
+				"article": row.article or "",
+				"work_qty": flt(row.work_qty),
+				"reason": _("No matching Item Style rate"),
+			}
+		)
+	rows.sort(key=lambda row: (row["process"], row["report_date"], row["report_name"]))
+	return {"total": len(rows), "rows": rows[:500], "is_limited": len(rows) > 500}
+
+
 @frappe.whitelist()
 def get_contractor_billing_data(filters=None):
 	filters = _parse_filters(filters)
@@ -692,8 +722,9 @@ def get_contractor_billing_data(filters=None):
 		"report_volume": _build_report_volume_chart(filtered_ct_rows),
 		"process_qty": _build_process_qty_chart(filtered_lines),
 		"coverage_chart": _build_coverage_chart(filtered_ct_rows, filtered_lines),
+		"unbilled": _build_unbilled_rows(filtered_ct_rows, filtered_lines),
 		"process_totals": process_totals,
-		"trend_chart": _build_trend_chart(filtered_lines),
+		"trend_chart": _build_trend_chart(rows),
 		"status_summary": _build_status_summary(rows),
 		"filters": filters,
 	}

@@ -63,23 +63,38 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 
 	const $root = $(`
 		<div class="cb-dashboard">
+			<aside class="cb-sidebar">
+				<div class="cb-brand"><span class="cb-brand-icon">▣</span><strong>${__("Contractor Billing")}</strong></div>
+				<nav class="cb-side-nav">
+					<button class="active" data-view="overview"><span>⌂</span>${__("Dashboard")}</button>
+					<button data-view="contractors"><span>♙</span>${__("Contractors")}</button>
+					<button data-view="operations"><span>⌘</span>${__("Process Overview")}</button>
+					<button data-view="orders"><span>▤</span>${__("Order Sheets")}</button>
+					<button data-view="details"><span>▧</span>${__("Billing Details")}</button>
+					<button data-route="List/Contractor Settlement"><span>♧</span>${__("Settlements")}</button>
+					<button data-view="operations"><span>▥</span>${__("Reports")}</button>
+					<button data-view="unbilled"><span>◷</span>${__("Unbilled Items")}</button>
+				</nav>
+				<div class="cb-shortcuts">
+					<strong>${__("Filter shortcuts")}</strong>
+					<button data-period="month">${__("This Month")}</button>
+					<button data-period="last-month">${__("Last Month")}</button>
+					<button data-period="quarter">${__("This Quarter")}</button>
+					<button data-period="year">${__("This Year")}</button>
+				</div>
+			</aside>
+			<main class="cb-main">
 			<div class="cb-hero">
 				<div class="cb-hero-main">
-					<div class="cb-hero-eyebrow"><span></span>${__("Contractor finance")}</div>
-					<h2>${__("Contractor Billing")}</h2>
+					<h2>${__("Contractor Billing Dashboard")} <span class="cb-title-info">i</span></h2>
 					<p class="cb-hero-sub">${__(
-						"Monitor production liabilities, contractor settlements and rate coverage from one place."
+						"Track contractor billing, payments and outstanding amounts"
 					)}</p>
 				</div>
 				<div class="cb-hero-side">
-					<div class="cb-hero-side-copy"><span>${__("Payment health")}</span><strong id="cb-hero-due"></strong></div>
-					<div class="cb-hero-ring" id="cb-hero-ring">
-						<svg viewBox="0 0 120 120"><circle class="cb-ring-bg" cx="60" cy="60" r="52"/><circle class="cb-ring-fill" id="cb-ring-fill" cx="60" cy="60" r="52"/></svg>
-						<div class="cb-hero-ring-label">
-							<span id="cb-ring-pct">0%</span>
-							<small>${__("cleared")}</small>
-						</div>
-					</div>
+					<button class="cb-date-button" id="cb-date-button">▣ <span id="cb-header-period"></span>⌄</button>
+					<button class="cb-header-button" id="cb-filter-button">▽ ${__("Filters")}</button>
+					<button class="cb-header-button" id="cb-export-button">⇩ ${__("Export")}</button>
 				</div>
 			</div>
 			<div class="cb-alert" id="cb-coverage-alert" hidden></div>
@@ -101,18 +116,26 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 			</div>
 			<div class="cb-kpi-grid" id="cb-kpis"></div>
 			<div class="cb-view-panel" data-view-panel="overview">
-			<div class="cb-charts-grid cb-charts-grid--trend">
+			<div class="cb-charts-grid cb-charts-grid--trend cb-overview-charts">
 				<div class="cb-card cb-card-chart">
-					<div class="cb-card-head"><div><h4>${__("Monthly billing & quantity")}</h4><span class="cb-card-hint">${__("Billed amount (bars) and work qty (line)")}</span></div></div>
+					<div class="cb-card-head"><div><h4>${__("Billing by Process")}</h4></div><span class="cb-chart-select">${__("Amount")}⌄</span></div>
+					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--lg"><canvas id="cb-process-chart"></canvas></div>
+				</div>
+				<div class="cb-card cb-card-chart">
+					<div class="cb-card-head"><div><h4>${__("Billing & Quantity Trend")}</h4></div><span class="cb-chart-select">${__("Monthly")}⌄</span></div>
 					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--lg"><canvas id="cb-trend-chart"></canvas></div>
 				</div>
-				<div class="cb-card cb-card-chart cb-card-payment">
-					<div class="cb-card-head"><div><h4>${__("Payment split")}</h4><span class="cb-card-hint">${__("Paid vs outstanding")}</span></div></div>
-					<div class="cb-payment-center" id="cb-payment-center"></div>
-					<div class="cb-chart-canvas-wrap"><canvas id="cb-payment-chart"></canvas></div>
+			</div>
+			<div class="cb-overview-bottom">
+				<div class="cb-card cb-summary-card">
+					<div class="cb-card-head"><div><h4>${__("Contractor Wise Billing Summary")}</h4></div><button class="cb-view-all" data-go-view="contractors">${__("View All")}</button></div>
+					<div class="table-responsive"><table class="table cb-summary-table"><thead><tr><th>#</th><th>${__("Contractor")}</th><th>${__("Total Bill")}</th><th>${__("Paid")}</th><th>${__("Outstanding")}</th><th>${__("% Paid")}</th><th>${__("Process")}</th></tr></thead><tbody id="cb-summary-body"></tbody></table></div>
+				</div>
+				<div class="cb-overview-side">
+					<div class="cb-card cb-order-list-card"><div class="cb-card-head"><h4>${__("Top Order Sheets")}</h4></div><div id="cb-top-orders"></div></div>
+					<div class="cb-card cb-unbilled-card"><span>${__("Unbilled Items")}</span><strong id="cb-unbilled-count">0</strong><small>${__("production rows missing style rates")}</small><button data-go-view="unbilled">${__("View Unbilled Items")}</button></div>
 				</div>
 			</div>
-			<div class="cb-insights" id="cb-insights"></div>
 			<div class="cb-explain">
 				<div class="cb-explain-icon">i</div>
 				<div><strong>${__("How billing is calculated")}</strong><span>${__("Submitted production quantity × the matching rate and quantity configured on the Item Style tab. Paid amounts come from submitted Contractor Settlements and linked Purchase Invoices.")}</span></div>
@@ -124,9 +147,10 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 					<div class="cb-card-head"><div><h4>${__("Contractor ledger")}</h4><span class="cb-card-hint">${__("Paid vs due per contractor — click bar to filter")}</span></div></div>
 					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--md"><canvas id="cb-contractor-chart"></canvas></div>
 				</div>
-				<div class="cb-card cb-card-chart">
-					<div class="cb-card-head"><div><h4>${__("Process mix")}</h4><span class="cb-card-hint">${__("Billed amount by process")}</span></div></div>
-					<div class="cb-chart-canvas-wrap"><canvas id="cb-process-chart"></canvas></div>
+				<div class="cb-card cb-card-chart cb-card-payment">
+					<div class="cb-card-head"><div><h4>${__("Payment split")}</h4><span class="cb-card-hint">${__("Paid vs outstanding")}</span></div></div>
+					<div class="cb-payment-center" id="cb-payment-center"></div>
+					<div class="cb-chart-canvas-wrap"><canvas id="cb-payment-chart"></canvas></div>
 				</div>
 			</div>
 			</div>
@@ -155,6 +179,15 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--md"><canvas id="cb-qty-chart"></canvas></div>
 				</div>
 			</div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="orders" hidden>
+				<div class="cb-section-heading"><div><h3>${__("Order Sheets")}</h3><p>${__("Billing and payment position summarized by Order Sheet")}</p></div><input type="search" id="cb-order-search" placeholder="${__("Search Order Sheet…")}" /></div>
+				<div class="cb-card cb-card-table"><div class="table-responsive"><table class="table cb-table cb-work-table"><thead><tr><th>${__("Order Sheet")}</th><th>${__("Processes")}</th><th class="text-right">${__("Quantity")}</th><th class="text-right">${__("Total Bill")}</th><th class="text-right">${__("Paid")}</th><th class="text-right">${__("Outstanding")}</th><th>${__("Payment Progress")}</th></tr></thead><tbody id="cb-orders-body"></tbody></table></div></div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="unbilled" hidden>
+				<div class="cb-section-heading"><div><h3>${__("Unbilled Items")}</h3><p>${__("Submitted production rows that have no matching Item Style rate")}</p></div><input type="search" id="cb-unbilled-search" placeholder="${__("Search Item, report or order…")}" /></div>
+				<div class="cb-unbilled-summary"><strong id="cb-unbilled-total">0</strong><span>${__("rows require rate configuration")}</span><small id="cb-unbilled-limit-note"></small></div>
+				<div class="cb-card cb-card-table"><div class="table-responsive"><table class="table cb-table cb-work-table"><thead><tr><th>${__("Report")}</th><th>${__("Date")}</th><th>${__("Process")}</th><th>${__("Order Sheet")}</th><th>${__("Item")}</th><th>${__("Combo / Article")}</th><th class="text-right">${__("Work Qty")}</th><th>${__("Reason")}</th></tr></thead><tbody id="cb-unbilled-body"></tbody></table></div></div>
 			</div>
 			<div class="cb-view-panel" data-view-panel="details" hidden>
 			<div class="cb-card cb-card-table">
@@ -197,6 +230,7 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 				</div>
 			</div>
 			</div>
+			</main>
 		</div>
 	`);
 
@@ -220,13 +254,54 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		load_data();
 	});
 
-	$(".cb-view-tabs").on("click", ".cb-view-tab", function () {
-		state.view = $(this).data("view");
+	function show_view(view) {
+		state.view = view;
 		$(".cb-view-tab").removeClass("active").attr("aria-selected", "false");
-		$(this).addClass("active").attr("aria-selected", "true");
+		$(`.cb-view-tab[data-view="${view}"]`).addClass("active").attr("aria-selected", "true");
+		$(".cb-side-nav [data-view]").removeClass("active");
+		$(`.cb-side-nav [data-view="${view}"]`).first().addClass("active");
 		$("[data-view-panel]").prop("hidden", true);
 		$(`[data-view-panel="${state.view}"]`).prop("hidden", false);
 		requestAnimationFrame(() => Object.values(state.charts).forEach((chart) => chart.resize()));
+	}
+
+	$(".cb-view-tabs").on("click", ".cb-view-tab", function () {
+		show_view($(this).data("view"));
+	});
+
+	$(".cb-side-nav").on("click", "button", function () {
+		const view = $(this).data("view");
+		const route = $(this).data("route");
+		if (view) show_view(view);
+		if (route) frappe.set_route(...String(route).split("/"));
+	});
+
+	$root.on("click", "[data-go-view]", function () {
+		show_view($(this).data("go-view"));
+	});
+
+	$("#cb-export-button").on("click", export_rows);
+	$("#cb-filter-button").on("click", () => {
+		$root.find(".cb-dashboard").toggleClass("show-filters");
+		setTimeout(() => filters.order_sheet.$input?.focus(), 50);
+	});
+	$("#cb-date-button").on("click", () => filters.from_date.$input?.focus());
+
+	$(".cb-shortcuts").on("click", "[data-period]", function () {
+		const today = new Date();
+		let from = new Date(today.getFullYear(), today.getMonth(), 1);
+		let to = today;
+		const period = $(this).data("period");
+		if (period === "last-month") {
+			from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+			to = new Date(today.getFullYear(), today.getMonth(), 0);
+		} else if (period === "quarter") {
+			from = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+		} else if (period === "year") {
+			from = new Date(today.getFullYear(), 0, 1);
+		}
+		filters.from_date.set_value(frappe.datetime.obj_to_str(from));
+		filters.to_date.set_value(frappe.datetime.obj_to_str(to));
 	});
 
 	$("#cb-status-filter").on("change", function () {
@@ -239,6 +314,7 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		clearTimeout(searchTimer);
 		searchTimer = setTimeout(load_data, 300);
 	});
+	$("#cb-order-search, #cb-unbilled-search").on("input", () => render_work_views(state.data || {}));
 
 	Object.values(filters).forEach((field) => {
 		if (field && field.$input) {
@@ -306,6 +382,8 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		render_order_chart(data.order_chart || {});
 		render_qty_chart(data.process_qty || {});
 		render_table(data.rows || []);
+		render_overview_summary(data);
+		render_work_views(data);
 		const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 		$("#cb-updated").text(`${__("Updated")} ${now}`);
 	}
@@ -323,6 +401,71 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		const from = filters.from_date ? frappe.datetime.str_to_user(filters.from_date) : "";
 		const to = filters.to_date ? frappe.datetime.str_to_user(filters.to_date) : "";
 		$("#cb-period").text(from && to ? `${from} → ${to}` : "");
+		$("#cb-header-period").text(from && to ? `${from}  →  ${to}` : __("Select period"));
+	}
+
+	function render_overview_summary(data) {
+		const rows = data.rows || [];
+		const grouped = {};
+		rows.forEach((row) => {
+			const key = row.contractor || __("Unassigned");
+			const item = grouped[key] || (grouped[key] = { billed: 0, paid: 0, due: 0, processes: new Set() });
+			item.billed += flt(row.total_bill);
+			item.paid += flt(row.paid);
+			item.due += flt(row.due);
+			if (row.process) item.processes.add(row.process);
+		});
+		const contractors = Object.entries(grouped).sort((a, b) => b[1].billed - a[1].billed).slice(0, 5);
+		$("#cb-summary-body").html(
+			contractors.length
+				? contractors.map(([name, item], index) => {
+					const pct = item.billed ? Math.min((item.paid / item.billed) * 100, 100) : 0;
+					const pills = [...item.processes].slice(0, 3).map((p) => `<span class="cb-mini-process">${frappe.utils.escape_html(p.slice(0, 2).toUpperCase())}</span>`).join("");
+					return `<tr><td>${index + 1}</td><td><strong>${frappe.utils.escape_html(name)}</strong></td><td>${format_currency(item.billed)}</td><td>${format_currency(item.paid)}</td><td>${format_currency(item.due)}</td><td><div class="cb-table-progress"><span>${pct.toFixed(1)}%</span><i><b style="width:${pct}%"></b></i></div></td><td>${pills || "—"}</td></tr>`;
+				}).join("")
+				: `<tr><td colspan="7" class="cb-empty">${__("No contractor billing in this period.")}</td></tr>`
+		);
+
+		const orders = data.order_chart || {};
+		$("#cb-top-orders").html((orders.labels || []).slice(0, 5).map((label, index) => `<a href="/app/order-sheet/${encodeURIComponent(label)}"><span>▧ ${frappe.utils.escape_html(label)}</span><strong>${format_currency((orders.amounts || [])[index])}</strong></a>`).join("") || `<div class="cb-empty">${__("No billed orders")}</div>`);
+		const k = data.kpis || {};
+		$("#cb-unbilled-count").text(Math.max((k.report_qty_rows || 0) - (k.rated_report_rows || 0), 0));
+	}
+
+	function render_work_views(data) {
+		const orderSearch = String($("#cb-order-search").val() || "").toLowerCase();
+		const orders = {};
+		(data.rows || []).forEach((row) => {
+			const name = row.order_sheet || __("No Order Sheet");
+			const item = orders[name] || (orders[name] = { qty: 0, billed: 0, paid: 0, due: 0, processes: new Set() });
+			item.qty += flt(row.qty);
+			item.billed += flt(row.total_bill);
+			item.paid += flt(row.paid);
+			item.due += flt(row.due);
+			if (row.process) item.processes.add(row.process);
+		});
+		const orderRows = Object.entries(orders)
+			.filter(([name]) => !orderSearch || name.toLowerCase().includes(orderSearch))
+			.sort((a, b) => b[1].billed - a[1].billed);
+		$("#cb-orders-body").html(orderRows.length ? orderRows.map(([name, item]) => {
+			const pct = item.billed ? Math.min((item.paid / item.billed) * 100, 100) : 0;
+			const orderLink = name === __("No Order Sheet") ? frappe.utils.escape_html(name) : `<a class="cb-link" href="/app/order-sheet/${encodeURIComponent(name)}">${frappe.utils.escape_html(name)}</a>`;
+			const processes = [...item.processes].map((p) => `<span class="cb-process-pill">${frappe.utils.escape_html(p)}</span>`).join(" ");
+			return `<tr><td>${orderLink}</td><td>${processes || "—"}</td><td class="text-right">${format_number(item.qty)}</td><td class="text-right cb-money">${format_currency(item.billed)}</td><td class="text-right cb-paid">${format_currency(item.paid)}</td><td class="text-right cb-due">${format_currency(item.due)}</td><td><div class="cb-table-progress"><span>${pct.toFixed(1)}%</span><i><b style="width:${pct}%"></b></i></div></td></tr>`;
+		}).join("") : `<tr><td colspan="7" class="cb-empty">${__("No Order Sheet billing matches this view.")}</td></tr>`);
+
+		const unbilled = data.unbilled || { total: 0, rows: [] };
+		const unbilledSearch = String($("#cb-unbilled-search").val() || "").toLowerCase();
+		const missingRows = (unbilled.rows || []).filter((row) => !unbilledSearch || [row.item_code, row.report_name, row.order_sheet, row.process, row.combo_item, row.article].some((value) => String(value || "").toLowerCase().includes(unbilledSearch)));
+		$("#cb-unbilled-total, #cb-unbilled-count").text(unbilled.total || 0);
+		$("#cb-unbilled-limit-note").text(unbilled.is_limited ? __("Showing the first 500 rows. Use filters to narrow the result.") : "");
+		$("#cb-unbilled-body").html(missingRows.length ? missingRows.map((row) => {
+			const reportRoute = String(row.report_doctype || "").toLowerCase().replace(/\s+/g, "-");
+			const reportLink = row.report_name ? `<a class="cb-link" href="/app/${reportRoute}/${encodeURIComponent(row.report_name)}">${frappe.utils.escape_html(row.report_name)}</a>` : "—";
+			const orderLink = row.order_sheet ? `<a class="cb-link" href="/app/order-sheet/${encodeURIComponent(row.order_sheet)}">${frappe.utils.escape_html(row.order_sheet)}</a>` : "—";
+			const combo = [row.combo_item, row.article].filter(Boolean).join(" / ") || "—";
+			return `<tr><td>${reportLink}</td><td>${frappe.utils.escape_html(row.report_date || "—")}</td><td><span class="cb-process-pill">${frappe.utils.escape_html(row.process || "")}</span></td><td>${orderLink}</td><td><strong>${frappe.utils.escape_html(row.item_code || "")}</strong></td><td>${frappe.utils.escape_html(combo)}</td><td class="text-right">${format_number(row.work_qty)}</td><td><span class="cb-missing-reason">${frappe.utils.escape_html(row.reason || "")}</span></td></tr>`;
+		}).join("") : `<tr><td colspan="8" class="cb-empty">${__("No unbilled production rows match this view.")}</td></tr>`);
 	}
 
 	function render_coverage_alert(k) {
@@ -473,25 +616,28 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		}
 		clear_chart_empty("cb-trend-chart");
 		state.charts.trend = new Chart(canvas.getContext("2d"), {
-			type: "bar",
+			type: "line",
 			data: {
 				labels,
 				datasets: [
 					{
-						type: "bar",
+						type: "line",
 						label: __("Billed"),
 						data: chart.billed || [],
-						backgroundColor: "#2563eb",
-						hoverBackgroundColor: "#1d4ed8",
-						borderRadius: 6,
-						maxBarThickness: 56,
+						borderColor: "#2563eb",
+						backgroundColor: "rgba(37, 99, 235, .10)",
+						borderWidth: 2.5,
+						pointRadius: 4,
+						pointBackgroundColor: "#2563eb",
+						tension: .35,
+						fill: true,
 						yAxisID: "y",
 						order: 2,
 					},
 					{
 						type: "line",
-						label: __("Work Qty"),
-						data: chart.qty || [],
+						label: __("Paid Amount"),
+						data: chart.paid || [],
 						borderColor: "#0f766e",
 						backgroundColor: "rgba(15, 118, 110, 0.08)",
 						borderWidth: 2.5,
@@ -499,7 +645,7 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 						fill: true,
 						pointRadius: 4,
 						pointHoverRadius: 6,
-						yAxisID: "y1",
+						yAxisID: "y",
 						order: 1,
 					},
 				],
@@ -511,9 +657,6 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 					tooltip: {
 						callbacks: {
 							label: (ctx) => {
-								if (ctx.dataset.label === __("Work Qty")) {
-									return `${ctx.dataset.label}: ${format_number(ctx.parsed.y)}`;
-								}
 								return `${ctx.dataset.label}: ${format_currency(ctx.parsed.y)}`;
 							},
 						},
@@ -525,11 +668,6 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 						position: "left",
 						ticks: { callback: (v) => format_compact(v), font: chart_font() },
 						grid: { color: "#f1f5f9" },
-					},
-					y1: {
-						position: "right",
-						grid: { drawOnChartArea: false },
-						ticks: { callback: (v) => format_number(v), font: chart_font() },
 					},
 				},
 			}),
@@ -686,7 +824,7 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 		}
 		clear_chart_empty("cb-process-chart");
 		state.charts.process = new Chart(canvas.getContext("2d"), {
-			type: "polarArea",
+			type: "doughnut",
 			data: {
 				labels,
 				datasets: [
@@ -699,11 +837,11 @@ frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
 				],
 			},
 			options: chart_options({
+				cutout: "60%",
 				plugins: {
-					legend: { position: "bottom" },
+					legend: { position: "right", labels: { padding: 18, usePointStyle: true, pointStyle: "circle" } },
 					tooltip: currency_tooltip(),
 				},
-				scales: { r: { ticks: { display: false }, grid: { color: "#e2e8f0" } } },
 				onClick: (_e, elements) => {
 					if (!elements.length) return;
 					const proc = labels[elements[0].index];
@@ -1154,7 +1292,8 @@ function load_chartjs() {
 }
 
 function inject_cb_styles() {
-	const styleId = "cb-dashboard-styles-v6";
+	const styleId = "cb-dashboard-styles-v7";
+	document.getElementById("cb-dashboard-styles-v6")?.remove();
 	document.getElementById("cb-dashboard-styles-v5")?.remove();
 	document.getElementById("cb-dashboard-styles-v4")?.remove();
 	document.getElementById("cb-dashboard-styles-v3")?.remove();
@@ -1629,6 +1768,115 @@ function inject_cb_styles() {
 		.cb-explain-icon { background: #2563eb; }
 		.cb-payment-total { color: #111827; font-size: 16px; }
 		.cb-card-table { border-radius: 11px; }
+		/* Reference-style application shell */
+		.cb-dashboard {
+			display: grid;
+			grid-template-columns: 220px minmax(0, 1fr);
+			padding: 0;
+			background: #f8fafc;
+			border: 1px solid #e2e8f0;
+			overflow: hidden;
+		}
+		.cb-sidebar { background: #fff; border-right: 1px solid #e2e8f0; min-height: 980px; padding: 20px 14px; }
+		.cb-brand { display: flex; align-items: center; gap: 12px; padding: 2px 8px 24px; color: #0f172a; font-size: 14px; }
+		.cb-brand-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; background: #2563eb; color: #fff; box-shadow: 0 6px 14px rgba(37,99,235,.22); }
+		.cb-side-nav { display: flex; flex-direction: column; gap: 5px; }
+		.cb-side-nav button { display: flex; align-items: center; gap: 11px; width: 100%; border: 0; border-radius: 8px; background: transparent; color: #48607f; padding: 10px 12px; text-align: left; font-size: 12px; cursor: pointer; }
+		.cb-side-nav button span { width: 18px; color: #617694; font-size: 16px; text-align: center; }
+		.cb-side-nav button:hover { background: #f1f5f9; color: #2563eb; }
+		.cb-side-nav button.active { background: #eaf2ff; color: #2563eb; font-weight: 700; }
+		.cb-side-nav button.active span { color: #2563eb; }
+		.cb-shortcuts { display: flex; flex-direction: column; gap: 3px; margin-top: 22px; padding: 18px 9px 0; border-top: 1px solid #e2e8f0; }
+		.cb-shortcuts strong { margin-bottom: 7px; color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+		.cb-shortcuts button { border: 0; background: transparent; color: #64748b; padding: 6px 0; text-align: left; font-size: 11px; cursor: pointer; }
+		.cb-shortcuts button:hover { color: #2563eb; }
+		.cb-main { min-width: 0; padding: 22px 24px 28px; }
+		.cb-hero { min-height: auto; margin: 0 0 22px; padding: 0 6px; background: transparent; border: 0; border-radius: 0; box-shadow: none; color: #0f172a; }
+		.cb-hero::after { display: none; }
+		.cb-hero h2 { color: #0f172a !important; font-size: 21px; margin-bottom: 4px; }
+		.cb-title-info { display: inline-grid; place-items: center; width: 15px; height: 15px; border: 1px solid #94a3b8; border-radius: 50%; color: #64748b; font-size: 9px; vertical-align: 3px; }
+		.cb-hero-sub { color: #64748b; font-size: 11px; }
+		.cb-hero-side { gap: 9px; }
+		.cb-date-button, .cb-header-button { height: 40px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; color: #334155; padding: 0 14px; font-size: 11px; cursor: pointer; box-shadow: 0 1px 2px rgba(15,23,42,.02); }
+		.cb-date-button { display: flex; align-items: center; gap: 12px; min-width: 250px; justify-content: space-between; }
+		.cb-header-button:hover, .cb-date-button:hover { border-color: #93c5fd; color: #1d4ed8; }
+		.cb-alert { display: none !important; }
+		.cb-toolbar { display: none; margin-top: -10px; }
+		.cb-dashboard.show-filters .cb-toolbar { display: flex; }
+		.cb-viewbar { display: none; }
+		.cb-kpi-grid { gap: 12px; }
+		.cb-kpi { min-height: 126px; border-radius: 8px; padding: 18px; }
+		.cb-kpi::before { display: none; }
+		.cb-kpi-billed { background: linear-gradient(135deg, #fff 55%, #eff6ff); border-color: #dbeafe; }
+		.cb-kpi-paid { background: linear-gradient(135deg, #fff 55%, #ecfdf5); border-color: #d1fae5; }
+		.cb-kpi-outstanding { background: linear-gradient(135deg, #fff 55%, #fff7ed); border-color: #ffedd5; }
+		.cb-kpi-coverage { background: linear-gradient(135deg, #fff 55%, #f5f3ff); border-color: #ede9fe; }
+		.cb-kpi-icon { width: 40px; height: 40px; border-radius: 10px; font-size: 19px; float: left; margin-right: 13px; }
+		.cb-kpi-icon { position: absolute; left: 18px; top: 27px; margin: 0; }
+		.cb-kpi-top { justify-content: flex-end; min-height: 23px; margin-bottom: 0; }
+		.cb-kpi-label { margin-left: 53px; padding-top: 0; color: #334155; font-size: 10px; }
+		.cb-kpi-value { margin-top: 3px; font-size: 22px; }
+		.cb-kpi-value { margin-left: 53px; }
+		.cb-kpi-sub, .cb-kpi-bar { margin-left: 53px; }
+		.cb-overview-charts { grid-template-columns: minmax(360px, .85fr) minmax(520px, 1.35fr); }
+		.cb-card-span-2 { grid-column: span 2; }
+		.cb-chart-select { border: 1px solid #dbe3ed; border-radius: 6px; padding: 7px 10px; color: #334155; font-size: 10px; }
+		.cb-chart-canvas-wrap--lg { height: 270px; }
+		.cb-overview-bottom { display: grid; grid-template-columns: minmax(0, 1fr) 265px; gap: 14px; margin-bottom: 14px; }
+		.cb-summary-card { padding: 0; overflow: hidden; }
+		.cb-summary-card .cb-card-head { padding: 16px 17px 12px; margin: 0; }
+		.cb-view-all { border: 1px solid #dbe3ed; border-radius: 6px; background: #fff; color: #334155; padding: 7px 12px; font-size: 10px; cursor: pointer; }
+		.cb-summary-table { margin: 0; font-size: 10px; }
+		.cb-summary-table thead th { background: #f8fafc; color: #475569; border-color: #e2e8f0 !important; padding: 10px; white-space: nowrap; }
+		.cb-summary-table td { border-color: #e2e8f0 !important; padding: 11px 10px; vertical-align: middle !important; white-space: nowrap; }
+		.cb-summary-table td strong { color: #2563eb; font-weight: 600; }
+		.cb-table-progress { display: flex; align-items: center; gap: 7px; }
+		.cb-table-progress i { display: block; width: 45px; height: 5px; background: #e2e8f0; border-radius: 9px; overflow: hidden; }
+		.cb-table-progress b { display: block; height: 100%; background: #10b981; border-radius: inherit; }
+		.cb-mini-process { display: inline-grid; place-items: center; min-width: 27px; height: 25px; margin-right: 4px; border-radius: 7px; background: #dbeafe; color: #2563eb; font-size: 9px; font-weight: 700; }
+		.cb-mini-process:nth-child(2) { background: #d1fae5; color: #059669; }
+		.cb-mini-process:nth-child(3) { background: #fef3c7; color: #d97706; }
+		.cb-overview-side { display: flex; flex-direction: column; gap: 12px; }
+		.cb-order-list-card { padding: 15px; }
+		.cb-order-list-card .cb-card-head { margin-bottom: 7px; }
+		.cb-order-list-card a { display: flex; justify-content: space-between; gap: 8px; padding: 7px 1px; color: #2563eb; font-size: 10px; text-decoration: none; }
+		.cb-order-list-card a strong { color: #0f172a; font-weight: 700; }
+		.cb-unbilled-card { display: flex; flex-direction: column; background: #fff8f8; border-color: #fecdd3; }
+		.cb-unbilled-card > span { color: #334155; font-size: 12px; font-weight: 700; }
+		.cb-unbilled-card > strong { margin: 8px 0 1px; color: #f43f5e; font-size: 26px; }
+		.cb-unbilled-card > small { color: #64748b; font-size: 10px; }
+		.cb-unbilled-card button { margin-top: 14px; border: 1px solid #fb7185; border-radius: 6px; background: transparent; color: #e11d48; padding: 9px; font-size: 10px; cursor: pointer; }
+		.cb-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 2px 2px 16px; }
+		.cb-section-heading h3 { margin: 0 0 3px; color: #0f172a; font-size: 18px; }
+		.cb-section-heading p { margin: 0; color: #64748b; font-size: 11px; }
+		.cb-section-heading input { width: 280px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; padding: 9px 12px; color: #334155; font-size: 11px; }
+		.cb-section-heading input:focus { outline: 0; border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+		.cb-work-table th { padding: 11px 13px; }
+		.cb-work-table td { padding: 12px 13px; }
+		.cb-work-table .cb-process-pill { margin: 2px; }
+		.cb-unbilled-summary { display: flex; align-items: baseline; gap: 9px; margin-bottom: 13px; padding: 14px 16px; border: 1px solid #fecdd3; border-radius: 9px; background: #fff7f8; }
+		.cb-unbilled-summary strong { color: #e11d48; font-size: 25px; }
+		.cb-unbilled-summary span { color: #475569; font-size: 12px; font-weight: 600; }
+		.cb-unbilled-summary small { margin-left: auto; color: #64748b; font-size: 10px; }
+		.cb-missing-reason { display: inline-block; border-radius: 999px; background: #fff1f2; color: #be123c; padding: 4px 8px; font-size: 10px; white-space: nowrap; }
+		.cb-insights { display: none; }
+		.cb-explain { margin: 0; padding: 11px 13px; background: transparent; border: 0; color: #64748b; }
+		.cb-explain-icon { width: 16px; height: 16px; background: transparent; border: 1px solid #64748b; color: #64748b; font-size: 9px; }
+		.cb-explain strong { display: none; }
+		.cb-explain span { color: #64748b; font-size: 10px; }
+		@media (max-width: 1250px) {
+			.cb-dashboard { grid-template-columns: 185px minmax(0, 1fr); }
+			.cb-overview-charts { grid-template-columns: 1fr; }
+			.cb-overview-bottom { grid-template-columns: 1fr; }
+			.cb-overview-side { display: grid; grid-template-columns: 1fr 1fr; }
+		}
+		@media (max-width: 900px) {
+			.cb-dashboard { display: block; }
+			.cb-sidebar { display: none; }
+			.cb-main { padding: 16px; }
+			.cb-hero-side { flex-wrap: wrap; }
+			.cb-date-button { min-width: 210px; }
+		}
 		@media (max-width: 640px) {
 			.cb-dashboard { padding: 12px; margin: -8px -12px 8px; border-radius: 0; }
 			.cb-hero { padding: 22px 18px; border-radius: 16px; }

@@ -2,6 +2,7 @@
 # License: MIT
 
 import frappe
+from frappe import _
 from frappe.utils import flt, getdate, nowdate
 
 from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (

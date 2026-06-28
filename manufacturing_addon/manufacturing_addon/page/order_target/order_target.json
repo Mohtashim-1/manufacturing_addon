@@ -1,0 +1,19 @@
+{
+ "content": null,
+ "creation": "2026-06-28 23:24:33.030839",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-06-28 23:58:24.923340",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "order-target",
+ "owner": "Administrator",
+ "page_name": "order-target",
+ "roles": [],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Order Target"
+}

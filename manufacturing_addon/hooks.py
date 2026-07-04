@@ -166,6 +166,8 @@ doc_events = {
                     # "manufacturing_addon.manufacturing_addon.doctype.bom.bom.get_bom_items_from_bom_template"
                     ],
         "before_save": "manufacturing_addon.manufacturing_addon.doctype.bom.bom.update_bom_stock_qty",
+        "on_submit": "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.sync_order_sheets_on_bom_change",
+        "on_update_after_submit": "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.sync_order_sheets_on_bom_change",
     },
     "Subcontracting Order": {
         "before_validate": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.before_validate_currency_conversion",

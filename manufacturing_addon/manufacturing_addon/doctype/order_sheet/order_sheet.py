@@ -49,13 +49,7 @@ class OrderSheet(Document):
 				continue
 
 			details = get_bom_carton_details(row.so_item)
-			row.default_bom = details.get("default_bom")
-			row.active_bom = details.get("active_bom")
-			row.carton_item = details.get("carton_item")
-			row.carton_dimension = details.get("carton_dimension")
-			# Keep qty_ctn user-editable: only auto-fill if empty/zero.
-			if not row.qty_ctn:
-				row.qty_ctn = details.get("qty_ctn") or row.qty_ctn
+			apply_bom_carton_details_to_row(row, details)
 	
 	def qty_per_cartoon(self):
 		for row in self.order_sheet_ct:
@@ -849,38 +843,188 @@ def get_bom_carton_details(item_code):
 	}
 
 
+def apply_bom_carton_details_to_row(row, details, force_qty_ctn=False):
+	"""Apply latest BOM/carton lookup to an Order Sheet CT row."""
+	bom_changed = (
+		(row.default_bom or "") != (details.get("default_bom") or "")
+		or (row.active_bom or "") != (details.get("active_bom") or "")
+	)
+
+	row.default_bom = details.get("default_bom")
+	row.active_bom = details.get("active_bom")
+	row.carton_item = details.get("carton_item")
+	row.carton_dimension = details.get("carton_dimension")
+	row.so_item_weight_per_unit = details.get("so_item_weight_per_unit") or 0
+	row.carton_weight_per_unit = details.get("carton_weight_per_unit") or 0
+
+	# Refresh qty/ctn when empty or when BOM reference changed (new version / default switch).
+	if force_qty_ctn or not row.qty_ctn or bom_changed:
+		if details.get("qty_ctn"):
+			row.qty_ctn = details.get("qty_ctn")
+
+	return bom_changed
+
+
+def _order_sheet_ct_bom_carton_values(row):
+	return {
+		"default_bom": row.default_bom,
+		"active_bom": row.active_bom,
+		"carton_item": row.carton_item,
+		"carton_dimension": row.carton_dimension,
+		"qty_ctn": row.qty_ctn,
+		"so_item_weight_per_unit": row.so_item_weight_per_unit or 0,
+		"carton_weight_per_unit": row.carton_weight_per_unit or 0,
+		"total_carton": row.total_carton,
+		"total_planned_ctn": row.total_planned_ctn,
+		"order_cbm": row.order_cbm,
+		"planned_cbm": row.planned_cbm,
+		"net_weight": row.net_weight,
+		"gross_weight": row.gross_weight,
+	}
+
+
+def _order_sheet_summary_values(doc):
+	return {
+		"total_order_qty": flt(doc.total_order_qty),
+		"total_planned_qty": flt(doc.total_planned_qty),
+		"total_quantity": flt(doc.total_quantity),
+		"total_cartoon": flt(doc.total_cartoon),
+		"total_planned_cartoon": flt(doc.total_planned_cartoon),
+		"total_quantity_per_cartoon": flt(doc.total_quantity_per_cartoon),
+		"total_consumption": flt(doc.total_consumption),
+		"total_order_cbm": flt(doc.total_order_cbm),
+		"total_planned_cbm": flt(doc.total_planned_cbm),
+		"total_net_weight": flt(doc.total_net_weight),
+		"total_gross_weight": flt(doc.total_gross_weight),
+	}
+
+
+def refresh_order_sheet_bom_carton_details(doc, force_qty_ctn=False):
+	"""Refresh BOM/carton fields and dependent logistics totals for an Order Sheet."""
+	updated_rows = 0
+	bom_changed_rows = 0
+
+	for row in doc.order_sheet_ct:
+		if not row.so_item:
+			continue
+		details = get_bom_carton_details(row.so_item)
+		if apply_bom_carton_details_to_row(row, details, force_qty_ctn=force_qty_ctn):
+			bom_changed_rows += 1
+		updated_rows += 1
+
+	doc.qty_per_cartoon()
+	doc.calculate_logistics_metrics()
+	doc.total()
+	doc.consumption()
+	return {"updated_rows": updated_rows, "bom_changed_rows": bom_changed_rows}
+
+
 @frappe.whitelist()
 def get_bom_carton_details_for_item(item_code):
 	return get_bom_carton_details(item_code)
 
 
 @frappe.whitelist()
-def backfill_order_sheet_bom_carton(order_sheet=None):
-	"""Backfill BOM/carton fields for existing Order Sheet CT rows."""
-	filters = {"parent": order_sheet} if order_sheet else {}
-	rows = frappe.get_all("Order Sheet CT", filters=filters, fields=["name", "so_item"])
-	updated = 0
+def refresh_order_sheet_bom_carton(order_sheet=None, force_qty_ctn=0):
+	"""Refresh default/active BOM and carton fields on Order Sheet rows."""
+	if not order_sheet:
+		frappe.throw("Order Sheet is required")
 
-	for row in rows:
-		details = get_bom_carton_details(row.so_item)
-		current_qty_ctn = frappe.db.get_value("Order Sheet CT", row.name, "qty_ctn")
+	doc = frappe.get_doc("Order Sheet", order_sheet)
+	if doc.docstatus == 2:
+		frappe.throw("Cannot refresh a cancelled Order Sheet")
+	if not frappe.has_permission("Order Sheet", "write", doc=doc):
+		frappe.throw("Not permitted")
+
+	result = refresh_order_sheet_bom_carton_details(doc, force_qty_ctn=bool(int(force_qty_ctn or 0)))
+
+	if doc.docstatus == 0:
+		doc.save()
+	else:
+		for row in doc.order_sheet_ct:
+			if not row.so_item:
+				continue
+			frappe.db.set_value(
+				"Order Sheet CT",
+				row.name,
+				_order_sheet_ct_bom_carton_values(row),
+				update_modified=False,
+			)
 		frappe.db.set_value(
-			"Order Sheet CT",
-			row.name,
-			{
-				"default_bom": details.get("default_bom"),
-				"active_bom": details.get("active_bom"),
-				"carton_item": details.get("carton_item"),
-				"carton_dimension": details.get("carton_dimension"),
-				"qty_ctn": (details.get("qty_ctn") if not current_qty_ctn else current_qty_ctn),
-				"so_item_weight_per_unit": details.get("so_item_weight_per_unit") or 0,
-				"carton_weight_per_unit": details.get("carton_weight_per_unit") or 0
-			},
-			update_modified=False
+			"Order Sheet",
+			doc.name,
+			_order_sheet_summary_values(doc),
+			update_modified=True,
 		)
+
+	result["order_sheet"] = doc.name
+	return result
+
+
+def sync_order_sheets_on_bom_change(doc, method=None):
+	"""Update open Order Sheets when a BOM is submitted or amended."""
+	if doc.doctype != "BOM" or doc.docstatus != 1 or not doc.is_active or not doc.item:
+		return
+	sync_order_sheets_for_item(doc.item)
+
+
+def sync_order_sheets_for_item(item_code, force_qty_ctn=False):
+	"""Refresh BOM/carton details on all non-cancelled Order Sheets containing item_code."""
+	if not item_code or not frappe.db.exists("DocType", "Order Sheet"):
+		return {"updated_sheets": 0}
+
+	order_sheets = frappe.db.sql(
+		"""
+		SELECT DISTINCT osct.parent
+		FROM `tabOrder Sheet CT` osct
+		INNER JOIN `tabOrder Sheet` os ON os.name = osct.parent
+		WHERE osct.so_item = %s AND os.docstatus < 2
+		""",
+		item_code,
+	)
+	updated_sheets = 0
+	for (order_sheet,) in order_sheets:
+		doc = frappe.get_doc("Order Sheet", order_sheet)
+		refresh_order_sheet_bom_carton_details(doc, force_qty_ctn=force_qty_ctn)
+		if doc.docstatus == 0:
+			doc.save(ignore_permissions=True)
+		else:
+			for row in doc.order_sheet_ct:
+				if not row.so_item:
+					continue
+				frappe.db.set_value(
+					"Order Sheet CT",
+					row.name,
+					_order_sheet_ct_bom_carton_values(row),
+					update_modified=False,
+				)
+			frappe.db.set_value(
+				"Order Sheet",
+				doc.name,
+				_order_sheet_summary_values(doc),
+				update_modified=True,
+			)
+		updated_sheets += 1
+
+	return {"updated_sheets": updated_sheets, "item_code": item_code}
+
+
+@frappe.whitelist()
+def backfill_order_sheet_bom_carton(order_sheet=None, force_qty_ctn=0):
+	"""Backfill BOM/carton fields for existing Order Sheet CT rows."""
+	if order_sheet:
+		return refresh_order_sheet_bom_carton(order_sheet, force_qty_ctn=force_qty_ctn)
+
+	filters = {}
+	rows = frappe.get_all("Order Sheet CT", filters=filters, fields=["parent"], distinct=True)
+	updated = 0
+	for row in rows:
+		if frappe.db.get_value("Order Sheet", row.parent, "docstatus") == 2:
+			continue
+		refresh_order_sheet_bom_carton(row.parent, force_qty_ctn=force_qty_ctn)
 		updated += 1
 
-	return {"updated_rows": updated, "order_sheet": order_sheet}
+	return {"updated_sheets": updated, "order_sheet": order_sheet}
 
 
 @frappe.whitelist()

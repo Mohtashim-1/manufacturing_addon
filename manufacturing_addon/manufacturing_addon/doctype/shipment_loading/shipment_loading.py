@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Manufacturing Addon and contributors
 # For license information, please see license.txt
 
+import math
 import re
 
 import frappe
@@ -12,8 +13,8 @@ from frappe.utils import cint, flt, now_datetime
 LOADING_TAG_OPTIONS = ("Manual", "Forklift", "Pallet Jack", "Crane", "Conveyor", "Bulk")
 
 CONTAINER_SPECS = {
-	"20ft FCL": {"rows": 3, "cols": 10, "capacity_cbm": 33.0},
-	"40ft FCL": {"rows": 3, "cols": 20, "capacity_cbm": 67.0},
+	"20ft FCL": {"rows": 3, "cols": 10, "capacity_cbm": 33.0, "height_cm": 239.0},
+	"40ft FCL": {"rows": 3, "cols": 20, "capacity_cbm": 67.0, "height_cm": 239.0},
 }
 
 
@@ -139,6 +140,47 @@ def compute_packing_readiness(order_sheet):
 		"pieces_ready": pieces_ready,
 		"expected_cartons": expected_cartons,
 		"ready_cbm": ready_cbm,
+	}
+
+
+def estimate_consignment_containers(total_cbm, container_type="20ft FCL"):
+	"""Estimate how many containers are needed for the full consignment CBM."""
+	total_cbm = flt(total_cbm)
+	by_type = {}
+	for ctype, spec in CONTAINER_SPECS.items():
+		capacity = flt(spec.get("capacity_cbm"))
+		if not capacity or total_cbm <= 0:
+			needed = 0
+		else:
+			needed = int(math.ceil(total_cbm / capacity))
+		by_type[ctype] = {
+			"capacity_cbm": capacity,
+			"containers_needed": needed,
+			"slots_per_container": cint(spec.get("rows")) * cint(spec.get("cols")),
+		}
+
+	selected = container_type if container_type in CONTAINER_SPECS else "20ft FCL"
+	selected_needed = by_type[selected]["containers_needed"]
+	return {
+		"total_cbm": total_cbm,
+		"selected_type": selected,
+		"containers_needed": selected_needed,
+		"consignment_fits_one": selected_needed <= 1,
+		"by_type": by_type,
+	}
+
+
+def estimate_cartons_per_container(per_carton_cbm, container_type="20ft FCL"):
+	"""How many cartons fit in one container by CBM and by planner slots."""
+	spec = CONTAINER_SPECS.get(container_type, CONTAINER_SPECS["20ft FCL"])
+	capacity = flt(spec.get("capacity_cbm"))
+	per_carton_cbm = flt(per_carton_cbm)
+	slots = cint(spec.get("rows")) * cint(spec.get("cols"))
+	by_cbm = int(capacity // per_carton_cbm) if capacity and per_carton_cbm else slots
+	return {
+		"by_cbm": max(by_cbm, 0),
+		"by_slots": slots,
+		"effective_max": min(by_cbm, slots) if by_cbm else slots,
 	}
 
 
@@ -464,6 +506,7 @@ def get_order_sheet_cartons(order_sheet, packing_report=None, loaded_only=None, 
 			"container_no",
 			"position_row",
 			"position_col",
+			"position_layer",
 			"remarks",
 		],
 		order_by="packing_report desc, so_item asc, carton_no asc",
@@ -490,6 +533,8 @@ def get_order_sheet_cartons(order_sheet, packing_report=None, loaded_only=None, 
 	readiness = compute_packing_readiness(order_sheet)
 	container_type = (summary and summary.container_type) or "20ft FCL"
 	container_spec = CONTAINER_SPECS.get(container_type, CONTAINER_SPECS["20ft FCL"])
+	consignment_cbm = flt(readiness.get("ready_cbm")) or flt((summary or {}).get("total_cbm"))
+	container_estimate = estimate_consignment_containers(consignment_cbm, container_type)
 
 	return {
 		"shipment_loading": loading_name,
@@ -498,6 +543,7 @@ def get_order_sheet_cartons(order_sheet, packing_report=None, loaded_only=None, 
 		"readiness": readiness,
 		"container_type": container_type,
 		"container_spec": container_spec,
+		"container_estimate": container_estimate,
 	}
 
 
@@ -579,6 +625,7 @@ def unload_cartons(order_sheet, carton_rows):
 		row.loaded_on = None
 		row.position_row = 0
 		row.position_col = 0
+		row.position_layer = 0
 		updated += 1
 
 	if not updated:
@@ -612,8 +659,10 @@ def save_container_settings(order_sheet, container_type=None, container_no=None)
 
 
 @frappe.whitelist()
-def place_carton_in_container(order_sheet, carton_name, position_row, position_col, loading_tag=None, mark_loaded=0):
-	"""Place a carton on the container grid (drag-and-drop)."""
+def place_carton_in_container(
+	order_sheet, carton_name, position_row, position_col, position_layer=None, loading_tag=None, mark_loaded=0
+):
+	"""Place a carton on the container grid with vertical stacking (row, col, layer)."""
 	if not order_sheet:
 		frappe.throw(_("Order Sheet is required"))
 	if not carton_name:
@@ -638,14 +687,33 @@ def place_carton_in_container(order_sheet, carton_name, position_row, position_c
 	for row in doc.cartons or []:
 		if row.name == carton_name:
 			target = row
-		elif cint(row.position_row) == position_row and cint(row.position_col) == position_col:
-			frappe.throw(_("Container slot R{0} C{1} is already occupied").format(position_row, position_col))
 
 	if not target:
 		frappe.throw(_("Carton not found"))
 
+	if not _can_stack_at(doc, spec, position_row, position_col, target.carton_dimension, exclude_name=carton_name):
+		frappe.throw(
+			_("Stack height exceeds container ceiling at R{0} C{1}. Try another cell.").format(
+				position_row, position_col
+			)
+		)
+
+	position_layer = cint(position_layer) or _next_layer_at(
+		doc, position_row, position_col, exclude_name=carton_name
+	)
+	for row in doc.cartons or []:
+		if row.name == carton_name:
+			continue
+		if (
+			cint(row.position_row) == position_row
+			and cint(row.position_col) == position_col
+			and cint(row.position_layer) == position_layer
+		):
+			frappe.throw(_("Layer L{0} at R{1} C{2} is already occupied").format(position_layer, position_row, position_col))
+
 	target.position_row = position_row
 	target.position_col = position_col
+	target.position_layer = position_layer
 	if loading_tag:
 		if loading_tag not in LOADING_TAG_OPTIONS:
 			frappe.throw(_("Invalid Loading Tag"))
@@ -663,10 +731,46 @@ def place_carton_in_container(order_sheet, carton_name, position_row, position_c
 		"carton": carton_name,
 		"position_row": position_row,
 		"position_col": position_col,
+		"position_layer": position_layer,
 		"is_loaded": target.is_loaded,
 		"loaded_cartons": doc.loaded_cartons,
 		"pending_cartons": doc.pending_cartons,
 	}
+
+
+@frappe.whitelist()
+def place_carton_in_next_slot(order_sheet, carton_name, loading_tag=None, mark_loaded=1):
+	"""Place carton in the next available 3D slot (fills vertical stacks first)."""
+	if not order_sheet:
+		frappe.throw(_("Order Sheet is required"))
+	if not carton_name:
+		frappe.throw(_("Carton is required"))
+
+	loading_name = frappe.db.get_value("Shipment Loading", {"order_sheet": order_sheet}, "name")
+	if not loading_name:
+		frappe.throw(_("Shipment Loading not found"))
+
+	doc = frappe.get_doc("Shipment Loading", loading_name)
+	target = next((row for row in (doc.cartons or []) if row.name == carton_name), None)
+	if not target:
+		frappe.throw(_("Carton not found"))
+
+	container_type = doc.container_type or "20ft FCL"
+	spec = CONTAINER_SPECS.get(container_type, CONTAINER_SPECS["20ft FCL"])
+	slot = _find_next_3d_slot(doc, spec, target.carton_dimension)
+	if not slot:
+		frappe.throw(_("Container is full (floor cells and stack height). Switch to 40ft FCL or unload cartons."))
+
+	position_row, position_col, position_layer = slot
+	return place_carton_in_container(
+		order_sheet,
+		carton_name,
+		position_row,
+		position_col,
+		position_layer=position_layer,
+		loading_tag=loading_tag,
+		mark_loaded=mark_loaded,
+	)
 
 
 def _row_per_carton_cbm(row):
@@ -675,21 +779,56 @@ def _row_per_carton_cbm(row):
 	return flt(row.cbm) / max(cint(row.carton_count), 1)
 
 
-def _occupied_container_slots(doc):
-	return {
-		(cint(row.position_row), cint(row.position_col))
+def _carton_height_cm(carton_dimension):
+	_, _, height_cm = parse_carton_dimension(carton_dimension)
+	return height_cm or 35.0
+
+
+def _stack_at_cell(doc, row_no, col_no, exclude_name=None):
+	stacks = [
+		row
 		for row in (doc.cartons or [])
-		if cint(row.position_row) and cint(row.position_col)
-	}
+		if cint(row.position_row) == row_no
+		and cint(row.position_col) == col_no
+		and (not exclude_name or row.name != exclude_name)
+	]
+	stacks.sort(key=lambda row: cint(row.position_layer) or 1)
+	return stacks
 
 
-def _free_container_slots(spec, occupied):
-	slots = []
-	for r in range(1, spec["rows"] + 1):
-		for c in range(1, spec["cols"] + 1):
-			if (r, c) not in occupied:
-				slots.append((r, c))
-	return slots
+def _stack_height_cm(stacks):
+	return sum(_carton_height_cm(row.carton_dimension) for row in stacks)
+
+
+def _max_stack_layers(spec, carton_dimension):
+	container_h = flt(spec.get("height_cm", 239))
+	carton_h = _carton_height_cm(carton_dimension)
+	if not carton_h:
+		return 1
+	return max(1, int(container_h // carton_h))
+
+
+def _can_stack_at(doc, spec, row_no, col_no, carton_dimension, exclude_name=None):
+	container_h = flt(spec.get("height_cm", 239))
+	stacks = _stack_at_cell(doc, row_no, col_no, exclude_name=exclude_name)
+	new_h = _carton_height_cm(carton_dimension)
+	return _stack_height_cm(stacks) + new_h <= container_h + 0.5
+
+
+def _next_layer_at(doc, row_no, col_no, exclude_name=None):
+	stacks = _stack_at_cell(doc, row_no, col_no, exclude_name=exclude_name)
+	if not stacks:
+		return 1
+	return max(cint(row.position_layer) or 1 for row in stacks) + 1
+
+
+def _find_next_3d_slot(doc, spec, carton_dimension):
+	for row_no in range(1, spec["rows"] + 1):
+		for col_no in range(1, spec["cols"] + 1):
+			if _can_stack_at(doc, spec, row_no, col_no, carton_dimension):
+				layer = _next_layer_at(doc, row_no, col_no)
+				return row_no, col_no, layer
+	return None
 
 
 def _auto_fill_candidates(doc, carton_rows=None, so_item=None, finished_size=None):
@@ -759,8 +898,6 @@ def auto_fill_container(
 	doc = frappe.get_doc("Shipment Loading", loading_name)
 	container_type = doc.container_type or "20ft FCL"
 	spec = CONTAINER_SPECS.get(container_type, CONTAINER_SPECS["20ft FCL"])
-	occupied = _occupied_container_slots(doc)
-	free_slots = _free_container_slots(spec, occupied)
 	candidates = _auto_fill_candidates(
 		doc,
 		carton_rows=carton_rows,
@@ -768,8 +905,6 @@ def auto_fill_container(
 		finished_size=finished_size,
 	)
 
-	if not free_slots:
-		frappe.throw(_("Container has no free slots"))
 	if not candidates:
 		frappe.throw(_("No pending cartons available to place"))
 
@@ -786,13 +921,18 @@ def auto_fill_container(
 	user = frappe.session.user
 	placed = 0
 
-	for (position_row, position_col), target in zip(free_slots, candidates):
+	for target in candidates:
+		slot = _find_next_3d_slot(doc, spec, target.carton_dimension)
+		if not slot:
+			break
+		position_row, position_col, position_layer = slot
 		per_carton_cbm = _row_per_carton_cbm(target)
 		if cint(stop_at_capacity) and capacity and used_cbm + per_carton_cbm > capacity + 0.0001:
 			break
 
 		target.position_row = position_row
 		target.position_col = position_col
+		target.position_layer = position_layer
 		target.is_loaded = 1
 		target.loaded_by = user
 		target.loaded_on = now
@@ -804,16 +944,20 @@ def auto_fill_container(
 		placed += 1
 
 	if not placed:
-		frappe.throw(_("Container CBM capacity is full. Switch to 40ft FCL or unload cartons."))
+		frappe.throw(_("Container is full (volume or stack height). Switch to 40ft FCL or unload cartons."))
 
 	doc.update_totals()
 	doc.save(ignore_permissions=True)
-	remaining_slots = len(free_slots) - placed
+	remaining_slots = 0
+	for row_no in range(1, spec["rows"] + 1):
+		for col_no in range(1, spec["cols"] + 1):
+			if _can_stack_at(doc, spec, row_no, col_no, "40x40x35"):
+				remaining_slots += 1
 	pct_cbm = round((used_cbm / capacity) * 100, 1) if capacity else 0
 
 	return {
 		"placed": placed,
-		"remaining_slots": remaining_slots,
+		"remaining_stack_positions": remaining_slots,
 		"used_cbm": used_cbm,
 		"capacity_cbm": capacity,
 		"cbm_percent": pct_cbm,
@@ -839,6 +983,7 @@ def clear_carton_position(order_sheet, carton_name):
 			continue
 		row.position_row = 0
 		row.position_col = 0
+		row.position_layer = 0
 		updated = True
 		break
 	if not updated:

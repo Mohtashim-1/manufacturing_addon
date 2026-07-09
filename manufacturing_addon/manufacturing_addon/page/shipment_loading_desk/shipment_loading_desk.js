@@ -8,8 +8,8 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 	const API = "manufacturing_addon.manufacturing_addon.doctype.shipment_loading.shipment_loading";
 	const LOADING_TAGS = ["Manual", "Forklift", "Pallet Jack", "Crane", "Conveyor", "Bulk"];
 	const CONTAINER_SPECS = {
-		"20ft FCL": { rows: 3, cols: 10, capacity_cbm: 33, label: "20ft FCL (~33 CBM)" },
-		"40ft FCL": { rows: 3, cols: 20, capacity_cbm: 67, label: "40ft FCL (~67 CBM)" },
+		"20ft FCL": { rows: 3, cols: 10, capacity_cbm: 33, height_cm: 239, label: "20ft FCL (~33 CBM)" },
+		"40ft FCL": { rows: 3, cols: 20, capacity_cbm: 67, height_cm: 239, label: "40ft FCL (~67 CBM)" },
 	};
 
 	const state = {
@@ -23,6 +23,9 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 		containerSpec: CONTAINER_SPECS["20ft FCL"],
 		trayLimit: 40,
 		trayGroupMode: "packing_report",
+		plannerView: "2d",
+		containerEstimate: null,
+		threeViewer: null,
 	};
 
 	function show_detail_panel() {
@@ -106,6 +109,7 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 							</div>
 							<div id="sl-detail-panel" style="display:none;">
 								<div id="sl-readiness-banner" class="alert alert-info" style="padding:10px 14px;margin-bottom:12px;"></div>
+								<div id="sl-consignment-estimate" class="alert alert-warning" style="padding:10px 14px;margin-bottom:12px;display:none;"></div>
 								<div class="row" style="margin-bottom:12px;">
 									<div class="col-md-3">
 										<label class="small text-muted">${__("Container Type")}</label>
@@ -173,11 +177,27 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 												</button>
 											</div>
 											<div class="col-md-9">
-												<div class="small text-muted" style="margin-bottom:6px;" id="sl-container-meta"></div>
+												<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
+													<div class="small text-muted" id="sl-container-meta"></div>
+													<div class="btn-group btn-group-xs">
+														<button type="button" class="btn btn-default sl-planner-view active" data-view="2d">${__(
+															"2D Grid"
+														)}</button>
+														<button type="button" class="btn btn-default sl-planner-view" data-view="3d">${__(
+															"3D View"
+														)}</button>
+													</div>
+												</div>
 												<div class="progress" style="height:10px;margin-bottom:8px;">
 													<div class="progress-bar progress-bar-info" id="sl-container-cbm-bar" style="width:0%;"></div>
 												</div>
 												<div id="sl-container-grid" class="sl-container-grid"></div>
+												<div id="sl-container-3d" class="sl-3d-scene" style="display:none;"></div>
+												<div class="small text-muted" id="sl-3d-legend" style="display:none;margin-top:6px;">
+													${__(
+														"3D stacking: length × width (floor) + height (vertical). Drop on same cell to stack up."
+													)}
+												</div>
 											</div>
 										</div>
 									</div>
@@ -230,8 +250,14 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 				.sl-container-slot { min-height:52px; border:1px dashed #adb5bd; border-radius:4px; background:rgba(255,255,255,.7); position:relative; font-size:10px; padding:2px; }
 				.sl-container-slot.drop-hover { background:#d4edda; border-color:#28a745; }
 				.sl-container-slot.occupied { background:#cce5ff; border-style:solid; border-color:#0f4c81; }
+				.sl-stack-pill { display:flex; gap:2px; justify-content:center; margin-top:16px; min-height:28px; align-items:flex-end; }
+				.sl-stack-block { width:10px; border-radius:2px 2px 0 0; background:linear-gradient(180deg,#4dabf7,#0f4c81); border:1px solid #0f4c81; }
+				.sl-stack-count { position:absolute; bottom:2px; right:4px; font-size:9px; font-weight:700; color:#0f4c81; }
 				.sl-slot-label { position:absolute; top:2px; left:4px; color:#868e96; font-size:9px; }
 				.sl-slot-carton { margin-top:14px; font-weight:600; color:#0f4c81; word-break:break-all; }
+				.sl-3d-scene { position:relative; min-height:400px; height:400px; border-radius:8px; overflow:hidden; border:2px solid #343a40; background:#0f1724; }
+				.sl-3d-scene canvas { display:block; width:100% !important; height:100% !important; }
+				.sl-3d-hud { position:absolute; left:10px; bottom:10px; z-index:2; padding:6px 10px; border-radius:6px; background:rgba(15,23,36,.78); color:#e9ecef; font-size:11px; pointer-events:none; }
 			</style>
 		`);
 	}
@@ -446,6 +472,7 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 				state.readiness = msg.readiness || {};
 				state.containerType = msg.container_type || "20ft FCL";
 				state.containerSpec = msg.container_spec || CONTAINER_SPECS[state.containerType];
+				state.containerEstimate = msg.container_estimate || null;
 				$("#sl-container-type").val(state.containerType);
 				$("#sl-tray-search").val("");
 				if (state.summary.container_no) {
@@ -480,6 +507,8 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 		);
 		$("#sl-detail-title").text(`${state.selectedOrderSheet} — ${loaded}/${synced || expected} ${__("loaded")}`);
 
+		render_consignment_estimate();
+
 		const pct = synced ? Math.round((loaded / synced) * 100) : 0;
 		$("#sl-progress-bar").css("width", `${pct}%`).text(`${pct}%`);
 
@@ -493,6 +522,147 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 		return Number.isFinite(n) ? n : 0;
 	}
 
+	function get_container_estimate_for_type(container_type) {
+		const total_cbm =
+			flt(state.containerEstimate?.total_cbm) ||
+			flt(state.readiness?.ready_cbm) ||
+			flt(state.summary?.total_cbm);
+		const t20 = CONTAINER_SPECS["20ft FCL"].capacity_cbm;
+		const t40 = CONTAINER_SPECS["40ft FCL"].capacity_cbm;
+		const needed = total_cbm > 0 ? Math.ceil(total_cbm / (CONTAINER_SPECS[container_type]?.capacity_cbm || t20)) : 0;
+		return {
+			total_cbm,
+			selected_type: container_type,
+			containers_needed: needed,
+			consignment_fits_one: needed <= 1,
+			by_type: {
+				"20ft FCL": { containers_needed: total_cbm > 0 ? Math.ceil(total_cbm / t20) : 0, capacity_cbm: t20 },
+				"40ft FCL": { containers_needed: total_cbm > 0 ? Math.ceil(total_cbm / t40) : 0, capacity_cbm: t40 },
+			},
+		};
+	}
+
+	function render_consignment_estimate() {
+		const est = state.containerEstimate || get_container_estimate_for_type(state.containerType);
+		const totalCbm = flt(est.total_cbm);
+		if (!totalCbm) {
+			$("#sl-consignment-estimate").hide();
+			return;
+		}
+		const t20 = est.by_type?.["20ft FCL"]?.containers_needed || 0;
+		const t40 = est.by_type?.["40ft FCL"]?.containers_needed || 0;
+		const selected = est.containers_needed || 0;
+		const type = state.containerType || "20ft FCL";
+		const cap = CONTAINER_SPECS[type]?.capacity_cbm || 33;
+		const fitsOne = est.consignment_fits_one;
+		const expected = cint(state.readiness?.expected_cartons || state.summary?.expected_cartons);
+		const avgPerCarton = expected ? totalCbm / expected : 0;
+		const cartonsPerContainer = avgPerCarton > 0 ? Math.floor(cap / avgPerCarton) : 0;
+
+		let fitMsg = "";
+		if (fitsOne) {
+			fitMsg = `<strong class="text-success">${__(
+				"Fits in 1 container"
+			)}</strong> (${type})`;
+		} else {
+			fitMsg = `<strong>${__(
+				"Needs multiple containers"
+			)}</strong> — ${__("planning container 1 of")} <strong>${selected}</strong>`;
+		}
+
+		$("#sl-consignment-estimate")
+			.show()
+			.html(
+				`<i class="fa fa-ship"></i> <strong>${__("Consignment volume")}:</strong> ${totalCbm.toFixed(
+					2
+				)} CBM ${__(
+					"from carton dimensions"
+				)} → <strong>${t20} × 20ft FCL</strong> ${__("or")} <strong>${t40} × 40ft FCL</strong> ${__(
+					"for full shipment"
+				)}. ${fitMsg}. ${__("Approx cartons per container by volume")}: <strong>${
+					cartonsPerContainer || "—"
+				}</strong> (${type})`
+			);
+	}
+
+	function render_container_3d(stacks, spec) {
+		const placedCount = Object.values(stacks).reduce((s, arr) => s + arr.length, 0);
+		const $scene = $("#sl-container-3d");
+		if (!$scene.is(":visible") && state.plannerView !== "3d") {
+			return;
+		}
+
+		if (typeof manufacturing_addon === "undefined" || !manufacturing_addon.container_3d) {
+			$scene.html(
+				`<div class="text-center text-muted" style="padding:80px 20px;color:#adb5bd !important;">
+					<i class="fa fa-spinner fa-spin"></i> ${__("Loading 3D viewer...")}
+				</div>`
+			);
+			frappe.require("/assets/manufacturing_addon/js/shipment_container_3d.js", () => {
+				render_container_3d(stacks, spec);
+			});
+			return;
+		}
+
+		manufacturing_addon.container_3d.destroy(state.threeViewer);
+		manufacturing_addon.container_3d
+			.render($scene, stacks, spec, {
+				containerLabel: state.containerType || "20ft FCL",
+				placedCount,
+			})
+			.then((viewer) => {
+				state.threeViewer = viewer;
+			});
+	}
+
+	function set_planner_view(view) {
+		state.plannerView = view;
+		$(".sl-planner-view").removeClass("active");
+		$(`.sl-planner-view[data-view="${view}"]`).addClass("active");
+		if (view === "3d") {
+			$("#sl-container-grid").hide();
+			$("#sl-container-3d, #sl-3d-legend").show();
+			render_container_3d(build_position_stacks(), state.containerSpec || CONTAINER_SPECS["20ft FCL"]);
+		} else {
+			if (manufacturing_addon?.container_3d) {
+				manufacturing_addon.container_3d.destroy(state.threeViewer);
+			}
+			state.threeViewer = null;
+			$("#sl-container-grid").show();
+			$("#sl-container-3d, #sl-3d-legend").hide();
+		}
+	}
+
+	function parse_carton_height_cm(text) {
+		const m = String(text || "").match(/(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/);
+		return m ? parseFloat(m[3]) : 35;
+	}
+
+	function build_position_stacks() {
+		const stacks = {};
+		state.cartons.forEach((row) => {
+			const r = cint(row.position_row);
+			const c = cint(row.position_col);
+			if (!(r > 0 && c > 0)) return;
+			const key = `${r}-${c}`;
+			if (!stacks[key]) stacks[key] = [];
+			stacks[key].push(row);
+		});
+		Object.values(stacks).forEach((arr) => arr.sort((a, b) => cint(a.position_layer) - cint(b.position_layer)));
+		return stacks;
+	}
+
+	function stack_height_cm(stack) {
+		return (stack || []).reduce((s, row) => s + parse_carton_height_cm(row.carton_dimension), 0);
+	}
+
+	function max_stack_layers(carton_dimension) {
+		const spec = state.containerSpec || CONTAINER_SPECS["20ft FCL"];
+		const containerH = flt(spec.height_cm) || 239;
+		const cartonH = parse_carton_height_cm(carton_dimension);
+		return Math.max(1, Math.floor(containerH / cartonH));
+	}
+
 	function get_unplaced_cartons() {
 		return state.cartons.filter((row) => {
 			const r = cint(row.position_row);
@@ -503,31 +673,31 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 
 	function render_container_planner() {
 		const spec = state.containerSpec || CONTAINER_SPECS["20ft FCL"];
-		const placed = {};
+		const stacks = build_position_stacks();
 		const unplaced = get_unplaced_cartons();
 		const search = ($("#sl-tray-search").val() || "").toLowerCase().trim();
 
-		state.cartons.forEach((row) => {
-			const r = cint(row.position_row);
-			const c = cint(row.position_col);
-			if (r > 0 && c > 0) {
-				placed[`${r}-${c}`] = row;
-			}
-		});
-
-		const placedCount = Object.keys(placed).length;
-		const totalSlots = spec.rows * spec.cols;
-		const slotPct = totalSlots ? Math.round((placedCount / totalSlots) * 100) : 0;
-		const usedCbm = Object.values(placed).reduce((s, row) => s + row_per_carton_cbm(row), 0);
+		const placedCartons = Object.values(stacks).reduce((s, arr) => s + arr.length, 0);
+		const usedCells = Object.keys(stacks).length;
+		const totalCells = spec.rows * spec.cols;
+		const cellPct = totalCells ? Math.round((usedCells / totalCells) * 100) : 0;
+		const usedCbm = state.cartons
+			.filter((row) => cint(row.position_row) > 0)
+			.reduce((s, row) => s + row_per_carton_cbm(row), 0);
+		const usedHeight = Object.values(stacks).reduce((s, stack) => s + stack_height_cm(stack), 0);
+		const containerH = flt(spec.height_cm) || 239;
+		const heightPct = containerH ? Math.round((usedHeight / containerH) * 100) : 0;
 		const pctCbm = spec.capacity_cbm ? Math.round((usedCbm / spec.capacity_cbm) * 100) : 0;
-		const barPct = Math.min(100, pctCbm);
-		const cbmClass = pctCbm > 100 ? "progress-bar-danger" : "progress-bar-info";
+		const barPct = Math.min(100, Math.max(pctCbm, heightPct));
+		const cbmClass = pctCbm > 100 || heightPct > 100 ? "progress-bar-danger" : "progress-bar-info";
 		$("#sl-container-meta").html(
-			`${spec.label || state.containerType} · ${placedCount}/${totalSlots} ${__(
-				"carton slots"
-			)} (${slotPct}%) · ${usedCbm.toFixed(2)} / ${spec.capacity_cbm} CBM (${pctCbm}%${
-				pctCbm > 100 ? ` ${__("over capacity")}` : ""
-			})`
+			`${spec.label || state.containerType} · ${placedCartons} ${__(
+				"cartons"
+			)} · ${usedCells}/${totalCells} ${__("floor cells")} (${cellPct}%) · ${__(
+				"height"
+			)} ${usedHeight.toFixed(0)}/${containerH} cm (${heightPct}%) · ${usedCbm.toFixed(2)} / ${
+				spec.capacity_cbm
+			} CBM (${pctCbm}%)`
 		);
 		$("#sl-container-cbm-bar")
 			.css("width", `${barPct}%`)
@@ -561,7 +731,9 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 				const $chip = $(`
 					<div class="sl-carton-chip" draggable="true" data-name="${frappe.utils.escape_html(
 						entry.place_name
-					)}" title="${__("Each grid slot = 1 carton. Drag, +1 Slot, or Auto Add.")}">
+					)}" title="${__(
+						"Drop to stack on this floor cell (uses vertical layers by carton height)"
+					)}">
 						<strong>${frappe.utils.escape_html(entry.chip_title || "")}</strong><br>
 						${frappe.utils.escape_html(entry.chip_subtitle || "")}
 						${entry.chip_meta ? `<br><small class="text-muted">${frappe.utils.escape_html(entry.chip_meta)}</small>` : ""}
@@ -602,51 +774,78 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 		for (let r = 1; r <= spec.rows; r++) {
 			for (let c = 1; c <= spec.cols; c++) {
 				const key = `${r}-${c}`;
-				const carton = placed[key];
+				const stack = stacks[key] || [];
+				const top = stack[stack.length - 1];
+				const maxLayers = top ? max_stack_layers(top.carton_dimension) : 7;
+				const fillPct = Math.min(100, Math.round((stack_height_cm(stack) / containerH) * 100));
+				const stackBlocks = stack
+					.map(
+						(row, idx) =>
+							`<span class="sl-stack-block" style="height:${12 + idx * 4}px;" title="L${
+								cint(row.position_layer) || idx + 1
+							}"></span>`
+					)
+					.join("");
 				const $slot = $(`
-					<div class="sl-container-slot ${carton ? "occupied" : ""}" data-row="${r}" data-col="${c}">
+					<div class="sl-container-slot ${stack.length ? "occupied" : ""}" data-row="${r}" data-col="${c}" style="background:linear-gradient(0deg, rgba(15,76,129,${fillPct /
+						200}) 0%, rgba(255,255,255,.7) ${100 - fillPct}%, rgba(255,255,255,.7) 100%);">
 						<div class="sl-slot-label">R${r} C${c}</div>
-						${carton ? `<div class="sl-slot-carton">${slot_label(carton)}</div>` : ""}
+						<div class="sl-stack-pill">${stackBlocks}</div>
+						${
+							stack.length
+								? `<span class="sl-stack-count">${stack.length}/${maxLayers}↑</span>`
+								: ""
+						}
+						${top ? `<div class="sl-slot-carton" style="font-size:9px;">${slot_label(top)}</div>` : ""}
 					</div>
 				`);
-				if (!carton) {
-					$slot.on("dragover", (e) => {
-						e.preventDefault();
-						$slot.addClass("drop-hover");
-					});
-					$slot.on("dragleave", () => $slot.removeClass("drop-hover"));
-					$slot.on("drop", (e) => {
-						e.preventDefault();
-						$slot.removeClass("drop-hover");
-						const cartonName = e.originalEvent.dataTransfer.getData("carton");
-						if (!cartonName) return;
-						place_carton(cartonName, r, c);
-					});
-				} else {
-					$slot.on("dblclick", () => clear_carton_position(carton.name));
-					$slot.attr("title", __("Double-click to remove from container"));
+				$slot.on("dragover", (e) => {
+					e.preventDefault();
+					$slot.addClass("drop-hover");
+				});
+				$slot.on("dragleave", () => $slot.removeClass("drop-hover"));
+				$slot.on("drop", (e) => {
+					e.preventDefault();
+					$slot.removeClass("drop-hover");
+					const cartonName = e.originalEvent.dataTransfer.getData("carton");
+					if (!cartonName) return;
+					place_carton(cartonName, r, c);
+				});
+				if (top) {
+					$slot.on("dblclick", () => clear_carton_position(top.name));
+					$slot.attr(
+						"title",
+						`${__("Double-click to remove top carton")} · ${stack.length} ${__("in stack")}`
+					);
 				}
 				$grid.append($slot);
 			}
 		}
+
+		render_container_3d(stacks, spec);
+		if (state.plannerView === "3d") {
+			$("#sl-container-grid").hide();
+			$("#sl-container-3d, #sl-3d-legend").show();
+		} else if (manufacturing_addon?.container_3d && state.threeViewer) {
+			manufacturing_addon.container_3d.destroy(state.threeViewer);
+			state.threeViewer = null;
+		}
 	}
 
 	function place_carton_in_next_slot(carton_name) {
-		const spec = state.containerSpec || CONTAINER_SPECS["20ft FCL"];
-		const placed = new Set(
-			state.cartons
-				.filter((row) => cint(row.position_row) > 0 && cint(row.position_col) > 0)
-				.map((row) => `${cint(row.position_row)}-${cint(row.position_col)}`)
-		);
-		for (let r = 1; r <= spec.rows; r++) {
-			for (let c = 1; c <= spec.cols; c++) {
-				if (!placed.has(`${r}-${c}`)) {
-					place_carton(carton_name, r, c);
-					return;
-				}
-			}
-		}
-		frappe.msgprint(__("Container is full. Switch to 40ft FCL or unload a slot."));
+		frappe.call({
+			method: `${API}.place_carton_in_next_slot`,
+			args: {
+				order_sheet: state.selectedOrderSheet,
+				carton_name,
+				loading_tag: $("#sl-loading-tag").val(),
+				mark_loaded: 1,
+			},
+			callback() {
+				load_cartons(state.selectedOrderSheet, { sync: false });
+				load_board();
+			},
+		});
 	}
 
 	function auto_fill_container(options = {}) {
@@ -728,7 +927,7 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 			const count = cint(row.carton_count) || 1;
 			const pos =
 				cint(row.position_row) && cint(row.position_col)
-					? `R${row.position_row} C${row.position_col}`
+					? `R${row.position_row} C${row.position_col} L${cint(row.position_layer) || 1}`
 					: "-";
 			const loaded = is_loaded(row)
 				? `<span class="label label-success">${__("Loaded")}</span>`
@@ -790,6 +989,10 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 		render_carton_table();
 	});
 
+	$root.on("click", ".sl-planner-view", function () {
+		set_planner_view($(this).data("view"));
+	});
+
 	$root.on("click", ".sl-tray-mode", function () {
 		state.trayGroupMode = $(this).data("mode");
 		state.trayLimit = 40;
@@ -833,6 +1036,10 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 				container_no: $("#sl-container-no").val() || "",
 			},
 			callback() {
+				state.containerType = $("#sl-container-type").val();
+				state.containerSpec = CONTAINER_SPECS[state.containerType];
+				state.containerEstimate = get_container_estimate_for_type(state.containerType);
+				render_consignment_estimate();
 				load_cartons(state.selectedOrderSheet, { sync: false });
 			},
 		});
@@ -887,4 +1094,5 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 	});
 
 	load_board();
+	frappe.require("/assets/manufacturing_addon/js/shipment_container_3d.js");
 };

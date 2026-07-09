@@ -195,7 +195,7 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 												<div id="sl-container-3d" class="sl-3d-scene" style="display:none;"></div>
 												<div class="small text-muted" id="sl-3d-legend" style="display:none;margin-top:6px;">
 													${__(
-														"3D stacking: length × width (floor) + height (vertical). Drop on same cell to stack up."
+														"Hover carton for quick info · Click to select · Scroll on 3D view to zoom · Walk Inside to enter container"
 													)}
 												</div>
 											</div>
@@ -255,9 +255,13 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 				.sl-stack-count { position:absolute; bottom:2px; right:4px; font-size:9px; font-weight:700; color:#0f4c81; }
 				.sl-slot-label { position:absolute; top:2px; left:4px; color:#868e96; font-size:9px; }
 				.sl-slot-carton { margin-top:14px; font-weight:600; color:#0f4c81; word-break:break-all; }
-				.sl-3d-scene { position:relative; min-height:400px; height:400px; border-radius:8px; overflow:hidden; border:2px solid #343a40; background:#0f1724; }
-				.sl-3d-scene canvas { display:block; width:100% !important; height:100% !important; }
-				.sl-3d-hud { position:absolute; left:10px; bottom:10px; z-index:2; padding:6px 10px; border-radius:6px; background:rgba(15,23,36,.78); color:#e9ecef; font-size:11px; pointer-events:none; }
+				.sl-3d-scene { position:relative; min-height:420px; height:420px; border-radius:8px; overflow:hidden; border:2px solid #343a40; background:#0f1724; touch-action:none; }
+				.sl-3d-scene canvas { display:block; width:100% !important; height:100% !important; cursor:grab; }
+				.sl-3d-hud { position:absolute; left:10px; top:10px; z-index:3; padding:8px 10px; border-radius:6px; background:rgba(15,23,36,.82); color:#e9ecef; font-size:11px; pointer-events:auto; max-width:calc(100% - 20px); }
+				.sl-3d-hud-actions { margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; }
+				.sl-3d-tooltip { position:absolute; z-index:5; pointer-events:none; padding:8px 10px; border-radius:6px; background:rgba(255,255,255,.96); color:#212529; font-size:11px; max-width:260px; box-shadow:0 4px 16px rgba(0,0,0,.35); line-height:1.45; }
+				.sl-3d-info { position:absolute; right:10px; top:10px; z-index:4; width:260px; padding:10px 12px; border-radius:6px; background:rgba(15,76,129,.92); color:#fff; font-size:11px; line-height:1.5; box-shadow:0 4px 16px rgba(0,0,0,.35); }
+				.sl-3d-info-title { font-weight:700; margin-bottom:6px; font-size:12px; }
 			</style>
 		`);
 	}
@@ -609,6 +613,16 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 			.render($scene, stacks, spec, {
 				containerLabel: state.containerType || "20ft FCL",
 				placedCount,
+				onSelect(carton) {
+					if (!carton || !carton.name) return;
+					state.selectedCartons.clear();
+					state.selectedCartons.add(carton.name);
+					render_carton_table();
+					const $row = $(`.sl-carton-check[data-name="${carton.name}"]`).closest("tr");
+					if ($row.length) {
+						$row[0].scrollIntoView({ behavior: "smooth", block: "center" });
+					}
+				},
 			})
 			.then((viewer) => {
 				state.threeViewer = viewer;

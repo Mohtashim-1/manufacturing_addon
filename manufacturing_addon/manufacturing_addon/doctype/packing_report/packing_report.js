@@ -7,6 +7,7 @@ init_report_style_contractors({
     ct_fieldname: "packing_report_ct",
     contractor_filter: { packing: 1 },
     operation: "Packing",
+    work_qty_field: "packaging_qty",
     api_method:
         "manufacturing_addon.manufacturing_addon.doctype.packing_report.packing_report.get_style_contractors_for_line",
 });

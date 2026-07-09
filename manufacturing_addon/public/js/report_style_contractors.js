@@ -13,6 +13,7 @@ function init_report_style_contractors(config) {
         api_method,
         operation,
         load_method = "load_style_contractors",
+        work_qty_field,
     } = config;
 
     function sc_log(...args) {
@@ -93,6 +94,33 @@ function init_report_style_contractors(config) {
         const qty = Number(row.qty || 1) || 1;
         const rate = Number(row.rate || 0) || 0;
         frappe.model.set_value(cdt, cdn, "amount", qty * rate);
+    }
+
+    function recalc_subassembly_style_contractors(frm, cdt, cdn) {
+        if (!work_qty_field) {
+            return;
+        }
+        const row = locals[cdt]?.[cdn];
+        if (!row?.style_contractors?.length) {
+            return;
+        }
+        const work_qty = Number(row[work_qty_field] || 0) || 0;
+        row.style_contractors.forEach((sc) => {
+            if (!sc?.is_subassembly) {
+                return;
+            }
+            const unit_qty = Number(sc.unit_qty || 0) || 1;
+            const total_qty = work_qty > 0 ? work_qty * unit_qty : unit_qty;
+            sc.qty = total_qty;
+            sc.amount = total_qty * (Number(sc.rate || 0) || 0);
+            if (sc.name && locals[NESTED_STYLE_DOCTYPE]?.[sc.name]) {
+                locals[NESTED_STYLE_DOCTYPE][sc.name].qty = sc.qty;
+                locals[NESTED_STYLE_DOCTYPE][sc.name].amount = sc.amount;
+            }
+        });
+        sync_style_contractors_to_frm_doc(frm, cdn, row);
+        refresh_nested_style_contractor_grid(frm, cdn);
+        frm.dirty();
     }
 
     function sync_style_contractor_to_parent_frm(frm, cdt, cdn) {
@@ -213,6 +241,7 @@ function init_report_style_contractors(config) {
                 combo_item: row.combo_item,
                 article: row.article,
                 operation,
+                work_qty: work_qty_field ? Number(row[work_qty_field] || 0) || 0 : 0,
             },
             callback(r) {
                 const styles = r.message || [];
@@ -224,6 +253,7 @@ function init_report_style_contractors(config) {
                     const child = frappe.model.add_child(row, "style_contractors");
                     Object.assign(child, sc);
                 });
+                recalc_subassembly_style_contractors(frm, cdt, cdn);
                 sync_style_contractors_to_frm_doc(frm, cdn, row);
                 refresh_nested_style_contractor_grid(frm, cdn);
                 frm.dirty();
@@ -306,16 +336,26 @@ function init_report_style_contractors(config) {
         },
     });
 
-    frappe.ui.form.on(ct_doctype, {
+    const ct_handlers = {
         form_render(frm, cdt, cdn) {
             with_style_contractor_meta(() => {
                 setTimeout(() => setup_style_contractors_panel(frm, cdt, cdn), 0);
             });
         },
-    });
+    };
+    if (work_qty_field) {
+        ct_handlers[work_qty_field] = function (frm, cdt, cdn) {
+            recalc_subassembly_style_contractors(frm, cdt, cdn);
+        };
+    }
+    frappe.ui.form.on(ct_doctype, ct_handlers);
 
     frappe.ui.form.on("Report Style Contractor", {
         qty(frm, cdt, cdn) {
+            const row = locals[cdt]?.[cdn];
+            if (row?.is_subassembly) {
+                return;
+            }
             update_report_style_amount(cdt, cdn);
             sync_style_contractor_to_parent_frm(frm, cdt, cdn);
         },

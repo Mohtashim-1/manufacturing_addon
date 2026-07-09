@@ -9,6 +9,7 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
 	billing_amount_for_work,
 	_style_row_matches_report_line,
 )
+from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import resolve_subassembly_unit_qty
 
 # Cutting / Stitching / Packing / Quality production reports
 REPORT_SOURCES = (
@@ -291,8 +292,16 @@ def _fetch_billing_lines(filters, ct_rows=None):
 		default_contractor = ct_row.report_supplier or ""
 
 		for style_row in style_rows:
-			amount = billing_amount_for_work(style_row, work_qty)
-			if amount <= 0 and not flt(style_row.get("rate")) and not flt(style_row.get("amount")):
+			is_sub = style_row.name in subassembly_names or bool(style_row.get("is_subassembly"))
+			style_qty = resolve_subassembly_unit_qty(so_item, style_row) if is_sub else (
+				flt(style_row.get("qty") or 1) or 1
+			)
+			rate = flt(style_row.get("rate"))
+			if is_sub:
+				amount = work_qty * rate * style_qty
+			else:
+				amount = billing_amount_for_work(style_row, work_qty)
+			if amount <= 0 and not rate and not flt(style_row.get("amount")):
 				continue
 
 			sc = sc_map.get(style_row.name) or sc_map.get(style_row.style) or {}
@@ -300,11 +309,7 @@ def _fetch_billing_lines(filters, ct_rows=None):
 			if not contractor:
 				contractor = "Unassigned"
 
-			is_sub = style_row.name in subassembly_names or bool(style_row.get("is_subassembly"))
 			op = _billing_operation(operation, style_row, subassembly_names)
-
-			style_qty = flt(style_row.get("qty") or 1) or 1
-			rate = flt(style_row.get("rate"))
 			lines.append(
 				{
 					"contractor": contractor,

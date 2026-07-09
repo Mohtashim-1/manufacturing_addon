@@ -14,6 +14,8 @@
   "amount",
   "column_break_b",
   "is_mandatory",
+  "is_subassembly",
+  "unit_qty",
   "operation",
   "combo_item",
   "item_style_row"
@@ -80,6 +82,23 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Mandatory",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_subassembly",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Sub Assembly",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "unit_qty",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Unit Qty",
+   "non_negative": 1,
    "read_only": 1
   },
   {

@@ -10,6 +10,10 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
     append_style_contractors,
     validate_mandatory_contractors,
 )
+from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
+    apply_subassembly_contractor_qty,
+    validate_subassembly_qty_caps,
+)
 from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
     load_nested_style_contractors,
     save_nested_style_contractors,
@@ -17,14 +21,20 @@ from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors impo
 
 
 @frappe.whitelist()
-def get_style_contractors_for_line(so_item, combo_item=None, article=None, operation="Checking"):
+def get_style_contractors_for_line(
+    so_item, combo_item=None, article=None, operation="Checking", work_qty=0
+):
     """Return style contractor rows for one report line (client-side populate)."""
     from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
         build_style_contractor_rows,
     )
 
     return build_style_contractor_rows(
-        so_item, operation=operation, combo_item=combo_item, article=article
+        so_item,
+        operation=operation,
+        combo_item=combo_item,
+        article=article,
+        work_qty=work_qty,
     )
 
 
@@ -48,7 +58,12 @@ class CheckingReport(Document):
             operation="Checking",
             combo_item=row_data.get("combo_item"),
             article=row_data.get("article"),
+            work_qty_field="checking_qty",
         )
+
+    def _apply_subassembly_style_qty(self):
+        for row in self.checking_report_ct or []:
+            apply_subassembly_contractor_qty(row, "checking_qty")
 
     @frappe.whitelist()
     def load_style_contractors(self):
@@ -62,6 +77,7 @@ class CheckingReport(Document):
                 operation="Checking",
                 combo_item=row.combo_item,
                 article=row.article,
+                work_qty_field="checking_qty",
             )
         return len(self.checking_report_ct or [])
 
@@ -351,10 +367,14 @@ class CheckingReport(Document):
     def validate(self):
         self.calculate_finished_stitched_qty()
         self.calculate_finished_checked_qty()
+        self._apply_subassembly_style_qty()
         validate_mandatory_contractors(
             self.checking_report_ct,
             qty_field="checking_qty",
             report_label="Checking Report",
+        )
+        validate_subassembly_qty_caps(
+            self, "checking_report_ct", "checking_qty", "Checking Report"
         )
         self.checking_condition()
         self.total_qty()
@@ -364,6 +384,7 @@ class CheckingReport(Document):
     def before_save(self):
         self.calculate_finished_stitched_qty()
         self.calculate_finished_checked_qty()
+        self._apply_subassembly_style_qty()
 
     def _qty_query(self, row, report_doctype, child_doctype, qty_field, exclude_self=False):
         if row.combo_item:

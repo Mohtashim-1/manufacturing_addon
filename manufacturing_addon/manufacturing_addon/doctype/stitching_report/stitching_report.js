@@ -121,7 +121,8 @@ frappe.ui.form.on("Stitching Report", {
 });
 
 frappe.ui.form.on("Stitching Report CT", {
-    stitching_qty(frm) {
+    stitching_qty(frm, cdt, cdn) {
+        recalc_stitching_subassembly_style_contractors(frm, cdt, cdn);
         render_stitching_article_summary(frm);
     },
     form_render(frm, cdt, cdn) {
@@ -134,6 +135,10 @@ frappe.ui.form.on("Stitching Report CT", {
 
 frappe.ui.form.on("Report Style Contractor", {
     qty(frm, cdt, cdn) {
+        const row = locals[cdt]?.[cdn];
+        if (row?.is_subassembly) {
+            return;
+        }
         update_report_style_amount(cdt, cdn);
         sync_style_contractor_to_parent_frm(frm, cdt, cdn);
     },
@@ -303,6 +308,7 @@ function ensure_style_contractors_for_row(frm, cdt, cdn, nested_ctx) {
             so_item: row.so_item,
             combo_item: row.combo_item,
             article: row.article,
+            work_qty: Number(row.stitching_qty || 0) || 0,
         },
         callback(r) {
             sc_log("ensure: server response", r);
@@ -324,6 +330,7 @@ function ensure_style_contractors_for_row(frm, cdt, cdn, nested_ctx) {
                 sc_log("ensure: added child", i + 1, child);
             });
 
+            recalc_stitching_subassembly_style_contractors(frm, cdt, cdn);
             sync_style_contractors_to_frm_doc(frm, cdn, row);
             sc_log("ensure: row.style_contractors count", row.style_contractors.length);
             refresh_nested_style_contractor_grid(frm, cdn);
@@ -478,6 +485,30 @@ function update_report_style_amount(cdt, cdn) {
     const qty = Number(row.qty || 1) || 1;
     const rate = Number(row.rate || 0) || 0;
     frappe.model.set_value(cdt, cdn, "amount", qty * rate);
+}
+
+function recalc_stitching_subassembly_style_contractors(frm, cdt, cdn) {
+    const row = locals[cdt]?.[cdn];
+    if (!row?.style_contractors?.length) {
+        return;
+    }
+    const work_qty = Number(row.stitching_qty || 0) || 0;
+    row.style_contractors.forEach((sc) => {
+        if (!sc?.is_subassembly) {
+            return;
+        }
+        const unit_qty = Number(sc.unit_qty || 0) || 1;
+        const total_qty = work_qty > 0 ? work_qty * unit_qty : unit_qty;
+        sc.qty = total_qty;
+        sc.amount = total_qty * (Number(sc.rate || 0) || 0);
+        if (sc.name && locals[NESTED_STYLE_DOCTYPE]?.[sc.name]) {
+            locals[NESTED_STYLE_DOCTYPE][sc.name].qty = sc.qty;
+            locals[NESTED_STYLE_DOCTYPE][sc.name].amount = sc.amount;
+        }
+    });
+    sync_style_contractors_to_frm_doc(frm, cdn, row);
+    refresh_nested_style_contractor_grid(frm, cdn);
+    frm.dirty();
 }
 
 function render_stitching_article_summary(frm) {

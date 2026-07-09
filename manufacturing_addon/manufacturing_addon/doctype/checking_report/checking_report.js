@@ -7,6 +7,7 @@ init_report_style_contractors({
     ct_fieldname: "checking_report_ct",
     contractor_filter: { checking: 1 },
     operation: "Checking",
+    work_qty_field: "checking_qty",
     api_method:
         "manufacturing_addon.manufacturing_addon.doctype.checking_report.checking_report.get_style_contractors_for_line",
 });

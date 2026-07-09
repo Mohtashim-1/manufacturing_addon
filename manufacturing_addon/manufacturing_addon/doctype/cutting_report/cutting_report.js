@@ -7,6 +7,7 @@ init_report_style_contractors({
     ct_fieldname: "cutting_report_ct",
     contractor_filter: { cutting: 1 },
     operation: "Cutting",
+    work_qty_field: "cutting_qty",
     api_method:
         "manufacturing_addon.manufacturing_addon.doctype.cutting_report.cutting_report.get_style_contractors_for_line",
 });

@@ -10,6 +10,13 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
     append_style_contractors,
     validate_mandatory_contractors,
 )
+from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
+    apply_subassembly_contractor_qty,
+    validate_subassembly_qty_caps,
+)
+from manufacturing_addon.manufacturing_addon.utils.cutting_plan_tolerance import (
+    validate_cutting_report_tolerance,
+)
 from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
     load_nested_style_contractors,
     save_nested_style_contractors,
@@ -17,14 +24,20 @@ from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors impo
 
 
 @frappe.whitelist()
-def get_style_contractors_for_line(so_item, combo_item=None, article=None, operation="Cutting"):
+def get_style_contractors_for_line(
+    so_item, combo_item=None, article=None, operation="Cutting", work_qty=0
+):
     """Return style contractor rows for one report line (client-side populate)."""
     from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
         build_style_contractor_rows,
     )
 
     return build_style_contractor_rows(
-        so_item, operation=operation, combo_item=combo_item, article=article
+        so_item,
+        operation=operation,
+        combo_item=combo_item,
+        article=article,
+        work_qty=work_qty,
     )
 
 
@@ -48,7 +61,12 @@ class CuttingReport(Document):
             operation="Cutting",
             combo_item=row_data.get("combo_item"),
             article=row_data.get("article"),
+            work_qty_field="cutting_qty",
         )
+
+    def _apply_subassembly_style_qty(self):
+        for row in self.cutting_report_ct or []:
+            apply_subassembly_contractor_qty(row, "cutting_qty")
 
     @frappe.whitelist()
     def load_style_contractors(self):
@@ -62,6 +80,7 @@ class CuttingReport(Document):
                 operation="Cutting",
                 combo_item=row.combo_item,
                 article=row.article,
+                work_qty_field="cutting_qty",
             )
         return len(self.cutting_report_ct or [])
 
@@ -350,17 +369,23 @@ class CuttingReport(Document):
 
     def validate(self):
         self.calculate_finished_cutting_qty()
+        self._apply_subassembly_style_qty()
         validate_mandatory_contractors(
             self.cutting_report_ct,
             qty_field="cutting_qty",
             report_label="Cutting Report",
         )
+        validate_subassembly_qty_caps(
+            self, "cutting_report_ct", "cutting_qty", "Cutting Report"
+        )
+        validate_cutting_report_tolerance(self)
         self.total_qty()
         self.total_percentage()
         self.total()
     
     def before_save(self):
         self.calculate_finished_cutting_qty()
+        self._apply_subassembly_style_qty()
 
     def calculate_finished_cutting_qty(self):
         """Calculate and update finished_cutting_qty in the child table based on user-entered cutting_qty values."""
@@ -371,29 +396,40 @@ class CuttingReport(Document):
             # Iterate through child table and fetch totals dynamically
             for row in self.cutting_report_ct:
                 if not row.so_item:
-                    continue  # Skip rows without valid so_item
-                
-                # Handle cases where combo_item is blank
+                    continue
+
+                exclude = "AND cr.name != %s" if self.name else ""
                 if row.combo_item:
-                    query = """
+                    query = f"""
                         SELECT SUM(crct.cutting_qty) AS total_cutting
-                        FROM `tabCutting Report CT` AS crct 
-                        LEFT JOIN `tabCutting Report` AS cr 
+                        FROM `tabCutting Report CT` AS crct
+                        LEFT JOIN `tabCutting Report` AS cr
                         ON crct.parent = cr.name
-                        WHERE cr.order_sheet = %s AND crct.so_item = %s AND crct.combo_item = %s AND cr.docstatus = 1
+                        WHERE cr.order_sheet = %s AND crct.so_item = %s AND crct.combo_item = %s
+                          AND cr.docstatus = 1 {exclude}
                         GROUP BY crct.so_item, crct.combo_item
                     """
-                    params = (self.order_sheet, row.so_item, row.combo_item)
+                    params = (
+                        (self.order_sheet, row.so_item, row.combo_item, self.name)
+                        if self.name
+                        else (self.order_sheet, row.so_item, row.combo_item)
+                    )
                 else:
-                    query = """
+                    query = f"""
                         SELECT SUM(crct.cutting_qty) AS total_cutting
-                        FROM `tabCutting Report CT` AS crct 
-                        LEFT JOIN `tabCutting Report` AS cr 
+                        FROM `tabCutting Report CT` AS crct
+                        LEFT JOIN `tabCutting Report` AS cr
                         ON crct.parent = cr.name
-                        WHERE cr.order_sheet = %s AND crct.so_item = %s AND (crct.combo_item IS NULL OR crct.combo_item = '') AND cr.docstatus = 1
+                        WHERE cr.order_sheet = %s AND crct.so_item = %s
+                          AND (crct.combo_item IS NULL OR crct.combo_item = '')
+                          AND cr.docstatus = 1 {exclude}
                         GROUP BY crct.so_item
                     """
-                    params = (self.order_sheet, row.so_item)
+                    params = (
+                        (self.order_sheet, row.so_item, self.name)
+                        if self.name
+                        else (self.order_sheet, row.so_item)
+                    )
 
                 order_sheets = frappe.db.sql(query, params, as_dict=True)
 

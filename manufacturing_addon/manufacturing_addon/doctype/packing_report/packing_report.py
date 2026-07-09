@@ -11,6 +11,10 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
     append_style_contractors,
     validate_mandatory_contractors,
 )
+from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
+    apply_subassembly_contractor_qty,
+    validate_subassembly_qty_caps,
+)
 from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
     load_nested_style_contractors,
     save_nested_style_contractors,
@@ -69,14 +73,20 @@ if not hasattr(frappe, '_stock_entry_rate_patch_applied'):
 
 
 @frappe.whitelist()
-def get_style_contractors_for_line(so_item, combo_item=None, article=None, operation="Packing"):
+def get_style_contractors_for_line(
+    so_item, combo_item=None, article=None, operation="Packing", work_qty=0
+):
     """Return style contractor rows for one report line (client-side populate)."""
     from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
         build_style_contractor_rows,
     )
 
     return build_style_contractor_rows(
-        so_item, operation=operation, combo_item=combo_item, article=article
+        so_item,
+        operation=operation,
+        combo_item=combo_item,
+        article=article,
+        work_qty=work_qty,
     )
 
 
@@ -100,8 +110,13 @@ class PackingReport(Document):
             operation="Packing",
             combo_item=row_data.get("combo_item"),
             article=row_data.get("article"),
+            work_qty_field="packaging_qty",
         )
         return ct_row
+
+    def _apply_subassembly_style_qty(self):
+        for row in self.packing_report_ct or []:
+            apply_subassembly_contractor_qty(row, "packaging_qty")
 
     @frappe.whitelist()
     def load_style_contractors(self):
@@ -115,6 +130,7 @@ class PackingReport(Document):
                 operation="Packing",
                 combo_item=row.combo_item,
                 article=row.article,
+                work_qty_field="packaging_qty",
             )
         return len(self.packing_report_ct or [])
 
@@ -545,11 +561,15 @@ class PackingReport(Document):
         self.calculate_finished_stitching_qty()
         self.calculate_finished_quality_qty()
         self.calculate_finished_packaging_qty()
+        self._apply_subassembly_style_qty()
         self.packing_condition()
         validate_mandatory_contractors(
             self.packing_report_ct,
             qty_field="packaging_qty",
             report_label="Packing Report",
+        )
+        validate_subassembly_qty_caps(
+            self, "packing_report_ct", "packaging_qty", "Packing Report"
         )
         self.total_qty()
         self.total_percentage()
@@ -561,6 +581,7 @@ class PackingReport(Document):
         self.calculate_finished_stitching_qty()
         self.calculate_finished_quality_qty()
         self.calculate_finished_packaging_qty()
+        self._apply_subassembly_style_qty()
 
     def set_cost_center_from_sales_order(self):
         """Fetch cost center from linked Sales Order via Order Sheet."""

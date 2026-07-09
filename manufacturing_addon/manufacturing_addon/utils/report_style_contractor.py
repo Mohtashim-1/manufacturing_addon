@@ -5,6 +5,12 @@ import frappe
 from frappe import _
 from frappe.utils import cstr, flt
 
+from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
+	apply_subassembly_contractor_qty,
+	resolve_subassembly_unit_qty,
+	subassembly_material_type,
+)
+
 
 ITEM_STYLE_TABLES = (
 	"custom_cutting_style",
@@ -148,8 +154,17 @@ def get_item_stitching_styles(item_code, combo_item=None, article=None, mandator
 	)
 
 
+def _is_subassembly_style(style_row):
+	return bool(style_row.get("is_subassembly")) or bool(subassembly_material_type(style_row.get("style")))
+
+
 def build_style_contractor_rows(
-	item_code, operation="Stitching", combo_item=None, article=None, mandatory_only=False
+	item_code,
+	operation="Stitching",
+	combo_item=None,
+	article=None,
+	mandatory_only=False,
+	work_qty=0,
 ):
 	config = OPERATION_CONFIG.get(operation)
 	if not config:
@@ -163,16 +178,25 @@ def build_style_contractor_rows(
 		article=article,
 		mandatory_only=mandatory_only,
 	):
-		qty = flt(style_row.get("qty") or 1) or 1
+		is_subassembly = _is_subassembly_style(style_row)
+		if is_subassembly:
+			unit_qty = resolve_subassembly_unit_qty(item_code, style_row)
+			work_qty_f = flt(work_qty)
+			qty = work_qty_f * unit_qty if work_qty_f > 0 else unit_qty
+		else:
+			unit_qty = flt(style_row.get("qty") or 1) or 1
+			qty = unit_qty
 		rate = flt(style_row.get("rate"))
 		rows.append(
 			{
 				"style": style_row.style,
 				"contractor": "",
 				"qty": qty,
+				"unit_qty": unit_qty if is_subassembly else 0,
 				"rate": rate,
 				"amount": rate * qty,
 				"is_mandatory": 1 if style_row.get("is_mandatory") else 0,
+				"is_subassembly": 1 if is_subassembly else 0,
 				"operation": config["operation"],
 				"combo_item": style_row.get("combo_item"),
 				"item_style_row": style_row.name,
@@ -182,9 +206,17 @@ def build_style_contractor_rows(
 
 
 def append_style_contractors(
-	ct_row, item_code, operation="Stitching", combo_item=None, article=None, mandatory_only=False
+	ct_row,
+	item_code,
+	operation="Stitching",
+	combo_item=None,
+	article=None,
+	mandatory_only=False,
+	work_qty_field=None,
 ):
 	"""Populate nested style_contractors on a report CT row."""
+	config = OPERATION_CONFIG.get(operation) or {}
+	work_qty = flt(getattr(ct_row, work_qty_field, None)) if work_qty_field else 0
 	ct_row.style_contractors = []
 	for row_data in build_style_contractor_rows(
 		item_code,
@@ -192,8 +224,11 @@ def append_style_contractors(
 		combo_item=combo_item,
 		article=article,
 		mandatory_only=mandatory_only,
+		work_qty=work_qty,
 	):
 		ct_row.append("style_contractors", row_data)
+	if work_qty_field:
+		apply_subassembly_contractor_qty(ct_row, work_qty_field)
 
 
 def validate_mandatory_contractors(report_rows, qty_field="stitching_qty", report_label="Stitching Report"):

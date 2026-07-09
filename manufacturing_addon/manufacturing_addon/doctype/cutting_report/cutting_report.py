@@ -14,6 +14,10 @@ from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
     apply_subassembly_contractor_qty,
     validate_subassembly_qty_caps,
 )
+from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
+    apply_all_style_contractor_amounts,
+    apply_split_qty_defaults,
+)
 from manufacturing_addon.manufacturing_addon.utils.cutting_plan_tolerance import (
     validate_cutting_report_tolerance,
 )
@@ -66,7 +70,9 @@ class CuttingReport(Document):
 
     def _apply_subassembly_style_qty(self):
         for row in self.cutting_report_ct or []:
+            apply_split_qty_defaults(row, "cutting_qty")
             apply_subassembly_contractor_qty(row, "cutting_qty")
+            apply_all_style_contractor_amounts(row, "cutting_qty")
 
     @frappe.whitelist()
     def load_style_contractors(self):

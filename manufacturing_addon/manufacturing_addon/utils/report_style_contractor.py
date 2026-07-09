@@ -191,6 +191,7 @@ def build_style_contractor_rows(
 			{
 				"style": style_row.style,
 				"contractor": "",
+				"split_qty": work_qty_f if work_qty_f > 0 else 0,
 				"qty": qty,
 				"unit_qty": unit_qty if is_subassembly else 0,
 				"rate": rate,
@@ -233,6 +234,12 @@ def append_style_contractors(
 
 def validate_mandatory_contractors(report_rows, qty_field="stitching_qty", report_label="Stitching Report"):
 	"""Ensure mandatory style rows have a contractor when parent qty is entered."""
+	from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
+		validate_style_contractor_splits,
+	)
+
+	validate_style_contractor_splits(report_rows, qty_field, report_label)
+
 	for row in report_rows or []:
 		if flt(row.get(qty_field)) <= 0:
 			continue

@@ -148,7 +148,10 @@ def apply_subassembly_contractor_qty(ct_row, work_qty_field):
 		if unit_qty <= 0:
 			unit_qty = get_subassembly_unit_qty(item_code, sc.get("style"), sc.get("qty"))
 			sc.unit_qty = unit_qty
-		total_qty = work_qty * unit_qty if work_qty > 0 else unit_qty
+		split_work = flt(sc.get("split_qty")) or work_qty
+		if not sc.get("split_qty") and work_qty > 0:
+			sc.split_qty = work_qty
+		total_qty = split_work * unit_qty if split_work > 0 else unit_qty
 		sc.qty = total_qty
 		sc.amount = flt(sc.get("rate")) * total_qty
 

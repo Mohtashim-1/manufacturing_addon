@@ -10,6 +10,10 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
 	_style_row_matches_report_line,
 )
 from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import resolve_subassembly_unit_qty
+from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
+	billable_amount_for_split,
+	resolve_style_splits,
+)
 
 # Cutting / Stitching / Packing / Quality production reports
 REPORT_SOURCES = (
@@ -240,7 +244,7 @@ def _billing_operation(operation, style_row, subassembly_names):
 
 
 def _load_style_contractor_maps(ct_rows):
-	"""Bulk-load saved style contractor rows keyed by CT row name."""
+	"""Bulk-load saved style contractor rows keyed by CT row name (lists per parent)."""
 	if not ct_rows or not frappe.db.table_exists("Report Style Contractor"):
 		return {}
 	by_parenttype = {}
@@ -252,11 +256,20 @@ def _load_style_contractor_maps(ct_rows):
 		for entry in frappe.get_all(
 			"Report Style Contractor",
 			filters={"parent": ["in", parents], "parenttype": parenttype},
-			fields=["parent", "item_style_row", "contractor", "style", "rate", "qty", "amount"],
+			fields=[
+				"parent",
+				"item_style_row",
+				"contractor",
+				"style",
+				"rate",
+				"qty",
+				"split_qty",
+				"amount",
+				"is_subassembly",
+			],
+			order_by="idx asc",
 		):
-			key = entry.item_style_row or entry.style
-			if key:
-				out.setdefault(entry.parent, {})[key] = entry
+			out.setdefault(entry.parent, []).append(entry)
 	return out
 
 
@@ -288,7 +301,7 @@ def _fetch_billing_lines(filters, ct_rows=None):
 		if not style_rows:
 			continue
 
-		sc_map = sc_maps.get(ct_row.ct_row_name, {})
+		sc_list = sc_maps.get(ct_row.ct_row_name, [])
 		default_contractor = ct_row.report_supplier or ""
 
 		for style_row in style_rows:
@@ -297,40 +310,45 @@ def _fetch_billing_lines(filters, ct_rows=None):
 				flt(style_row.get("qty") or 1) or 1
 			)
 			rate = flt(style_row.get("rate"))
-			if is_sub:
-				amount = work_qty * rate * style_qty
-			else:
-				amount = billing_amount_for_work(style_row, work_qty)
-			if amount <= 0 and not rate and not flt(style_row.get("amount")):
+			op = _billing_operation(operation, style_row, subassembly_names)
+
+			splits = resolve_style_splits(style_row, sc_list, work_qty, default_contractor)
+			if not splits:
 				continue
 
-			sc = sc_map.get(style_row.name) or sc_map.get(style_row.style) or {}
-			contractor = sc.get("contractor") or default_contractor
-			if not contractor:
-				contractor = "Unassigned"
+			for contractor, split_work_qty, sc in splits:
+				if is_sub:
+					billable_qty = flt(split_work_qty) * style_qty
+					amount = billable_qty * (flt((sc or {}).get("rate")) or rate)
+				else:
+					billable_qty, amount = billable_amount_for_split(
+						so_item, style_row, split_work_qty, sc
+					)
 
-			op = _billing_operation(operation, style_row, subassembly_names)
-			lines.append(
-				{
-					"contractor": contractor,
-					"operation": op,
-					"order_sheet": ct_row.order_sheet or "",
-					"report_name": ct_row.report_name,
-					"ct_row_name": ct_row.ct_row_name,
-					"report_date": ct_row.report_date,
-					"so_item": so_item,
-					"combo_item": ct_row.combo_item,
-					"article": ct_row.article,
-					"style": style_row.style,
-					"item_style_row": style_row.name,
-					"work_qty": work_qty,
-					"style_qty": style_qty,
-					"rate": rate,
-					"qty": work_qty * style_qty,
-					"amount": amount,
-					"is_subassembly": is_sub,
-				}
-			)
+				if amount <= 0 and not rate and not flt(style_row.get("amount")):
+					continue
+
+				lines.append(
+					{
+						"contractor": contractor,
+						"operation": op,
+						"order_sheet": ct_row.order_sheet or "",
+						"report_name": ct_row.report_name,
+						"ct_row_name": ct_row.ct_row_name,
+						"report_date": ct_row.report_date,
+						"so_item": so_item,
+						"combo_item": ct_row.combo_item,
+						"article": ct_row.article,
+						"style": style_row.style,
+						"item_style_row": style_row.name,
+						"work_qty": split_work_qty,
+						"style_qty": style_qty,
+						"rate": flt((sc or {}).get("rate")) or rate,
+						"qty": billable_qty,
+						"amount": amount,
+						"is_subassembly": is_sub,
+					}
+				)
 
 	return lines
 

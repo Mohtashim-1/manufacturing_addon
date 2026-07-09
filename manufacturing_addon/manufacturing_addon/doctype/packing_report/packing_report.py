@@ -15,6 +15,10 @@ from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
     apply_subassembly_contractor_qty,
     validate_subassembly_qty_caps,
 )
+from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
+    apply_all_style_contractor_amounts,
+    apply_split_qty_defaults,
+)
 from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
     load_nested_style_contractors,
     save_nested_style_contractors,
@@ -116,7 +120,9 @@ class PackingReport(Document):
 
     def _apply_subassembly_style_qty(self):
         for row in self.packing_report_ct or []:
+            apply_split_qty_defaults(row, "packaging_qty")
             apply_subassembly_contractor_qty(row, "packaging_qty")
+            apply_all_style_contractor_amounts(row, "packaging_qty")
 
     @frappe.whitelist()
     def load_style_contractors(self):

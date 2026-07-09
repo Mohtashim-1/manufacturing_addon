@@ -9,6 +9,7 @@
   "style",
   "contractor",
   "column_break_a",
+  "split_qty",
   "qty",
   "rate",
   "amount",
@@ -45,12 +46,22 @@
   },
   {
    "columns": 1,
+   "description": "Work quantity assigned to this contractor for this style (split across contractors must total line work qty).",
+   "fieldname": "split_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Split Qty",
+   "non_negative": 1
+  },
+  {
+   "columns": 1,
    "default": "1",
    "fieldname": "qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Qty",
-   "non_negative": 1
+   "label": "Billable Qty",
+   "non_negative": 1,
+   "read_only": 1
   },
   {
    "columns": 1,

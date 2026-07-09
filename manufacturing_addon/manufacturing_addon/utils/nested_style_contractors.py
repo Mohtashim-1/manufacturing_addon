@@ -60,6 +60,7 @@ def _save_style_contractors_for_ct_row(ct_row, parenttype):
 		values = {
 			"style": row.get("style"),
 			"contractor": row.get("contractor"),
+			"split_qty": flt(row.get("split_qty")),
 			"qty": flt(row.get("qty") or 1) or 1,
 			"unit_qty": flt(row.get("unit_qty")),
 			"rate": flt(row.get("rate")),

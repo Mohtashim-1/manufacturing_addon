@@ -86,41 +86,110 @@ function init_report_style_contractors(config) {
         return row.style_contractors.length;
     }
 
-    function update_report_style_amount(cdt, cdn) {
+    function update_report_style_amount(cdt, cdn, ct_row) {
         const row = locals[cdt][cdn];
         if (!row) {
             return;
         }
-        const qty = Number(row.qty || 1) || 1;
+        if (row.is_subassembly) {
+            const unit_qty = Number(row.unit_qty || 0) || 1;
+            const split_work = Number(row.split_qty || 0) || 0;
+            const total_qty = split_work > 0 ? split_work * unit_qty : Number(row.qty || 0);
+            row.qty = total_qty;
+            row.amount = total_qty * (Number(row.rate || 0) || 0);
+            frappe.model.set_value(cdt, cdn, "qty", row.qty);
+            frappe.model.set_value(cdt, cdn, "amount", row.amount);
+            return;
+        }
+        const split_work = Number(row.split_qty || 0) || 0;
+        const style_qty = Number(row.qty || 1) || 1;
         const rate = Number(row.rate || 0) || 0;
-        frappe.model.set_value(cdt, cdn, "amount", qty * rate);
+        if (split_work > 0 && ct_row && work_qty_field) {
+            const billable = split_work * (style_qty / (Number(ct_row[work_qty_field]) || split_work || 1));
+            row.amount = (split_work * rate * (style_qty > 1 ? style_qty : 1));
+            if (style_qty <= 1 || !Number(ct_row[work_qty_field])) {
+                row.amount = split_work * rate * (Number(row._style_multiplier || 1) || 1);
+            }
+        }
+        const qty = Number(row.qty || 1) || 1;
+        const amount = split_work > 0 ? split_work * rate * (Number(row._style_unit_qty || 1) || 1) : qty * rate;
+        frappe.model.set_value(cdt, cdn, "amount", amount);
     }
 
-    function recalc_subassembly_style_contractors(frm, cdt, cdn) {
+    function recalc_style_contractor_splits(frm, cdt, cdn) {
         if (!work_qty_field) {
             return;
         }
-        const row = locals[cdt]?.[cdn];
-        if (!row?.style_contractors?.length) {
+        const ct_row = locals[cdt]?.[cdn];
+        if (!ct_row?.style_contractors?.length) {
             return;
         }
-        const work_qty = Number(row[work_qty_field] || 0) || 0;
-        row.style_contractors.forEach((sc) => {
-            if (!sc?.is_subassembly) {
+        const work_qty = Number(ct_row[work_qty_field] || 0) || 0;
+        const by_style = {};
+        ct_row.style_contractors.forEach((sc) => {
+            if (!sc?.style) {
                 return;
             }
-            const unit_qty = Number(sc.unit_qty || 0) || 1;
-            const total_qty = work_qty > 0 ? work_qty * unit_qty : unit_qty;
-            sc.qty = total_qty;
-            sc.amount = total_qty * (Number(sc.rate || 0) || 0);
-            if (sc.name && locals[NESTED_STYLE_DOCTYPE]?.[sc.name]) {
-                locals[NESTED_STYLE_DOCTYPE][sc.name].qty = sc.qty;
-                locals[NESTED_STYLE_DOCTYPE][sc.name].amount = sc.amount;
-            }
+            by_style[sc.style] = by_style[sc.style] || [];
+            by_style[sc.style].push(sc);
         });
-        sync_style_contractors_to_frm_doc(frm, cdn, row);
+
+        Object.values(by_style).forEach((rows) => {
+            if (rows.length === 1 && work_qty > 0 && !Number(rows[0].split_qty)) {
+                rows[0].split_qty = work_qty;
+            }
+            rows.forEach((sc) => {
+                if (sc.is_subassembly) {
+                    const unit_qty = Number(sc.unit_qty || 0) || 1;
+                    const split_work = Number(sc.split_qty || 0) || work_qty;
+                    sc.qty = split_work * unit_qty;
+                    sc.amount = sc.qty * (Number(sc.rate || 0) || 0);
+                } else {
+                    const split_work = Number(sc.split_qty || 0) || 0;
+                    sc.amount = split_work * (Number(sc.rate || 0) || 0);
+                }
+                if (sc.name && locals[NESTED_STYLE_DOCTYPE]?.[sc.name]) {
+                    Object.assign(locals[NESTED_STYLE_DOCTYPE][sc.name], sc);
+                }
+            });
+        });
+        sync_style_contractors_to_frm_doc(frm, cdn, ct_row);
         refresh_nested_style_contractor_grid(frm, cdn);
         frm.dirty();
+    }
+
+    function recalc_subassembly_style_contractors(frm, cdt, cdn) {
+        recalc_style_contractor_splits(frm, cdt, cdn);
+    }
+
+    function add_style_contractor_split_row(frm, cdt, cdn, source_cdn) {
+        const ct_row = locals[cdt]?.[cdn];
+        const source = locals[NESTED_STYLE_DOCTYPE]?.[source_cdn];
+        if (!ct_row || !source?.style) {
+            return;
+        }
+        const child = frappe.model.add_child(ct_row, "style_contractors");
+        Object.assign(child, {
+            style: source.style,
+            rate: source.rate,
+            unit_qty: source.unit_qty,
+            is_subassembly: source.is_subassembly,
+            is_mandatory: source.is_mandatory,
+            operation: source.operation,
+            combo_item: source.combo_item,
+            item_style_row: source.item_style_row,
+            contractor: "",
+            split_qty: 0,
+            qty: 0,
+            amount: 0,
+        });
+        sync_style_contractors_to_frm_doc(frm, cdn, ct_row);
+        refresh_nested_style_contractor_grid(frm, cdn);
+        frm.dirty();
+        frappe.show_alert({
+            message: __("Add contractor and split qty for {0}", [source.style]),
+            indicator: "blue",
+        });
     }
 
     function sync_style_contractor_to_parent_frm(frm, cdt, cdn) {
@@ -224,6 +293,14 @@ function init_report_style_contractors(config) {
         if (contractor_df) {
             contractor_df.get_query = () => ({ filters: contractor_filter });
         }
+        nested.add_custom_button(__("Split Contractor"), () => {
+            const selected = nested.get_selected();
+            if (selected?.length !== 1) {
+                frappe.msgprint(__("Select one style row to split between contractors."));
+                return;
+            }
+            add_style_contractor_split_row(frm, cdt, cdn, selected[0]);
+        });
     }
 
     function ensure_style_contractors_for_row(frm, cdt, cdn) {
@@ -286,8 +363,9 @@ function init_report_style_contractors(config) {
             if (!ct_row || ct_row.parent !== frm.docname) {
                 return;
             }
-            if (["qty", "rate"].includes(fieldname)) {
-                update_report_style_amount(doc.doctype, doc.name);
+            if (["qty", "rate", "split_qty"].includes(fieldname)) {
+                const ct_row = locals[ct_doctype]?.[doc?.parent];
+                update_report_style_amount(doc.doctype, doc.name, ct_row);
             }
             sync_style_contractors_to_frm_doc(frm, doc.parent, ct_row);
             frm.dirty();
@@ -345,19 +423,20 @@ function init_report_style_contractors(config) {
     };
     if (work_qty_field) {
         ct_handlers[work_qty_field] = function (frm, cdt, cdn) {
-            recalc_subassembly_style_contractors(frm, cdt, cdn);
+            recalc_style_contractor_splits(frm, cdt, cdn);
         };
     }
     frappe.ui.form.on(ct_doctype, ct_handlers);
 
     frappe.ui.form.on("Report Style Contractor", {
-        qty(frm, cdt, cdn) {
+        split_qty(frm, cdt, cdn) {
             const row = locals[cdt]?.[cdn];
-            if (row?.is_subassembly) {
-                return;
-            }
-            update_report_style_amount(cdt, cdn);
+            const ct_row = locals[ct_doctype]?.[row?.parent];
+            update_report_style_amount(cdt, cdn, ct_row);
             sync_style_contractor_to_parent_frm(frm, cdt, cdn);
+        },
+        qty(frm, cdt, cdn) {
+            return;
         },
         rate(frm, cdt, cdn) {
             update_report_style_amount(cdt, cdn);

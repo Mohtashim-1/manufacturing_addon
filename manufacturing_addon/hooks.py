@@ -57,6 +57,7 @@ doctype_js = {
     }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order_list.js",
+    "Shipment Loading": "public/js/shipment_loading_list.js",
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -173,7 +174,11 @@ doc_events = {
         "before_validate": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.before_validate_currency_conversion",
         "validate": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.validate_currency_conversion",
         "on_update": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.on_update_currency_conversion",
-    }
+    },
+    "Packing Report": {
+        "on_submit": "manufacturing_addon.manufacturing_addon.doctype.shipment_loading.shipment_loading.sync_shipment_loading_from_packing_report",
+        "on_cancel": "manufacturing_addon.manufacturing_addon.doctype.shipment_loading.shipment_loading.sync_shipment_loading_from_packing_report",
+    },
 }
 
 # doc_events = {

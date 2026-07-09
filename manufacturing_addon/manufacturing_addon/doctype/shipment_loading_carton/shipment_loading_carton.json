@@ -1,0 +1,236 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-09 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "packing_report",
+  "packing_report_row",
+  "column_break_ref",
+  "so_item",
+  "combo_item",
+  "column_break_item",
+  "colour",
+  "article",
+  "finished_size",
+  "design",
+  "column_break_carton",
+  "carton_no",
+  "carton_label",
+  "carton_count",
+  "qty_in_carton",
+  "partial_qty",
+  "total_pieces",
+  "carton_dimension",
+  "cbm",
+  "column_break_load",
+  "loading_tag",
+  "is_loaded",
+  "loaded_by",
+  "loaded_on",
+  "container_no",
+  "column_break_position",
+  "position_row",
+  "position_col",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "packing_report",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Packing Report",
+   "options": "Packing Report",
+   "read_only": 1
+  },
+  {
+   "fieldname": "packing_report_row",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Packing Report Row",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ref",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "so_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SO Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "combo_item",
+   "fieldtype": "Link",
+   "label": "Combo Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_item",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "colour",
+   "fieldtype": "Data",
+   "label": "Colour",
+   "read_only": 1
+  },
+  {
+   "fieldname": "article",
+   "fieldtype": "Data",
+   "label": "Article",
+   "read_only": 1
+  },
+  {
+   "fieldname": "finished_size",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Size",
+   "read_only": 1
+  },
+  {
+   "fieldname": "design",
+   "fieldtype": "Data",
+   "label": "Design",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_carton",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "carton_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Carton No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "carton_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Carton Label",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "carton_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Carton Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qty_in_carton",
+   "fieldtype": "Float",
+   "label": "Qty Per Carton",
+   "read_only": 1
+  },
+  {
+   "fieldname": "partial_qty",
+   "fieldtype": "Float",
+   "label": "Partial Carton Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_pieces",
+   "fieldtype": "Float",
+   "label": "Total Pieces",
+   "read_only": 1
+  },
+  {
+   "fieldname": "carton_dimension",
+   "fieldtype": "Data",
+   "label": "Carton Dimension",
+   "read_only": 1
+  },
+  {
+   "fieldname": "per_carton_cbm",
+   "fieldtype": "Float",
+   "label": "CBM Per Carton",
+   "precision": "4",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cbm",
+   "fieldtype": "Float",
+   "label": "CBM",
+   "precision": "4",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_load",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "loading_tag",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Loading Tag",
+   "options": "\nManual\nForklift\nPallet Jack\nCrane\nConveyor\nBulk"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_loaded",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Loaded"
+  },
+  {
+   "fieldname": "loaded_by",
+   "fieldtype": "Link",
+   "label": "Loaded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "loaded_on",
+   "fieldtype": "Datetime",
+   "label": "Loaded On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "container_no",
+   "fieldtype": "Data",
+   "label": "Container / Truck No"
+  },
+  {
+   "fieldname": "column_break_position",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "position_row",
+   "fieldtype": "Int",
+   "label": "Container Row"
+  },
+  {
+   "fieldname": "position_col",
+   "fieldtype": "Int",
+   "label": "Container Column"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Shipment Loading Carton",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

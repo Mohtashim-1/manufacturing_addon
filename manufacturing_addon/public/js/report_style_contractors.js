@@ -86,37 +86,50 @@ function init_report_style_contractors(config) {
         return row.style_contractors.length;
     }
 
+    function is_subassembly_style_name(styleName) {
+        const name = String(styleName || "").toUpperCase();
+        return name.includes("ZIP") || name.includes("BUTTON");
+    }
+
+    function is_subassembly_row(sc) {
+        return Boolean(sc?.is_subassembly) || is_subassembly_style_name(sc?.style);
+    }
+
+    async function ensure_subassembly_unit_qty(sc, so_item) {
+        if (!is_subassembly_row(sc)) {
+            return Number(sc.unit_qty || 0) || 1;
+        }
+        // Prefer live BOM qty so Item Style qty=1 does not stick as unit_qty
+        if (so_item && sc.style) {
+            try {
+                const res = await frappe.xcall(
+                    "manufacturing_addon.manufacturing_addon.utils.subassembly_bom.get_subassembly_bom_qty",
+                    { item_code: so_item, style_name: sc.style }
+                );
+                const unit = Number(res?.qty_per_unit || 0);
+                if (unit > 0) {
+                    sc.unit_qty = unit;
+                    sc.is_subassembly = 1;
+                    return unit;
+                }
+            } catch (e) {
+                sc_log("BOM unit qty fetch failed", e);
+            }
+        }
+        return Number(sc.unit_qty || 1) || 1;
+    }
+
     function update_report_style_amount(cdt, cdn, ct_row) {
         const row = locals[cdt][cdn];
         if (!row) {
             return;
         }
-        if (row.is_subassembly) {
-            const unit_qty = Number(row.unit_qty || 0) || 1;
-            const split_work = Number(row.split_qty || 0) || 0;
-            const total_qty = split_work > 0 ? split_work * unit_qty : Number(row.qty || 0);
-            row.qty = total_qty;
-            row.amount = total_qty * (Number(row.rate || 0) || 0);
-            frappe.model.set_value(cdt, cdn, "qty", row.qty);
-            frappe.model.set_value(cdt, cdn, "amount", row.amount);
-            return;
-        }
-        const split_work = Number(row.split_qty || 0) || 0;
-        const style_qty = Number(row.qty || 1) || 1;
+        const qty = Number(row.qty || 0) || 0;
         const rate = Number(row.rate || 0) || 0;
-        if (split_work > 0 && ct_row && work_qty_field) {
-            const billable = split_work * (style_qty / (Number(ct_row[work_qty_field]) || split_work || 1));
-            row.amount = (split_work * rate * (style_qty > 1 ? style_qty : 1));
-            if (style_qty <= 1 || !Number(ct_row[work_qty_field])) {
-                row.amount = split_work * rate * (Number(row._style_multiplier || 1) || 1);
-            }
-        }
-        const qty = Number(row.qty || 1) || 1;
-        const amount = split_work > 0 ? split_work * rate * (Number(row._style_unit_qty || 1) || 1) : qty * rate;
-        frappe.model.set_value(cdt, cdn, "amount", amount);
+        frappe.model.set_value(cdt, cdn, "amount", qty * rate);
     }
 
-    function recalc_style_contractor_splits(frm, cdt, cdn) {
+    async function recalc_style_contractor_splits(frm, cdt, cdn) {
         if (!work_qty_field) {
             return;
         }
@@ -134,25 +147,26 @@ function init_report_style_contractors(config) {
             by_style[sc.style].push(sc);
         });
 
-        Object.values(by_style).forEach((rows) => {
+        for (const rows of Object.values(by_style)) {
             if (rows.length === 1 && work_qty > 0 && !Number(rows[0].split_qty)) {
                 rows[0].split_qty = work_qty;
             }
-            rows.forEach((sc) => {
-                if (sc.is_subassembly) {
-                    const unit_qty = Number(sc.unit_qty || 0) || 1;
-                    const split_work = Number(sc.split_qty || 0) || work_qty;
-                    sc.qty = split_work * unit_qty;
+            for (const sc of rows) {
+                const split_work = Number(sc.split_qty || 0) || work_qty;
+                if (is_subassembly_row(sc)) {
+                    const unit_qty = await ensure_subassembly_unit_qty(sc, ct_row.so_item);
+                    sc.qty = split_work > 0 ? split_work * unit_qty : unit_qty;
                     sc.amount = sc.qty * (Number(sc.rate || 0) || 0);
-                } else {
-                    const split_work = Number(sc.split_qty || 0) || 0;
+                    sc.is_subassembly = 1;
+                    sc.unit_qty = unit_qty;
+                } else if (split_work > 0) {
                     sc.amount = split_work * (Number(sc.rate || 0) || 0);
                 }
                 if (sc.name && locals[NESTED_STYLE_DOCTYPE]?.[sc.name]) {
                     Object.assign(locals[NESTED_STYLE_DOCTYPE][sc.name], sc);
                 }
-            });
-        });
+            }
+        }
         sync_style_contractors_to_frm_doc(frm, cdn, ct_row);
         refresh_nested_style_contractor_grid(frm, cdn);
         frm.dirty();

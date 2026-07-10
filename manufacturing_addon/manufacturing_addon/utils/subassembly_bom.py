@@ -25,19 +25,23 @@ def subassembly_material_type(style_name):
 	return None
 
 
-def _material_sql_patterns(material_type):
+def _material_like_values(material_type):
+	"""Return LIKE values and matching SQL OR clauses for button/zip BOM items."""
 	keywords = MATERIAL_KEYWORDS.get(material_type) or ()
-	patterns = []
+	clauses = []
+	values = []
 	for keyword in keywords:
-		patterns.extend(
+		like_value = f"%{keyword}%"
+		clauses.extend(
 			[
-				f"UPPER(IFNULL(i.item_group, '')) LIKE '%{keyword}%'",
-				f"UPPER(IFNULL(i.custom_item_category, '')) LIKE '%{keyword}%'",
-				f"UPPER(IFNULL(bi.item_code, '')) LIKE '%{keyword}%'",
-				f"UPPER(IFNULL(bi.item_name, '')) LIKE '%{keyword}%'",
+				"UPPER(IFNULL(i.item_group, '')) LIKE %s",
+				"UPPER(IFNULL(i.custom_item_category, '')) LIKE %s",
+				"UPPER(IFNULL(bi.item_code, '')) LIKE %s",
+				"UPPER(IFNULL(bi.item_name, '')) LIKE %s",
 			]
 		)
-	return patterns
+		values.extend([like_value, like_value, like_value, like_value])
+	return clauses, values
 
 
 def get_bom_qty_per_finished_unit(item_code, material_type, bom_name=None):
@@ -49,8 +53,8 @@ def get_bom_qty_per_finished_unit(item_code, material_type, bom_name=None):
 	if not bom_name:
 		return 0
 
-	patterns = _material_sql_patterns(material_type)
-	if not patterns:
+	clauses, like_values = _material_like_values(material_type)
+	if not clauses:
 		return 0
 
 	bom_qty = flt(frappe.db.get_value("BOM", bom_name, "quantity")) or 1
@@ -60,9 +64,9 @@ def get_bom_qty_per_finished_unit(item_code, material_type, bom_name=None):
 		FROM `tabBOM Item` bi
 		LEFT JOIN `tabItem` i ON i.name = bi.item_code
 		WHERE bi.parent = %s
-		  AND ({' OR '.join(patterns)})
+		  AND ({' OR '.join(clauses)})
 		""",
-		bom_name,
+		tuple([bom_name] + like_values),
 		as_dict=True,
 	)
 	total = flt(rows[0].total_qty if rows else 0)
@@ -135,25 +139,34 @@ def sync_item_subassembly_qty_from_bom(item_code):
 
 
 def apply_subassembly_contractor_qty(ct_row, work_qty_field):
-	"""Set calculated total qty on sub-assembly style contractor rows."""
+	"""Set calculated total qty on sub-assembly style contractor rows.
+
+	Default: BOM zip/button per finished unit × work qty (stitching/cutting/etc).
+	Keeps a manual override unless qty is still the unmultiplied BOM unit qty.
+	"""
 	work_qty = flt(getattr(ct_row, work_qty_field, None))
 	item_code = getattr(ct_row, "so_item", None)
 	if not item_code:
 		return
 
-	for sc in ct_row.get("style_contractors") or []:
-		if not sc.get("is_subassembly"):
+	for sc in getattr(ct_row, "style_contractors", None) or []:
+		style_name = sc.get("style")
+		is_sub = bool(sc.get("is_subassembly")) or bool(subassembly_material_type(style_name))
+		if not is_sub:
 			continue
-		unit_qty = flt(sc.get("unit_qty"))
-		if unit_qty <= 0:
-			unit_qty = get_subassembly_unit_qty(item_code, sc.get("style"), sc.get("qty"))
-			sc.unit_qty = unit_qty
+		sc.is_subassembly = 1
+		# Always resolve from BOM so stale unit_qty (e.g. Item Style qty=1) is corrected
+		unit_qty = get_subassembly_unit_qty(item_code, style_name, sc.get("unit_qty") or sc.get("qty"))
+		sc.unit_qty = unit_qty
 		split_work = flt(sc.get("split_qty")) or work_qty
 		if not sc.get("split_qty") and work_qty > 0:
 			sc.split_qty = work_qty
-		total_qty = split_work * unit_qty if split_work > 0 else unit_qty
-		sc.qty = total_qty
-		sc.amount = flt(sc.get("rate")) * total_qty
+		expected = split_work * unit_qty if split_work > 0 else unit_qty
+		current = flt(sc.get("qty"))
+		# Apply formula when empty or still stuck at per-unit BOM qty
+		if current <= 0 or (split_work > 0 and abs(current - unit_qty) < 1e-6):
+			sc.qty = expected
+		sc.amount = flt(sc.get("rate")) * flt(sc.qty)
 
 
 def _report_configs():

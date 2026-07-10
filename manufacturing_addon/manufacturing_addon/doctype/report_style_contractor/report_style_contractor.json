@@ -56,12 +56,13 @@
   {
    "columns": 1,
    "default": "1",
+   "description": "For zip/button sub-assembly: BOM qty per piece × work qty. User can override.",
    "fieldname": "qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Billable Qty",
+   "label": "Qty",
    "non_negative": 1,
-   "read_only": 1
+   "read_only": 0
   },
   {
    "columns": 1,

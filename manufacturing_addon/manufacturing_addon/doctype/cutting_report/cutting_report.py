@@ -335,7 +335,10 @@ class CuttingReport(Document):
                     except Exception as e:
                         error_msg = f"Error processing item {so_item}: {str(e)}"
                         print(f"[get_data1] Row {idx+1}: ✗ ERROR: {error_msg}")
-                        frappe.log_error(error_msg, "Cutting Report Item Processing")
+                        frappe.log_error(
+                            title="Cutting Report Item Processing",
+                            message=error_msg,
+                        )
                         continue
                 
                 print(f"\n{'='*60}")

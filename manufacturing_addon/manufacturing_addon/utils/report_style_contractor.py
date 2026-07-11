@@ -171,6 +171,7 @@ def build_style_contractor_rows(
 		return []
 
 	rows = []
+	work_qty_f = flt(work_qty)
 	for style_row in get_item_styles(
 		item_code,
 		operation=operation,
@@ -181,7 +182,6 @@ def build_style_contractor_rows(
 		is_subassembly = _is_subassembly_style(style_row)
 		if is_subassembly:
 			unit_qty = resolve_subassembly_unit_qty(item_code, style_row)
-			work_qty_f = flt(work_qty)
 			qty = work_qty_f * unit_qty if work_qty_f > 0 else unit_qty
 		else:
 			unit_qty = flt(style_row.get("qty") or 1) or 1

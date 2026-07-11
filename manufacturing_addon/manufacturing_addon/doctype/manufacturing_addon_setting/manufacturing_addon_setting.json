@@ -5,19 +5,51 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "section_break_ro6p"
+  "cutting_plan_section",
+  "enforce_cutting_plan_tolerance",
+  "cutting_qty_tolerance_percent",
+  "column_break_cutting",
+  "block_under_plan_cutting"
  ],
  "fields": [
   {
-   "fieldname": "section_break_ro6p",
-   "fieldtype": "Section Break"
+   "fieldname": "cutting_plan_section",
+   "fieldtype": "Section Break",
+   "label": "Cutting Plan Tolerance"
+  },
+  {
+   "default": "1",
+   "description": "When enabled, Cutting Report save/submit is blocked if total cutting qty is outside the allowed band.",
+   "fieldname": "enforce_cutting_plan_tolerance",
+   "fieldtype": "Check",
+   "label": "Enforce Cutting Plan Tolerance"
+  },
+  {
+   "default": "10",
+   "description": "Allowed variance from planned qty. Example: 10 means planned \u00b110%.",
+   "fieldname": "cutting_qty_tolerance_percent",
+   "fieldtype": "Float",
+   "label": "Cutting Qty Allowance %",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_cutting",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "If unchecked (recommended), partial cutting below the min band is allowed. If checked, under-plan qty is also blocked.",
+   "fieldname": "block_under_plan_cutting",
+   "fieldtype": "Check",
+   "label": "Also Block Under-Plan Cutting"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-05-30 22:22:25.214090",
+ "modified": "2026-07-11 18:35:00.000000",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Addon Setting",
@@ -30,6 +62,21 @@
    "print": 1,
    "read": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Manufacturing User",
+   "share": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Manufacturing Manager",
    "share": 1,
    "write": 1
   }

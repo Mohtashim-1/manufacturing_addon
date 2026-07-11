@@ -1,17 +1,53 @@
 # Copyright (c) 2026, Manufacturing Addon contributors
 # License: MIT
 
-"""Planned vs cutting quantity tolerance (±10% by default)."""
+"""Planned vs cutting quantity tolerance (configurable allowance %)."""
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
-CUTTING_QTY_TOLERANCE_PERCENT = 10
+DEFAULT_CUTTING_QTY_TOLERANCE_PERCENT = 10
+
+
+def get_cutting_qty_tolerance_percent():
+	"""Allowance % from Manufacturing Addon Setting (fallback 10)."""
+	try:
+		pct = frappe.db.get_single_value(
+			"Manufacturing Addon Setting", "cutting_qty_tolerance_percent"
+		)
+	except Exception:
+		pct = None
+	if pct is None or pct == "":
+		return flt(DEFAULT_CUTTING_QTY_TOLERANCE_PERCENT)
+	return flt(pct)
+
+
+def is_cutting_plan_tolerance_enforced():
+	try:
+		val = frappe.db.get_single_value(
+			"Manufacturing Addon Setting", "enforce_cutting_plan_tolerance"
+		)
+	except Exception:
+		return True
+	# Missing field / unset → enforce (legacy behaviour)
+	if val is None or val == "":
+		return True
+	return bool(cint(val))
+
+
+def should_block_under_plan_cutting():
+	try:
+		val = frappe.db.get_single_value(
+			"Manufacturing Addon Setting", "block_under_plan_cutting"
+		)
+	except Exception:
+		return False
+	return bool(cint(val or 0))
 
 
 def tolerance_ratio():
-	return flt(CUTTING_QTY_TOLERANCE_PERCENT) / 100
+	return get_cutting_qty_tolerance_percent() / 100
 
 
 def cutting_qty_limits(planned_qty):
@@ -37,49 +73,80 @@ def finished_cutting_pieces(ct_row):
 def tolerance_status(planned_qty, actual_pieces):
 	min_allowed, max_allowed, planned = cutting_qty_limits(planned_qty)
 	actual = flt(actual_pieces)
+	pct = get_cutting_qty_tolerance_percent()
+	base = {
+		"planned_qty": planned,
+		"min_allowed": min_allowed,
+		"max_allowed": max_allowed,
+		"actual_pieces": actual,
+		"tolerance_pct": pct,
+	}
 	if planned <= 0:
 		return {
+			**base,
 			"status": "No Plan",
 			"planned_qty": 0,
 			"min_allowed": 0,
 			"max_allowed": 0,
-			"actual_pieces": actual,
 			"variance": 0,
 			"variance_pct": 0,
 		}
 	if actual < min_allowed:
 		return {
+			**base,
 			"status": "Under",
-			"planned_qty": planned,
-			"min_allowed": min_allowed,
-			"max_allowed": max_allowed,
-			"actual_pieces": actual,
 			"variance": actual - planned,
 			"variance_pct": ((actual - planned) / planned) * 100,
 		}
 	if actual > max_allowed:
 		return {
+			**base,
 			"status": "Over",
-			"planned_qty": planned,
-			"min_allowed": min_allowed,
-			"max_allowed": max_allowed,
-			"actual_pieces": actual,
 			"variance": actual - planned,
 			"variance_pct": ((actual - planned) / planned) * 100,
 		}
 	return {
+		**base,
 		"status": "Within",
-		"planned_qty": planned,
-		"min_allowed": min_allowed,
-		"max_allowed": max_allowed,
-		"actual_pieces": actual,
 		"variance": actual - planned,
 		"variance_pct": ((actual - planned) / planned) * 100 if planned else 0,
 	}
 
 
+def _tolerance_error_message(row, actual, info):
+	item_label = row.so_item or _("Item")
+	combo = (row.combo_item or "").strip()
+	if combo:
+		item_label = f"{item_label} / {combo}"
+	pct = info.get("tolerance_pct", get_cutting_qty_tolerance_percent())
+	return _(
+		"Row {0} ({1}): total cutting qty {2} is outside the allowed range "
+		"{3} – {4} (planned {5} ± {6}%)."
+	).format(
+		row.idx,
+		item_label,
+		frappe.format_value(actual, {"fieldtype": "Float"}),
+		frappe.format_value(info["min_allowed"], {"fieldtype": "Float"}),
+		frappe.format_value(info["max_allowed"], {"fieldtype": "Float"}),
+		frappe.format_value(info["planned_qty"], {"fieldtype": "Float"}),
+		frappe.format_value(pct, {"fieldtype": "Float"}),
+	)
+
+
 def validate_cutting_report_tolerance(doc):
-	"""Block save when cumulative cutting exceeds planned qty ± tolerance."""
+	"""Block save when cutting qty is outside the configured plan band.
+
+	By default only over-plan is blocked so progressive (partial) cutting works.
+	Under-plan blocking is optional via Manufacturing Addon Setting.
+	"""
+	if not is_cutting_plan_tolerance_enforced():
+		return
+
+	block_under = should_block_under_plan_cutting()
+	blocked = {"Over"}
+	if block_under:
+		blocked.add("Under")
+
 	for row in doc.get("cutting_report_ct") or []:
 		planned = flt(row.planned_qty)
 		if planned <= 0:
@@ -89,26 +156,13 @@ def validate_cutting_report_tolerance(doc):
 
 		actual = finished_cutting_pieces(row)
 		info = tolerance_status(planned, actual)
-		if info["status"] in ("Over", "Under"):
-			item_label = row.so_item or _("Item")
-			combo = (row.combo_item or "").strip()
-			if combo:
-				item_label = f"{item_label} / {combo}"
-			frappe.throw(
-				_(
-					"Row {0} ({1}): total cutting qty {2} is outside the allowed range "
-					"{3} – {4} (planned {5} ± {6}%)."
-				).format(
-					row.idx,
-					item_label,
-					frappe.format_value(actual, {"fieldtype": "Float"}),
-					frappe.format_value(info["min_allowed"], {"fieldtype": "Float"}),
-					frappe.format_value(info["max_allowed"], {"fieldtype": "Float"}),
-					frappe.format_value(planned, {"fieldtype": "Float"}),
-					CUTTING_QTY_TOLERANCE_PERCENT,
-				),
-				title=_("Cutting Report — Plan Tolerance"),
-			)
+		if info["status"] not in blocked:
+			continue
+
+		frappe.throw(
+			_tolerance_error_message(row, actual, info),
+			title=_("Cutting Report — Plan Tolerance"),
+		)
 
 
 def _cutting_component_pieces(order_sheet, exclude_report=None):
@@ -183,7 +237,8 @@ def get_cutting_plan_tolerance_dashboard(
 	status=None,
 	sales_order=None,
 ):
-	"""Dashboard rows: planned qty vs cutting with ±10% tolerance band."""
+	"""Dashboard rows: planned qty vs cutting with configurable ±% band."""
+	tolerance_pct = get_cutting_qty_tolerance_percent()
 	conditions = ["os.docstatus < 2", "IFNULL(osct.planned_qty, 0) > 0"]
 	params = {}
 
@@ -250,7 +305,7 @@ def get_cutting_plan_tolerance_dashboard(
 			"variance": info["variance"],
 			"variance_pct": round(info["variance_pct"], 2),
 			"status": status_value,
-			"tolerance_pct": CUTTING_QTY_TOLERANCE_PERCENT,
+			"tolerance_pct": tolerance_pct,
 		}
 		if status and status != "All" and entry["status"] != status:
 			continue
@@ -269,5 +324,5 @@ def get_cutting_plan_tolerance_dashboard(
 	return {
 		"rows": result,
 		"summary": summary,
-		"tolerance_pct": CUTTING_QTY_TOLERANCE_PERCENT,
+		"tolerance_pct": tolerance_pct,
 	}

@@ -10,6 +10,7 @@ from frappe.desk.notifications import get_open_count as frappe_get_open_count
 
 INDIRECT_VIA_ORDER_SHEET = (
 	"Cutting Report",
+	"Checking Report",
 	"Packing Report",
 	"Stitching Report",
 	"Daily Checking",
@@ -58,6 +59,7 @@ def get_data(data=None):
 					"Order Sheet",
 					"Cutting Report",
 					"Stitching Report",
+					"Checking Report",
 					"Packing Report",
 					"Daily Checking",
 					"Inline Stitching",

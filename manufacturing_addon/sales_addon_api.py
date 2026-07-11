@@ -297,7 +297,11 @@ def get_sales_order_listview_dashboard(from_date=None, to_date=None, company=Non
 	from_date = getdate(from_date) if from_date else default_from_date
 	company = company or None
 
-	conditions = ["so.docstatus < 2", "so.status != 'Cancelled'", "so.transaction_date between %(from_date)s and %(to_date)s"]
+	conditions = [
+		"so.docstatus = 1",
+		"so.status != 'Cancelled'",
+		"so.transaction_date between %(from_date)s and %(to_date)s",
+	]
 	params = {"from_date": from_date, "to_date": to_date}
 
 	if company:
@@ -327,7 +331,11 @@ def get_sales_order_listview_dashboard(from_date=None, to_date=None, company=Non
 	if company:
 		trend_params["company"] = company
 
-	trend_conditions = ["so.docstatus < 2", "so.status != 'Cancelled'", "so.transaction_date between %(trend_start)s and %(to_date)s"]
+	trend_conditions = [
+		"so.docstatus = 1",
+		"so.status != 'Cancelled'",
+		"so.transaction_date between %(trend_start)s and %(to_date)s",
+	]
 	if company:
 		trend_conditions.append("so.company = %(company)s")
 	trend_where_clause = " where " + " and ".join(trend_conditions)

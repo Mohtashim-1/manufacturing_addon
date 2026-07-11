@@ -1,0 +1,151 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-03 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "style",
+  "contractor",
+  "column_break_a",
+  "split_qty",
+  "qty",
+  "rate",
+  "amount",
+  "column_break_b",
+  "is_mandatory",
+  "is_subassembly",
+  "unit_qty",
+  "operation",
+  "combo_item",
+  "item_style_row"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "style",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Style",
+   "options": "Style",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "contractor",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Contractor",
+   "link_filters": "[[\"Manufacturing Contractor\",\"stitching\",\"=\",1]]",
+   "options": "Manufacturing Contractor"
+  },
+  {
+   "fieldname": "column_break_a",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "description": "Work quantity assigned to this contractor for this style (split across contractors must total line work qty).",
+   "fieldname": "split_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Split Qty",
+   "non_negative": 1
+  },
+  {
+   "columns": 1,
+   "default": "1",
+   "description": "For zip/button sub-assembly: BOM qty per piece × work qty. User can override.",
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "non_negative": 1,
+   "read_only": 0
+  },
+  {
+   "columns": 1,
+   "fieldname": "rate",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Rate",
+   "non_negative": 1,
+   "precision": "2"
+  },
+  {
+   "columns": 1,
+   "fieldname": "amount",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Amount",
+   "non_negative": 1,
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_b",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "default": "0",
+   "fieldname": "is_mandatory",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Mandatory",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_subassembly",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Sub Assembly",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "unit_qty",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Unit Qty",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "operation",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Operation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "combo_item",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Article",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_style_row",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Item Style Row",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-03 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Report Style Contractor",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,1894 @@
+// Contractor Billing — detailed Chart.js dashboard
+
+frappe.pages["contractor-billing"].on_page_load = function (wrapper) {
+	const page = frappe.ui.make_app_page({
+		parent: wrapper,
+		title: __("Contractor Billing"),
+		single_column: true,
+	});
+
+	inject_cb_styles();
+
+	const state = {
+		process: "All",
+		status: "All",
+		view: "overview",
+		data: null,
+		expanded: new Set(),
+		charts: {},
+	};
+
+	const filters = {
+		order_sheet: page.add_field({
+			label: __("Order Sheet"),
+			fieldtype: "Link",
+			fieldname: "order_sheet",
+			options: "Order Sheet",
+		}),
+		contractor: page.add_field({
+			label: __("Contractor"),
+			fieldtype: "Link",
+			fieldname: "contractor",
+			options: "Manufacturing Contractor",
+		}),
+		from_date: page.add_field({
+			label: __("From Date"),
+			fieldtype: "Date",
+			fieldname: "from_date",
+			default: frappe.datetime.add_months(frappe.datetime.get_today(), -12),
+		}),
+		to_date: page.add_field({
+			label: __("To Date"),
+			fieldtype: "Date",
+			fieldname: "to_date",
+			default: frappe.datetime.get_today(),
+		}),
+	};
+
+	page.add_inner_button(__("Refresh"), () => load_data());
+	page.add_menu_item(__("Export billing details"), () => export_rows());
+	page.add_menu_item(__("Reset filters"), () => {
+		filters.order_sheet.set_value("");
+		filters.contractor.set_value("");
+		filters.from_date.set_value(frappe.datetime.add_months(frappe.datetime.get_today(), -12));
+		filters.to_date.set_value(frappe.datetime.get_today());
+		state.process = "All";
+		state.status = "All";
+		$("#cb-search").val("");
+		$("#cb-status-filter").val("All");
+		$tabs.find(".cb-tab").removeClass("active");
+		$tabs.find('[data-process="All"]').addClass("active");
+		load_data();
+	});
+
+	const $root = $(`
+		<div class="cb-dashboard">
+			<aside class="cb-sidebar">
+				<div class="cb-brand"><span class="cb-brand-icon">▣</span><strong>${__("Contractor Billing")}</strong></div>
+				<nav class="cb-side-nav">
+					<button class="active" data-view="overview"><span>⌂</span>${__("Dashboard")}</button>
+					<button data-view="contractors"><span>♙</span>${__("Contractors")}</button>
+					<button data-view="operations"><span>⌘</span>${__("Process Overview")}</button>
+					<button data-view="orders"><span>▤</span>${__("Order Sheets")}</button>
+					<button data-view="details"><span>▧</span>${__("Billing Details")}</button>
+					<button data-route="List/Contractor Settlement"><span>♧</span>${__("Settlements")}</button>
+					<button data-view="operations"><span>▥</span>${__("Reports")}</button>
+					<button data-view="unbilled"><span>◷</span>${__("Unbilled Items")}</button>
+				</nav>
+				<div class="cb-shortcuts">
+					<strong>${__("Filter shortcuts")}</strong>
+					<button data-period="month">${__("This Month")}</button>
+					<button data-period="last-month">${__("Last Month")}</button>
+					<button data-period="quarter">${__("This Quarter")}</button>
+					<button data-period="year">${__("This Year")}</button>
+				</div>
+			</aside>
+			<main class="cb-main">
+			<div class="cb-hero">
+				<div class="cb-hero-main">
+					<h2>${__("Contractor Billing Dashboard")} <span class="cb-title-info">i</span></h2>
+					<p class="cb-hero-sub">${__(
+						"Track contractor billing, payments and outstanding amounts"
+					)}</p>
+				</div>
+				<div class="cb-hero-side">
+					<button class="cb-date-button" id="cb-date-button">▣ <span id="cb-header-period"></span>⌄</button>
+					<button class="cb-header-button" id="cb-filter-button">▽ ${__("Filters")}</button>
+					<button class="cb-header-button" id="cb-export-button">⇩ ${__("Export")}</button>
+				</div>
+			</div>
+			<div class="cb-alert" id="cb-coverage-alert" hidden></div>
+			<div class="cb-toolbar">
+				<div class="cb-toolbar-label">${__("Process")}</div>
+				<div class="cb-tabs" id="cb-process-tabs"></div>
+				<div class="cb-toolbar-actions">
+					<span class="cb-period" id="cb-period"></span>
+				</div>
+			</div>
+			<div class="cb-viewbar">
+				<div class="cb-view-tabs" role="tablist" aria-label="${__("Dashboard views")}">
+					<button class="cb-view-tab active" data-view="overview" role="tab">${__("Overview")}</button>
+					<button class="cb-view-tab" data-view="contractors" role="tab">${__("Contractors")}</button>
+					<button class="cb-view-tab" data-view="operations" role="tab">${__("Operations")}</button>
+					<button class="cb-view-tab" data-view="details" role="tab">${__("Billing details")}</button>
+				</div>
+				<div class="cb-updated" id="cb-updated"></div>
+			</div>
+			<div class="cb-kpi-grid" id="cb-kpis"></div>
+			<div class="cb-view-panel" data-view-panel="overview">
+			<div class="cb-charts-grid cb-charts-grid--trend cb-overview-charts">
+				<div class="cb-card cb-card-chart">
+					<div class="cb-card-head"><div><h4>${__("Billing by Process")}</h4></div><span class="cb-chart-select">${__("Amount")}⌄</span></div>
+					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--lg"><canvas id="cb-process-chart"></canvas></div>
+				</div>
+				<div class="cb-card cb-card-chart">
+					<div class="cb-card-head"><div><h4>${__("Billing & Quantity Trend")}</h4></div><span class="cb-chart-select">${__("Monthly")}⌄</span></div>
+					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--lg"><canvas id="cb-trend-chart"></canvas></div>
+				</div>
+			</div>
+			<div class="cb-overview-bottom">
+				<div class="cb-card cb-summary-card">
+					<div class="cb-card-head"><div><h4>${__("Contractor Wise Billing Summary")}</h4></div><button class="cb-view-all" data-go-view="contractors">${__("View All")}</button></div>
+					<div class="table-responsive"><table class="table cb-summary-table"><thead><tr><th>#</th><th>${__("Contractor")}</th><th>${__("Total Bill")}</th><th>${__("Paid")}</th><th>${__("Outstanding")}</th><th>${__("% Paid")}</th><th>${__("Process")}</th></tr></thead><tbody id="cb-summary-body"></tbody></table></div>
+				</div>
+				<div class="cb-overview-side">
+					<div class="cb-card cb-order-list-card"><div class="cb-card-head"><h4>${__("Top Order Sheets")}</h4></div><div id="cb-top-orders"></div></div>
+					<div class="cb-card cb-unbilled-card"><span>${__("Unbilled Items")}</span><strong id="cb-unbilled-count">0</strong><small>${__("production rows missing style rates")}</small><button data-go-view="unbilled">${__("View Unbilled Items")}</button></div>
+				</div>
+			</div>
+			<div class="cb-explain">
+				<div class="cb-explain-icon">i</div>
+				<div><strong>${__("How billing is calculated")}</strong><span>${__("Submitted production quantity × the matching rate and quantity configured on the Item Style tab. Paid amounts come from submitted Contractor Settlements and linked Purchase Invoices.")}</span></div>
+			</div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="contractors" hidden>
+			<div class="cb-charts-grid cb-charts-grid--3">
+				<div class="cb-card cb-card-chart cb-card-span-2">
+					<div class="cb-card-head"><div><h4>${__("Contractor ledger")}</h4><span class="cb-card-hint">${__("Paid vs due per contractor — click bar to filter")}</span></div></div>
+					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--md"><canvas id="cb-contractor-chart"></canvas></div>
+				</div>
+				<div class="cb-card cb-card-chart cb-card-payment">
+					<div class="cb-card-head"><div><h4>${__("Payment split")}</h4><span class="cb-card-hint">${__("Paid vs outstanding")}</span></div></div>
+					<div class="cb-payment-center" id="cb-payment-center"></div>
+					<div class="cb-chart-canvas-wrap"><canvas id="cb-payment-chart"></canvas></div>
+				</div>
+			</div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="operations" hidden>
+			<div class="cb-charts-grid cb-charts-grid--3">
+				<div class="cb-card cb-card-chart">
+					<div class="cb-card-head"><div><h4>${__("Production volume")}</h4><span class="cb-card-hint">${__("Submitted report rows by process")}</span></div></div>
+					<div class="cb-chart-canvas-wrap"><canvas id="cb-volume-chart"></canvas></div>
+				</div>
+				<div class="cb-card cb-card-chart">
+					<div class="cb-card-head"><div><h4>${__("Style tab coverage")}</h4><span class="cb-card-hint">${__("Rated vs missing rates")}</span></div></div>
+					<div class="cb-chart-canvas-wrap"><canvas id="cb-coverage-chart"></canvas></div>
+				</div>
+				<div class="cb-card cb-card-chart">
+					<div class="cb-card-head"><div><h4>${__("Settlement status")}</h4><span class="cb-card-hint">${__("Row counts by payment status")}</span></div></div>
+					<div class="cb-chart-canvas-wrap"><canvas id="cb-status-chart"></canvas></div>
+				</div>
+			</div>
+			<div class="cb-charts-grid">
+				<div class="cb-card cb-card-chart">
+					<div class="cb-card-head"><div><h4>${__("Top orders")}</h4><span class="cb-card-hint">${__("Highest billed order sheets")}</span></div></div>
+					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--md"><canvas id="cb-order-chart"></canvas></div>
+				</div>
+				<div class="cb-card cb-card-chart">
+					<div class="cb-card-head"><div><h4>${__("Quantity by process")}</h4><span class="cb-card-hint">${__("Billable work quantity")}</span></div></div>
+					<div class="cb-chart-canvas-wrap cb-chart-canvas-wrap--md"><canvas id="cb-qty-chart"></canvas></div>
+				</div>
+			</div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="orders" hidden>
+				<div class="cb-section-heading"><div><h3>${__("Order Sheets")}</h3><p>${__("Billing and payment position summarized by Order Sheet")}</p></div><input type="search" id="cb-order-search" placeholder="${__("Search Order Sheet…")}" /></div>
+				<div class="cb-card cb-card-table"><div class="table-responsive"><table class="table cb-table cb-work-table"><thead><tr><th>${__("Order Sheet")}</th><th>${__("Processes")}</th><th class="text-right">${__("Quantity")}</th><th class="text-right">${__("Total Bill")}</th><th class="text-right">${__("Paid")}</th><th class="text-right">${__("Outstanding")}</th><th>${__("Payment Progress")}</th></tr></thead><tbody id="cb-orders-body"></tbody></table></div></div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="unbilled" hidden>
+				<div class="cb-section-heading"><div><h3>${__("Unbilled Items")}</h3><p>${__("Submitted production rows that have no matching Item Style rate")}</p></div><input type="search" id="cb-unbilled-search" placeholder="${__("Search Item, report or order…")}" /></div>
+				<div class="cb-unbilled-summary"><strong id="cb-unbilled-total">0</strong><span>${__("rows require rate configuration")}</span><small id="cb-unbilled-limit-note"></small></div>
+				<div class="cb-card cb-card-table"><div class="table-responsive"><table class="table cb-table cb-work-table"><thead><tr><th>${__("Report")}</th><th>${__("Date")}</th><th>${__("Process")}</th><th>${__("Order Sheet")}</th><th>${__("Item")}</th><th>${__("Combo / Article")}</th><th class="text-right">${__("Work Qty")}</th><th>${__("Reason")}</th></tr></thead><tbody id="cb-unbilled-body"></tbody></table></div></div>
+			</div>
+			<div class="cb-view-panel" data-view-panel="details" hidden>
+			<div class="cb-card cb-card-table">
+				<div class="cb-table-head">
+					<div>
+						<h4>${__("Billing details")}</h4>
+						<span class="cb-card-hint">${__("Expand a row for report-level breakdown")}</span>
+					</div>
+					<div class="cb-table-toolbar">
+						<input type="search" class="cb-search" id="cb-search" placeholder="${__(
+							"Search contractor or order…"
+						)}" />
+						<select class="cb-select" id="cb-status-filter">
+							<option value="All">${__("All statuses")}</option>
+							<option value="Paid">${__("Paid")}</option>
+							<option value="Partial">${__("Partial")}</option>
+							<option value="Due">${__("Due")}</option>
+						</select>
+						<span class="cb-row-count" id="cb-row-count"></span>
+					</div>
+				</div>
+				<div class="table-responsive">
+					<table class="table cb-table">
+						<thead>
+							<tr>
+								<th class="cb-col-expand"></th>
+								<th>${__("Contractor")}</th>
+								<th>${__("Process")}</th>
+								<th>${__("Order")}</th>
+								<th class="text-right">${__("Qty")}</th>
+								<th>${__("Status")}</th>
+								<th class="text-right">${__("Total Bill")}</th>
+								<th class="text-right">${__("Paid")}</th>
+								<th class="text-right">${__("Due")}</th>
+								<th>${__("Progress")}</th>
+							</tr>
+						</thead>
+						<tbody id="cb-table-body"></tbody>
+					</table>
+				</div>
+			</div>
+			</div>
+			</main>
+		</div>
+	`);
+
+	$(page.body).append($root);
+
+	const PROCESSES = ["All", "Cutting", "Stitching", "Sub-Assembly", "Quality", "Packing"];
+	const $tabs = $("#cb-process-tabs");
+	PROCESSES.forEach((proc) => {
+		$tabs.append(
+			`<button type="button" class="cb-tab${proc === "All" ? " active" : ""}" data-process="${proc}">${__(
+				proc
+			)}</button>`
+		);
+	});
+
+	$tabs.on("click", ".cb-tab", function () {
+		$tabs.find(".cb-tab").removeClass("active");
+		$(this).addClass("active");
+		state.process = $(this).data("process");
+		state.expanded.clear();
+		load_data();
+	});
+
+	function show_view(view) {
+		state.view = view;
+		$(".cb-view-tab").removeClass("active").attr("aria-selected", "false");
+		$(`.cb-view-tab[data-view="${view}"]`).addClass("active").attr("aria-selected", "true");
+		$(".cb-side-nav [data-view]").removeClass("active");
+		$(`.cb-side-nav [data-view="${view}"]`).first().addClass("active");
+		$("[data-view-panel]").prop("hidden", true);
+		$(`[data-view-panel="${state.view}"]`).prop("hidden", false);
+		requestAnimationFrame(() => Object.values(state.charts).forEach((chart) => chart.resize()));
+	}
+
+	$(".cb-view-tabs").on("click", ".cb-view-tab", function () {
+		show_view($(this).data("view"));
+	});
+
+	$(".cb-side-nav").on("click", "button", function () {
+		const view = $(this).data("view");
+		const route = $(this).data("route");
+		if (view) show_view(view);
+		if (route) frappe.set_route(...String(route).split("/"));
+	});
+
+	$root.on("click", "[data-go-view]", function () {
+		show_view($(this).data("go-view"));
+	});
+
+	$("#cb-export-button").on("click", export_rows);
+	$("#cb-filter-button").on("click", () => {
+		$root.find(".cb-dashboard").toggleClass("show-filters");
+		setTimeout(() => filters.order_sheet.$input?.focus(), 50);
+	});
+	$("#cb-date-button").on("click", () => filters.from_date.$input?.focus());
+
+	$(".cb-shortcuts").on("click", "[data-period]", function () {
+		const today = new Date();
+		let from = new Date(today.getFullYear(), today.getMonth(), 1);
+		let to = today;
+		const period = $(this).data("period");
+		if (period === "last-month") {
+			from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+			to = new Date(today.getFullYear(), today.getMonth(), 0);
+		} else if (period === "quarter") {
+			from = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+		} else if (period === "year") {
+			from = new Date(today.getFullYear(), 0, 1);
+		}
+		filters.from_date.set_value(frappe.datetime.obj_to_str(from));
+		filters.to_date.set_value(frappe.datetime.obj_to_str(to));
+	});
+
+	$("#cb-status-filter").on("change", function () {
+		state.status = $(this).val();
+		load_data();
+	});
+
+	let searchTimer;
+	$("#cb-search").on("input", function () {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(load_data, 300);
+	});
+	$("#cb-order-search, #cb-unbilled-search").on("input", () => render_work_views(state.data || {}));
+
+	Object.values(filters).forEach((field) => {
+		if (field && field.$input) {
+			field.$input.on("change", () => load_data());
+		}
+	});
+
+	$("#cb-table-body").on("click", ".cb-expand-btn", function (e) {
+		e.stopPropagation();
+		const key = $(this).closest("tr").data("row-key");
+		if (state.expanded.has(key)) state.expanded.delete(key);
+		else state.expanded.add(key);
+		render_table(state.data?.rows || []);
+	});
+
+	$("#cb-table-body").on("click", ".cb-row-main", function () {
+		const key = $(this).data("row-key");
+		if (state.expanded.has(key)) state.expanded.delete(key);
+		else state.expanded.add(key);
+		render_table(state.data?.rows || []);
+	});
+
+	function load_data() {
+		load_chartjs()
+			.then(() => {
+				frappe.call({
+					method:
+						"manufacturing_addon.manufacturing_addon.page.contractor_billing.contractor_billing.get_contractor_billing_data",
+					args: {
+						filters: {
+							order_sheet: filters.order_sheet.get_value(),
+							contractor: filters.contractor.get_value(),
+							from_date: filters.from_date.get_value(),
+							to_date: filters.to_date.get_value(),
+							process: state.process,
+							status: state.status,
+							search: $("#cb-search").val(),
+						},
+					},
+					freeze: true,
+					freeze_message: __("Loading billing data…"),
+					callback(r) {
+						state.data = r.message || {};
+						render_dashboard(state.data);
+					},
+				});
+			})
+			.catch(() => {
+				frappe.msgprint(__("Could not load chart libraries. Please refresh the page."));
+			});
+	}
+
+	function render_dashboard(data) {
+		render_hero(data.kpis || {}, data.filters || {});
+		render_coverage_alert(data.kpis || {});
+		render_kpis(data.kpis || {});
+		render_insights(data);
+		render_trend_chart(data.trend_chart || {});
+		render_payment_chart(data.kpis || {});
+		render_contractor_chart(data.contractor_stacked || data.process_chart || {});
+		render_process_chart(data.process_totals || {});
+		render_volume_chart(data.report_volume || {});
+		render_coverage_chart(data.coverage_chart || {});
+		render_status_chart(data.status_summary || {}, data.rows || []);
+		render_order_chart(data.order_chart || {});
+		render_qty_chart(data.process_qty || {});
+		render_table(data.rows || []);
+		render_overview_summary(data);
+		render_work_views(data);
+		const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+		$("#cb-updated").text(`${__("Updated")} ${now}`);
+	}
+
+	function render_hero(k, filters) {
+		const cleared = Math.min(k.cleared_pct || 0, 100);
+		$("#cb-hero-due").text(`${format_currency(k.total_due)} ${__("outstanding")}`);
+		$("#cb-ring-pct").text(`${cleared}%`);
+		const circumference = 2 * Math.PI * 52;
+		const offset = circumference - (cleared / 100) * circumference;
+		$("#cb-ring-fill").css({
+			strokeDasharray: circumference,
+			strokeDashoffset: offset,
+		});
+		const from = filters.from_date ? frappe.datetime.str_to_user(filters.from_date) : "";
+		const to = filters.to_date ? frappe.datetime.str_to_user(filters.to_date) : "";
+		$("#cb-period").text(from && to ? `${from} → ${to}` : "");
+		$("#cb-header-period").text(from && to ? `${from}  →  ${to}` : __("Select period"));
+	}
+
+	function render_overview_summary(data) {
+		const rows = data.rows || [];
+		const grouped = {};
+		rows.forEach((row) => {
+			const key = row.contractor || __("Unassigned");
+			const item = grouped[key] || (grouped[key] = { billed: 0, paid: 0, due: 0, processes: new Set() });
+			item.billed += flt(row.total_bill);
+			item.paid += flt(row.paid);
+			item.due += flt(row.due);
+			if (row.process) item.processes.add(row.process);
+		});
+		const contractors = Object.entries(grouped).sort((a, b) => b[1].billed - a[1].billed).slice(0, 5);
+		$("#cb-summary-body").html(
+			contractors.length
+				? contractors.map(([name, item], index) => {
+					const pct = item.billed ? Math.min((item.paid / item.billed) * 100, 100) : 0;
+					const pills = [...item.processes].slice(0, 3).map((p) => `<span class="cb-mini-process">${frappe.utils.escape_html(p.slice(0, 2).toUpperCase())}</span>`).join("");
+					return `<tr><td>${index + 1}</td><td><strong>${frappe.utils.escape_html(name)}</strong></td><td>${format_currency(item.billed)}</td><td>${format_currency(item.paid)}</td><td>${format_currency(item.due)}</td><td><div class="cb-table-progress"><span>${pct.toFixed(1)}%</span><i><b style="width:${pct}%"></b></i></div></td><td>${pills || "—"}</td></tr>`;
+				}).join("")
+				: `<tr><td colspan="7" class="cb-empty">${__("No contractor billing in this period.")}</td></tr>`
+		);
+
+		const orders = data.order_chart || {};
+		$("#cb-top-orders").html((orders.labels || []).slice(0, 5).map((label, index) => `<a href="/app/order-sheet/${encodeURIComponent(label)}"><span>▧ ${frappe.utils.escape_html(label)}</span><strong>${format_currency((orders.amounts || [])[index])}</strong></a>`).join("") || `<div class="cb-empty">${__("No billed orders")}</div>`);
+		const k = data.kpis || {};
+		$("#cb-unbilled-count").text(Math.max((k.report_qty_rows || 0) - (k.rated_report_rows || 0), 0));
+	}
+
+	function render_work_views(data) {
+		const orderSearch = String($("#cb-order-search").val() || "").toLowerCase();
+		const orders = {};
+		(data.rows || []).forEach((row) => {
+			const name = row.order_sheet || __("No Order Sheet");
+			const item = orders[name] || (orders[name] = { qty: 0, billed: 0, paid: 0, due: 0, processes: new Set() });
+			item.qty += flt(row.qty);
+			item.billed += flt(row.total_bill);
+			item.paid += flt(row.paid);
+			item.due += flt(row.due);
+			if (row.process) item.processes.add(row.process);
+		});
+		const orderRows = Object.entries(orders)
+			.filter(([name]) => !orderSearch || name.toLowerCase().includes(orderSearch))
+			.sort((a, b) => b[1].billed - a[1].billed);
+		$("#cb-orders-body").html(orderRows.length ? orderRows.map(([name, item]) => {
+			const pct = item.billed ? Math.min((item.paid / item.billed) * 100, 100) : 0;
+			const orderLink = name === __("No Order Sheet") ? frappe.utils.escape_html(name) : `<a class="cb-link" href="/app/order-sheet/${encodeURIComponent(name)}">${frappe.utils.escape_html(name)}</a>`;
+			const processes = [...item.processes].map((p) => `<span class="cb-process-pill">${frappe.utils.escape_html(p)}</span>`).join(" ");
+			return `<tr><td>${orderLink}</td><td>${processes || "—"}</td><td class="text-right">${format_number(item.qty)}</td><td class="text-right cb-money">${format_currency(item.billed)}</td><td class="text-right cb-paid">${format_currency(item.paid)}</td><td class="text-right cb-due">${format_currency(item.due)}</td><td><div class="cb-table-progress"><span>${pct.toFixed(1)}%</span><i><b style="width:${pct}%"></b></i></div></td></tr>`;
+		}).join("") : `<tr><td colspan="7" class="cb-empty">${__("No Order Sheet billing matches this view.")}</td></tr>`);
+
+		const unbilled = data.unbilled || { total: 0, rows: [] };
+		const unbilledSearch = String($("#cb-unbilled-search").val() || "").toLowerCase();
+		const missingRows = (unbilled.rows || []).filter((row) => !unbilledSearch || [row.item_code, row.report_name, row.order_sheet, row.process, row.combo_item, row.article].some((value) => String(value || "").toLowerCase().includes(unbilledSearch)));
+		$("#cb-unbilled-total, #cb-unbilled-count").text(unbilled.total || 0);
+		$("#cb-unbilled-limit-note").text(unbilled.is_limited ? __("Showing the first 500 rows. Use filters to narrow the result.") : "");
+		$("#cb-unbilled-body").html(missingRows.length ? missingRows.map((row) => {
+			const reportRoute = String(row.report_doctype || "").toLowerCase().replace(/\s+/g, "-");
+			const reportLink = row.report_name ? `<a class="cb-link" href="/app/${reportRoute}/${encodeURIComponent(row.report_name)}">${frappe.utils.escape_html(row.report_name)}</a>` : "—";
+			const orderLink = row.order_sheet ? `<a class="cb-link" href="/app/order-sheet/${encodeURIComponent(row.order_sheet)}">${frappe.utils.escape_html(row.order_sheet)}</a>` : "—";
+			const combo = [row.combo_item, row.article].filter(Boolean).join(" / ") || "—";
+			return `<tr><td>${reportLink}</td><td>${frappe.utils.escape_html(row.report_date || "—")}</td><td><span class="cb-process-pill">${frappe.utils.escape_html(row.process || "")}</span></td><td>${orderLink}</td><td><strong>${frappe.utils.escape_html(row.item_code || "")}</strong></td><td>${frappe.utils.escape_html(combo)}</td><td class="text-right">${format_number(row.work_qty)}</td><td><span class="cb-missing-reason">${frappe.utils.escape_html(row.reason || "")}</span></td></tr>`;
+		}).join("") : `<tr><td colspan="8" class="cb-empty">${__("No unbilled production rows match this view.")}</td></tr>`);
+	}
+
+	function render_coverage_alert(k) {
+		const total = k.report_qty_rows || 0;
+		const billed = k.rated_report_rows || 0;
+		const $alert = $("#cb-coverage-alert");
+		if (!total || billed >= total) {
+			$alert.prop("hidden", true).empty();
+			return;
+		}
+		const pct = total ? Math.round((billed / total) * 100) : 0;
+		$alert.prop("hidden", false).html(`
+			<div class="cb-alert-icon">ℹ</div>
+			<div class="cb-alert-body">
+				<strong>${__("Style tab coverage is low")}</strong>
+				<span>${billed} ${__("of")} ${total} ${__(
+					"report lines have billable rates"
+				)} (${pct}%). ${__(
+					"Add Cutting / Stitching / Packing rates on each Item's Style tab to bill the rest."
+				)}</span>
+			</div>
+		`);
+	}
+
+	function render_kpis(k) {
+		const coverage = k.report_qty_rows
+			? Math.round(((k.rated_report_rows || 0) / k.report_qty_rows) * 100)
+			: 0;
+		$("#cb-kpis").html(`
+			<div class="cb-kpi cb-kpi-billed">
+				<div class="cb-kpi-top">
+					<span class="cb-kpi-icon">↗</span>
+					<span class="cb-kpi-badge">${k.contractor_count || 0} ${__("contractors")}</span>
+				</div>
+				<span class="cb-kpi-label">${__("Total billed")}</span>
+				<div class="cb-kpi-value">${format_currency(k.total_billed)}</div>
+				<div class="cb-kpi-sub">${format_number(k.line_count || 0)} ${__("billable style lines")}</div>
+			</div>
+			<div class="cb-kpi cb-kpi-paid">
+				<div class="cb-kpi-top">
+					<span class="cb-kpi-icon">✓</span>
+					<span class="cb-kpi-badge cb-kpi-badge-success">${k.cleared_pct || 0}% ${__("cleared")}</span>
+				</div>
+				<span class="cb-kpi-label">${__("Amount paid")}</span>
+				<div class="cb-kpi-value">${format_currency(k.total_paid)}</div>
+				<div class="cb-kpi-bar"><span class="cb-kpi-bar-fill cb-kpi-bar-success" style="width:${Math.min(k.cleared_pct || 0, 100)}%"></span></div>
+			</div>
+			<div class="cb-kpi cb-kpi-outstanding">
+				<div class="cb-kpi-top">
+					<span class="cb-kpi-icon">!</span>
+					<span class="cb-kpi-badge cb-kpi-badge-danger">${k.bills_due || 0} ${__("open")}</span>
+				</div>
+				<span class="cb-kpi-label">${__("Outstanding")}</span>
+				<div class="cb-kpi-value">${format_currency(k.total_due)}</div>
+				<div class="cb-kpi-sub">${k.bills_partial || 0} ${__("partial")} · ${k.bills_draft || 0} ${__("draft settlements")}</div>
+			</div>
+			<div class="cb-kpi cb-kpi-coverage">
+				<div class="cb-kpi-top">
+					<span class="cb-kpi-icon">◎</span>
+					<span class="cb-kpi-badge">${k.rated_report_rows || 0} / ${k.report_qty_rows || 0}</span>
+				</div>
+				<span class="cb-kpi-label">${__("Rate coverage")}</span>
+				<div class="cb-kpi-value">${coverage}%</div>
+				<div class="cb-kpi-sub">${format_number(k.report_qty_rows || 0)} ${__("submitted production rows")}</div>
+			</div>
+		`);
+	}
+
+	function render_insights(data) {
+		const k = data.kpis || {};
+		const rows = data.rows || [];
+		const proc = data.process_totals || {};
+		const topProc = Object.entries(proc).sort((a, b) => b[1] - a[1])[0];
+		const topRow = rows.slice().sort((a, b) => flt(b.total_bill) - flt(a.total_bill))[0];
+		const avgBill = rows.length ? flt(k.total_billed) / rows.length : 0;
+		$("#cb-insights").html(`
+			<div class="cb-insight"><span class="cb-insight-label">${__("Avg per row")}</span><strong>${format_currency(avgBill)}</strong></div>
+			<div class="cb-insight"><span class="cb-insight-label">${__("Top process")}</span><strong>${topProc ? frappe.utils.escape_html(topProc[0]) : "—"}</strong><small>${topProc ? format_currency(topProc[1]) : ""}</small></div>
+			<div class="cb-insight"><span class="cb-insight-label">${__("Largest bill")}</span><strong>${topRow ? frappe.utils.escape_html(topRow.contractor || "") : "—"}</strong><small>${topRow ? format_currency(topRow.total_bill) : ""}</small></div>
+			<div class="cb-insight"><span class="cb-insight-label">${__("Coverage")}</span><strong>${k.report_qty_rows ? Math.round(((k.rated_report_rows || 0) / k.report_qty_rows) * 100) : 0}%</strong><small>${k.rated_report_rows || 0} / ${k.report_qty_rows || 0} ${__("lines rated")}</small></div>
+		`);
+	}
+
+	function destroy_chart(key) {
+		if (state.charts[key]) {
+			state.charts[key].destroy();
+			delete state.charts[key];
+		}
+	}
+
+	function chart_font() {
+		return { family: getComputedStyle(document.body).fontFamily || "inherit", size: 11 };
+	}
+
+	function chart_options(extra = {}) {
+		const base = {
+			responsive: true,
+			maintainAspectRatio: false,
+			plugins: {
+				legend: { labels: { font: chart_font(), boxWidth: 12, padding: 14 } },
+				tooltip: {
+					backgroundColor: "#0f172a",
+					titleFont: chart_font(),
+					bodyFont: chart_font(),
+					padding: 10,
+					cornerRadius: 8,
+				},
+			},
+			animation: { duration: 700, easing: "easeOutQuart" },
+		};
+		return $.extend(true, {}, base, extra);
+	}
+
+	function currency_tooltip() {
+		return {
+			callbacks: {
+				label: (ctx) => {
+					const label = ctx.dataset.label ? `${ctx.dataset.label}: ` : "";
+					return `${label}${format_currency(ctx.parsed.y ?? ctx.parsed.x ?? ctx.raw)}`;
+				},
+			},
+		};
+	}
+
+	function show_chart_empty(canvasId, message) {
+		destroy_chart(canvasId);
+		const wrap = document.getElementById(canvasId)?.parentElement;
+		if (!wrap) return;
+		wrap.querySelector(".cb-chart-empty")?.remove();
+		const el = document.createElement("div");
+		el.className = "cb-chart-empty";
+		el.textContent = message;
+		wrap.appendChild(el);
+	}
+
+	function clear_chart_empty(canvasId) {
+		document.getElementById(canvasId)?.parentElement?.querySelector(".cb-chart-empty")?.remove();
+	}
+
+	function render_trend_chart(chart) {
+		const canvas = document.getElementById("cb-trend-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("trend");
+		const labels = chart.labels || [];
+		if (!labels.length) {
+			show_chart_empty("cb-trend-chart", __("No trend data for selected period."));
+			return;
+		}
+		clear_chart_empty("cb-trend-chart");
+		state.charts.trend = new Chart(canvas.getContext("2d"), {
+			type: "line",
+			data: {
+				labels,
+				datasets: [
+					{
+						type: "line",
+						label: __("Billed"),
+						data: chart.billed || [],
+						borderColor: "#2563eb",
+						backgroundColor: "rgba(37, 99, 235, .10)",
+						borderWidth: 2.5,
+						pointRadius: 4,
+						pointBackgroundColor: "#2563eb",
+						tension: .35,
+						fill: true,
+						yAxisID: "y",
+						order: 2,
+					},
+					{
+						type: "line",
+						label: __("Paid Amount"),
+						data: chart.paid || [],
+						borderColor: "#0f766e",
+						backgroundColor: "rgba(15, 118, 110, 0.08)",
+						borderWidth: 2.5,
+						tension: 0.35,
+						fill: true,
+						pointRadius: 4,
+						pointHoverRadius: 6,
+						yAxisID: "y",
+						order: 1,
+					},
+				],
+			},
+			options: chart_options({
+				interaction: { mode: "index", intersect: false },
+				plugins: {
+					legend: { position: "top", align: "end" },
+					tooltip: {
+						callbacks: {
+							label: (ctx) => {
+								return `${ctx.dataset.label}: ${format_currency(ctx.parsed.y)}`;
+							},
+						},
+					},
+				},
+				scales: {
+					x: { grid: { display: false }, ticks: { font: chart_font(), maxRotation: 45 } },
+					y: {
+						position: "left",
+						ticks: { callback: (v) => format_compact(v), font: chart_font() },
+						grid: { color: "#f1f5f9" },
+					},
+				},
+			}),
+		});
+	}
+
+	function render_payment_chart(kpis) {
+		const canvas = document.getElementById("cb-payment-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("payment");
+		const paid = flt(kpis.total_paid);
+		const due = flt(kpis.total_due);
+		if (paid <= 0 && due <= 0) {
+			$("#cb-payment-center").empty();
+			show_chart_empty("cb-payment-chart", __("No payment data yet."));
+			return;
+		}
+		clear_chart_empty("cb-payment-chart");
+		$("#cb-payment-center").html(`
+			<div class="cb-payment-total">${format_currency(flt(kpis.total_billed))}</div>
+			<div class="cb-payment-sub">${__("total billed")}</div>
+		`);
+		state.charts.payment = new Chart(canvas.getContext("2d"), {
+			type: "doughnut",
+			data: {
+				labels: [__("Paid"), __("Due")],
+				datasets: [
+					{
+						data: [paid, due],
+						backgroundColor: ["#10b981", "#ef4444"],
+						borderWidth: 3,
+						borderColor: "#ffffff",
+						hoverOffset: 10,
+					},
+				],
+			},
+			options: chart_options({
+				cutout: "70%",
+				plugins: {
+					legend: { position: "bottom" },
+					tooltip: currency_tooltip(),
+				},
+			}),
+		});
+	}
+
+	function contractor_initials(name) {
+		return String(name || "?")
+			.split(/[\s(]+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((w) => w[0])
+			.join("")
+			.toUpperCase();
+	}
+
+	function short_label(text, max = 24) {
+		const s = String(text || "");
+		return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+	}
+
+	function render_contractor_chart(chart) {
+		const canvas = document.getElementById("cb-contractor-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("contractor");
+		const labels = (chart.labels || []).map((l) => short_label(l, 28));
+		const rawLabels = chart.labels || [];
+		if (!labels.length) {
+			show_chart_empty(
+				"cb-contractor-chart",
+				__("No billable contractors. Add Style tab rates on Items used in submitted reports.")
+			);
+			return;
+		}
+		clear_chart_empty("cb-contractor-chart");
+		const hasStack = chart.paid && chart.due;
+		const datasets = hasStack
+			? [
+					{
+						label: __("Paid"),
+						data: chart.paid,
+						backgroundColor: "#10b981",
+						borderRadius: 4,
+						stack: "stack",
+					},
+					{
+						label: __("Due"),
+						data: chart.due,
+						backgroundColor: "#ef4444",
+						borderRadius: 4,
+						stack: "stack",
+					},
+				]
+			: [
+					{
+						label: __("Billed"),
+						data: chart.amounts || [],
+						backgroundColor: "#4f46e5",
+						borderRadius: 6,
+					},
+				];
+		state.charts.contractor = new Chart(canvas.getContext("2d"), {
+			type: "bar",
+			data: { labels, datasets },
+			options: chart_options({
+				indexAxis: "y",
+				plugins: {
+					legend: { position: "top", align: "end" },
+					tooltip: currency_tooltip(),
+				},
+				scales: {
+					x: {
+						stacked: !!hasStack,
+						ticks: { callback: (v) => format_compact(v), font: chart_font() },
+						grid: { color: "#f1f5f9" },
+					},
+					y: { stacked: !!hasStack, grid: { display: false }, ticks: { font: { ...chart_font(), weight: "600" } } },
+				},
+				onClick: (_e, elements) => {
+					if (!elements.length || !filters.contractor) return;
+					const idx = elements[0].index;
+					const name = rawLabels[idx];
+					if (name) {
+						filters.contractor.set_value(name);
+						load_data();
+					}
+				},
+			}),
+		});
+	}
+
+	const PROCESS_COLORS = {
+		Cutting: "#4f46e5",
+		Stitching: "#059669",
+		"Sub-Assembly": "#d97706",
+		Quality: "#9333ea",
+		Packing: "#0891b2",
+		Other: "#94a3b8",
+	};
+
+	function process_colors(labels) {
+		return (labels || []).map((l) => PROCESS_COLORS[l] || "#64748b");
+	}
+
+	function render_process_chart(processTotals) {
+		const canvas = document.getElementById("cb-process-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("process");
+		const labels = Object.keys(processTotals || {});
+		const data = labels.map((k) => processTotals[k]);
+		if (!labels.length) {
+			show_chart_empty("cb-process-chart", __("No process breakdown."));
+			return;
+		}
+		clear_chart_empty("cb-process-chart");
+		state.charts.process = new Chart(canvas.getContext("2d"), {
+			type: "doughnut",
+			data: {
+				labels,
+				datasets: [
+					{
+						data,
+						backgroundColor: process_colors(labels).map((c) => c + "cc"),
+						borderColor: "#fff",
+						borderWidth: 2,
+					},
+				],
+			},
+			options: chart_options({
+				cutout: "60%",
+				plugins: {
+					legend: { position: "right", labels: { padding: 18, usePointStyle: true, pointStyle: "circle" } },
+					tooltip: currency_tooltip(),
+				},
+				onClick: (_e, elements) => {
+					if (!elements.length) return;
+					const proc = labels[elements[0].index];
+					if (!proc) return;
+					state.process = proc;
+					$tabs.find(".cb-tab").removeClass("active");
+					const $match = $tabs.find(`.cb-tab[data-process="${proc}"]`);
+					if ($match.length) $match.addClass("active");
+					else {
+						state.process = "All";
+						$tabs.find('.cb-tab[data-process="All"]').addClass("active");
+					}
+					load_data();
+				},
+			}),
+		});
+	}
+
+	function render_volume_chart(chart) {
+		const canvas = document.getElementById("cb-volume-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("volume");
+		const labels = chart.labels || [];
+		if (!labels.length) {
+			show_chart_empty("cb-volume-chart", __("No production report rows in range."));
+			return;
+		}
+		clear_chart_empty("cb-volume-chart");
+		state.charts.volume = new Chart(canvas.getContext("2d"), {
+			type: "bar",
+			data: {
+				labels,
+				datasets: [
+					{
+						label: __("Report lines"),
+						data: chart.counts || [],
+						backgroundColor: process_colors(labels),
+						borderRadius: 6,
+						yAxisID: "y",
+					},
+					{
+						type: "line",
+						label: __("Work qty"),
+						data: chart.work_qty || [],
+						borderColor: "#0ea5e9",
+						backgroundColor: "transparent",
+						borderWidth: 2,
+						tension: 0.3,
+						pointRadius: 3,
+						yAxisID: "y1",
+					},
+				],
+			},
+			options: chart_options({
+				plugins: {
+					legend: { position: "top", align: "end" },
+					tooltip: {
+						callbacks: {
+							label: (ctx) => {
+								if (ctx.dataset.label === __("Work qty")) {
+									return `${ctx.dataset.label}: ${format_number(ctx.parsed.y)}`;
+								}
+								return `${ctx.dataset.label}: ${format_number(ctx.parsed.y)}`;
+							},
+						},
+					},
+				},
+				scales: {
+					x: { grid: { display: false }, ticks: { font: chart_font() } },
+					y: { position: "left", ticks: { font: chart_font() }, grid: { color: "#f1f5f9" } },
+					y1: { position: "right", grid: { drawOnChartArea: false }, ticks: { font: chart_font() } },
+				},
+			}),
+		});
+	}
+
+	function render_coverage_chart(chart) {
+		const canvas = document.getElementById("cb-coverage-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("coverage");
+		const labels = chart.labels || [];
+		if (!labels.length) {
+			show_chart_empty("cb-coverage-chart", __("No coverage data."));
+			return;
+		}
+		clear_chart_empty("cb-coverage-chart");
+		state.charts.coverage = new Chart(canvas.getContext("2d"), {
+			type: "bar",
+			data: {
+				labels,
+				datasets: [
+					{
+						label: __("With Style rates"),
+						data: chart.rated || [],
+						backgroundColor: "#10b981",
+						borderRadius: 4,
+						stack: "cov",
+					},
+					{
+						label: __("Missing rates"),
+						data: chart.missing || [],
+						backgroundColor: "#fbbf24",
+						borderRadius: 4,
+						stack: "cov",
+					},
+				],
+			},
+			options: chart_options({
+				plugins: {
+					legend: { position: "top", align: "end" },
+					tooltip: {
+						callbacks: {
+							label: (ctx) => `${ctx.dataset.label}: ${format_number(ctx.parsed.y)} ${__("lines")}`,
+						},
+					},
+				},
+				scales: {
+					x: { stacked: true, grid: { display: false }, ticks: { font: chart_font() } },
+					y: { stacked: true, ticks: { font: chart_font() }, grid: { color: "#f1f5f9" } },
+				},
+			}),
+		});
+	}
+
+	function render_status_chart(statusSummary, rows) {
+		const canvas = document.getElementById("cb-status-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("status");
+		const counts = statusSummary.counts || {};
+		const labels = [__("Paid"), __("Partial"), __("Due")];
+		const data = [counts.Paid || 0, counts.Partial || 0, counts.Due || 0];
+		const amounts = [
+			rows.filter((r) => r.status === "Paid").reduce((s, r) => s + flt(r.total_bill), 0),
+			rows.filter((r) => r.status === "Partial").reduce((s, r) => s + flt(r.total_bill), 0),
+			rows.filter((r) => r.status === "Due").reduce((s, r) => s + flt(r.total_bill), 0),
+		];
+		if (!data.some((v) => v > 0)) {
+			show_chart_empty("cb-status-chart", __("No settlement rows."));
+			return;
+		}
+		clear_chart_empty("cb-status-chart");
+		state.charts.status = new Chart(canvas.getContext("2d"), {
+			type: "bar",
+			data: {
+				labels,
+				datasets: [
+					{
+						label: __("Rows"),
+						data,
+						backgroundColor: ["#10b981", "#f59e0b", "#ef4444"],
+						borderRadius: 8,
+						yAxisID: "y",
+					},
+					{
+						type: "line",
+						label: __("Amount"),
+						data: amounts,
+						borderColor: "#4f46e5",
+						backgroundColor: "transparent",
+						borderWidth: 2.5,
+						tension: 0.3,
+						pointRadius: 5,
+						yAxisID: "y1",
+					},
+				],
+			},
+			options: chart_options({
+				plugins: {
+					legend: { position: "top", align: "end" },
+					tooltip: {
+						callbacks: {
+							label: (ctx) => {
+								if (ctx.dataset.label === __("Amount")) {
+									return `${ctx.dataset.label}: ${format_currency(ctx.parsed.y)}`;
+								}
+								return `${ctx.dataset.label}: ${format_number(ctx.parsed.y)}`;
+							},
+						},
+					},
+				},
+				scales: {
+					x: { grid: { display: false }, ticks: { font: chart_font() } },
+					y: { position: "left", ticks: { stepSize: 1, font: chart_font() }, grid: { color: "#f1f5f9" } },
+					y1: {
+						position: "right",
+						grid: { drawOnChartArea: false },
+						ticks: { callback: (v) => format_compact(v), font: chart_font() },
+					},
+				},
+			}),
+		});
+	}
+
+	function render_order_chart(chart) {
+		const canvas = document.getElementById("cb-order-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("order");
+		const rawLabels = chart.labels || [];
+		const labels = rawLabels.map((l) => short_label(l, 22));
+		if (!labels.length) {
+			show_chart_empty("cb-order-chart", __("No order sheet billing."));
+			return;
+		}
+		clear_chart_empty("cb-order-chart");
+		state.charts.order = new Chart(canvas.getContext("2d"), {
+			type: "bar",
+			data: {
+				labels,
+				datasets: [
+					{
+						label: __("Billed"),
+						data: chart.amounts || [],
+						backgroundColor: "rgba(99, 102, 241, 0.8)",
+						borderRadius: 6,
+					},
+				],
+			},
+			options: chart_options({
+				indexAxis: "y",
+				plugins: { legend: { display: false }, tooltip: currency_tooltip() },
+				scales: {
+					x: { ticks: { callback: (v) => format_compact(v), font: chart_font() }, grid: { color: "#f1f5f9" } },
+					y: { grid: { display: false }, ticks: { font: { ...chart_font(), weight: "600" } } },
+				},
+			}),
+		});
+	}
+
+	function render_qty_chart(chart) {
+		const canvas = document.getElementById("cb-qty-chart");
+		if (!canvas || typeof Chart === "undefined") return;
+		destroy_chart("qty");
+		const labels = chart.labels || [];
+		if (!labels.length) {
+			show_chart_empty("cb-qty-chart", __("No billable quantity."));
+			return;
+		}
+		clear_chart_empty("cb-qty-chart");
+		state.charts.qty = new Chart(canvas.getContext("2d"), {
+			type: "doughnut",
+			data: {
+				labels,
+				datasets: [
+					{
+						data: chart.qty || [],
+						backgroundColor: process_colors(labels),
+						borderWidth: 2,
+						borderColor: "#fff",
+						hoverOffset: 8,
+					},
+				],
+			},
+			options: chart_options({
+				cutout: "55%",
+				plugins: {
+					legend: { position: "right" },
+					tooltip: {
+						callbacks: {
+							label: (ctx) => `${ctx.label}: ${format_number(ctx.parsed)}`,
+						},
+					},
+				},
+			}),
+		});
+	}
+
+	function row_key(row, idx) {
+		return `${row.contractor}|${row.process}|${row.order_sheet}|${idx}`;
+	}
+
+	function render_table(rows) {
+		const $body = $("#cb-table-body");
+		$("#cb-row-count").text(
+			rows.length ? `${rows.length} ${__("rows")}` : __("0 rows")
+		);
+		if (!rows.length) {
+			$body.html(
+				`<tr><td colspan="10" class="cb-empty">${__(
+					"No billing rows in this view. Work qty is read from submitted Cutting, Stitching, Packing & Quality reports; amounts need rates on the Item Style tab."
+				)}</td></tr>`
+			);
+			return;
+		}
+
+		const html = [];
+		rows.forEach((row, idx) => {
+			const key = row_key(row, idx);
+			const expanded = state.expanded.has(key);
+			const statusClass =
+				row.status === "Paid" ? "cb-status-paid" : row.status === "Partial" ? "cb-status-partial" : "cb-status-due";
+			const subTag = row.is_subassembly ? `<span class="cb-sub-tag">${__("sub-assembly")}</span>` : "";
+			const reports = (row.report_names || []).slice(0, 3).join(", ");
+			const moreReports = (row.report_names || []).length > 3 ? ` +${row.report_names.length - 3}` : "";
+
+			html.push(`
+			<tr class="cb-row-main${expanded ? " expanded" : ""}" data-row-key="${frappe.utils.escape_html(key)}">
+				<td class="cb-col-expand">
+					<button type="button" class="cb-expand-btn" aria-label="${__("Toggle details")}">${expanded ? "▼" : "▶"}</button>
+				</td>
+				<td>
+					<div class="cb-contractor-cell">
+						<span class="cb-avatar">${frappe.utils.escape_html(contractor_initials(row.contractor))}</span>
+						<div>
+							<div class="cb-contractor-name">${frappe.utils.escape_html(row.contractor || "")}</div>
+							${row.supplier ? `<div class="cb-contractor-sub">${frappe.utils.escape_html(row.supplier)}</div>` : ""}
+							${subTag}
+						</div>
+					</div>
+				</td>
+				<td><span class="cb-process-pill cb-process-${(row.process || "").replace(/\s/g, "-")}">${frappe.utils.escape_html(row.process || "")}</span></td>
+				<td class="cb-order">
+					${row.order_sheet ? `<a href="/app/order-sheet/${encodeURIComponent(row.order_sheet)}" class="cb-link">${frappe.utils.escape_html(row.order_sheet)}</a>` : "—"}
+					${reports ? `<div class="cb-report-refs">${frappe.utils.escape_html(reports)}${moreReports}</div>` : ""}
+				</td>
+				<td class="cb-qty">${format_number(row.qty)}</td>
+				<td><span class="cb-status ${statusClass}">${frappe.utils.escape_html(row.status || "Due")}</span></td>
+				<td class="text-right cb-money">${format_currency(row.total_bill)}</td>
+				<td class="text-right cb-money cb-paid">${format_currency(row.paid)}</td>
+				<td class="text-right cb-money cb-due">${format_currency(row.due)}</td>
+				<td>
+					<div class="cb-progress-wrap">
+						<div class="cb-progress-bar"><div class="cb-progress-fill" style="width:${row.progress || 0}%"></div></div>
+						<span class="cb-progress-pct">${row.progress || 0}%</span>
+					</div>
+				</td>
+			</tr>`);
+
+			if (expanded && (row.details || []).length) {
+				html.push(`
+				<tr class="cb-row-detail">
+					<td colspan="10">
+						<div class="cb-detail-panel">
+							<div class="cb-detail-title">${__("Report line breakdown")}</div>
+							<table class="table table-sm cb-detail-table">
+								<thead><tr>
+									<th>${__("Report")}</th>
+									<th>${__("Date")}</th>
+									<th>${__("Style")}</th>
+									<th>${__("Item")}</th>
+									<th class="text-right">${__("Work Qty")}</th>
+									<th class="text-right">${__("Rate")}</th>
+									<th class="text-right">${__("Amount")}</th>
+								</tr></thead>
+								<tbody>
+									${row.details
+										.map(
+											(d) => `
+										<tr>
+											<td><a href="#" class="cb-report-link" data-report="${frappe.utils.escape_html(d.report_name || "")}">${frappe.utils.escape_html(d.report_name || "—")}</a></td>
+											<td>${frappe.utils.escape_html(d.report_date || "—")}</td>
+											<td>${frappe.utils.escape_html(d.style || "—")}</td>
+											<td class="cb-detail-item">${frappe.utils.escape_html(d.so_item || "—")}</td>
+											<td class="text-right">${format_number(d.work_qty)}</td>
+											<td class="text-right">${format_currency(d.rate)}</td>
+											<td class="text-right">${format_currency(d.amount)}</td>
+										</tr>`
+										)
+										.join("")}
+								</tbody>
+							</table>
+						</div>
+					</td>
+				</tr>`);
+			}
+		});
+		$body.html(html.join(""));
+
+		$body.find(".cb-report-link").on("click", function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+			const name = $(this).data("report");
+			if (!name) return;
+			const doctype_map = [
+				["SR-", "Stitching Report"],
+				["CR-", "Cutting Report"],
+				["PR-", "Packing Report"],
+				["QR-", "Quality Report"],
+			];
+			for (const [prefix, doctype] of doctype_map) {
+				if (String(name).startsWith(prefix)) {
+					frappe.set_route("Form", doctype, name);
+					return;
+				}
+			}
+			frappe.show_alert({ message: name, indicator: "blue" });
+		});
+	}
+
+	function format_currency(value) {
+		return frappe.format(value || 0, { fieldtype: "Currency" });
+	}
+
+	function export_rows() {
+		const rows = state.data?.rows || [];
+		if (!rows.length) {
+			frappe.show_alert({ message: __("There are no billing rows to export."), indicator: "orange" });
+			return;
+		}
+		const columns = ["Contractor", "Supplier", "Process", "Order Sheet", "Quantity", "Status", "Total Bill", "Paid", "Due", "Progress %"];
+		const csvValue = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+		const lines = [columns, ...rows.map((r) => [r.contractor, r.supplier, r.process, r.order_sheet, r.qty, r.status, r.total_bill, r.paid, r.due, r.progress])];
+		const blob = new Blob(["\ufeff" + lines.map((line) => line.map(csvValue).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+		const link = document.createElement("a");
+		link.href = URL.createObjectURL(blob);
+		link.download = `contractor-billing-${frappe.datetime.get_today()}.csv`;
+		link.click();
+		URL.revokeObjectURL(link.href);
+	}
+
+	function format_number(value) {
+		return flt(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
+	}
+
+	function format_compact(value) {
+		const n = flt(value);
+		if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+		if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+		return String(Math.round(n));
+	}
+
+	function flt(value) {
+		return Number(value || 0) || 0;
+	}
+
+	load_data();
+};
+
+let chartjsPromise = null;
+
+function load_chartjs() {
+	if (typeof Chart !== "undefined") return Promise.resolve();
+	if (chartjsPromise) return chartjsPromise;
+	const urls = ["/assets/quality_addon/js/chart.min.js", "https://cdn.jsdelivr.net/npm/chart.js"];
+	chartjsPromise = new Promise((resolve, reject) => {
+		let idx = 0;
+		const tryNext = () => {
+			if (typeof Chart !== "undefined") return resolve();
+			if (idx >= urls.length) return reject(new Error("Chart.js failed"));
+			const script = document.createElement("script");
+			script.src = urls[idx++];
+			script.onload = () => (typeof Chart !== "undefined" ? resolve() : tryNext());
+			script.onerror = tryNext;
+			document.head.appendChild(script);
+		};
+		tryNext();
+	});
+	return chartjsPromise;
+}
+
+function inject_cb_styles() {
+	const styleId = "cb-dashboard-styles-v7";
+	document.getElementById("cb-dashboard-styles-v6")?.remove();
+	document.getElementById("cb-dashboard-styles-v5")?.remove();
+	document.getElementById("cb-dashboard-styles-v4")?.remove();
+	document.getElementById("cb-dashboard-styles-v3")?.remove();
+	document.getElementById("cb-dashboard-styles-v2")?.remove();
+	document.getElementById("cb-dashboard-styles")?.remove();
+	if (document.getElementById(styleId)) return;
+	const css = `
+		.cb-dashboard {
+			--cb-bg: #eef2f7;
+			--cb-card: #ffffff;
+			--cb-border: #e5eaf1;
+			--cb-text: #0f172a;
+			--cb-muted: #64748b;
+			--cb-success: #059669;
+			--cb-danger: #dc2626;
+			--cb-warning: #d97706;
+			--cb-primary: #4f46e5;
+			--cb-primary-soft: #eef2ff;
+			background: var(--cb-bg);
+			color: var(--cb-text);
+			padding: 20px;
+			border-radius: 16px;
+			margin: -8px -8px 12px;
+		}
+		.cb-hero {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			gap: 24px;
+			align-items: center;
+			margin-bottom: 16px;
+			padding: 28px 32px;
+			background: linear-gradient(135deg, #312e81 0%, #4f46e5 48%, #6366f1 100%);
+			border-radius: 20px;
+			color: #fff;
+			box-shadow: 0 20px 40px rgba(79, 70, 229, 0.22);
+			position: relative;
+			overflow: hidden;
+		}
+		.cb-hero::after {
+			content: "";
+			position: absolute;
+			right: -40px;
+			top: -60px;
+			width: 220px;
+			height: 220px;
+			border-radius: 50%;
+			background: rgba(255,255,255,.08);
+		}
+		.cb-hero-main { position: relative; z-index: 1; }
+		.cb-hero-eyebrow {
+			font-size: 11px;
+			font-weight: 700;
+			letter-spacing: .12em;
+			text-transform: uppercase;
+			opacity: .75;
+			margin-bottom: 8px;
+		}
+		.cb-hero h2 { margin: 0 0 8px; font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
+		.cb-hero-sub { margin: 0 0 20px; font-size: 14px; line-height: 1.55; max-width: 620px; opacity: .9; }
+		.cb-hero-stats { display: flex; flex-wrap: wrap; gap: 12px; }
+		.cb-hero-stat {
+			background: rgba(255,255,255,.12);
+			border: 1px solid rgba(255,255,255,.18);
+			border-radius: 14px;
+			padding: 12px 16px;
+			min-width: 140px;
+			backdrop-filter: blur(8px);
+		}
+		.cb-hero-stat-label { display: block; font-size: 11px; opacity: .8; margin-bottom: 4px; }
+		.cb-hero-stat strong { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+		.cb-hero-side { position: relative; z-index: 1; }
+		.cb-hero-ring { position: relative; width: 120px; height: 120px; }
+		.cb-hero-ring svg { transform: rotate(-90deg); width: 100%; height: 100%; }
+		.cb-ring-bg { fill: none; stroke: rgba(255,255,255,.18); stroke-width: 10; }
+		.cb-ring-fill {
+			fill: none;
+			stroke: #a5f3fc;
+			stroke-width: 10;
+			stroke-linecap: round;
+			transition: stroke-dashoffset .8s ease;
+		}
+		.cb-hero-ring-label {
+			position: absolute;
+			inset: 0;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			font-weight: 800;
+		}
+		.cb-hero-ring-label span { font-size: 22px; line-height: 1; }
+		.cb-hero-ring-label small { font-size: 11px; opacity: .8; margin-top: 2px; font-weight: 600; }
+		.cb-alert {
+			display: flex;
+			gap: 12px;
+			align-items: flex-start;
+			padding: 14px 16px;
+			margin-bottom: 16px;
+			background: #fffbeb;
+			border: 1px solid #fde68a;
+			border-radius: 14px;
+			color: #92400e;
+		}
+		.cb-alert-icon {
+			width: 28px; height: 28px; border-radius: 8px;
+			background: #fef3c7; display: flex; align-items: center; justify-content: center;
+			font-weight: 700; flex-shrink: 0;
+		}
+		.cb-alert-body { display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.45; }
+		.cb-alert-body strong { color: #78350f; }
+		.cb-toolbar {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 12px;
+			margin-bottom: 16px;
+			padding: 12px 16px;
+			background: var(--cb-card);
+			border: 1px solid var(--cb-border);
+			border-radius: 14px;
+			box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+		}
+		.cb-toolbar-label {
+			font-size: 11px;
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: .06em;
+			color: var(--cb-muted);
+		}
+		.cb-toolbar-actions { margin-left: auto; }
+		.cb-period { font-size: 12px; color: var(--cb-muted); font-weight: 500; }
+		.cb-viewbar {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 16px;
+			margin: 4px 0 16px;
+			border-bottom: 1px solid #dbe2ea;
+		}
+		.cb-view-tabs { display: flex; gap: 4px; overflow-x: auto; }
+		.cb-view-tab {
+			appearance: none;
+			border: 0;
+			border-bottom: 2px solid transparent;
+			background: transparent;
+			color: var(--cb-muted);
+			padding: 11px 14px;
+			font-size: 13px;
+			font-weight: 700;
+			white-space: nowrap;
+			cursor: pointer;
+		}
+		.cb-view-tab:hover { color: var(--cb-text); }
+		.cb-view-tab.active { color: var(--cb-primary); border-bottom-color: var(--cb-primary); }
+		.cb-updated { flex: none; color: var(--cb-muted); font-size: 11px; }
+		.cb-view-panel[hidden] { display: none !important; }
+		.cb-kpi-grid {
+			display: grid;
+			grid-template-columns: repeat(4, 1fr);
+			gap: 14px;
+			margin-bottom: 16px;
+		}
+		@media (max-width: 1100px) { .cb-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+		@media (max-width: 640px) {
+			.cb-kpi-grid { grid-template-columns: 1fr; }
+			.cb-hero { grid-template-columns: 1fr; }
+			.cb-hero-side { display: none; }
+		}
+		.cb-kpi {
+			background: var(--cb-card);
+			border: 1px solid var(--cb-border);
+			border-radius: 16px;
+			padding: 18px;
+			box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+			transition: transform .2s, box-shadow .2s;
+		}
+		.cb-kpi:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }
+		.cb-kpi-primary { border-color: #c7d2fe; background: linear-gradient(180deg, #fff 0%, #f5f7ff 100%); }
+		.cb-kpi-danger-soft { border-color: #fecaca; background: linear-gradient(180deg, #fff 0%, #fff5f5 100%); }
+		.cb-kpi-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+		.cb-kpi-label { font-size: 11px; color: var(--cb-muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+		.cb-kpi-badge {
+			font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+			background: #f1f5f9; color: var(--cb-muted);
+		}
+		.cb-kpi-badge-success { background: #d1fae5; color: var(--cb-success); }
+		.cb-kpi-badge-danger { background: #fee2e2; color: var(--cb-danger); }
+		.cb-kpi-value { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+		.cb-kpi-num { font-size: 30px; }
+		.cb-kpi-sub { font-size: 12px; color: var(--cb-muted); margin-top: 8px; }
+		.cb-kpi-bar { height: 5px; background: #e2e8f0; border-radius: 999px; margin-top: 12px; overflow: hidden; }
+		.cb-kpi-bar-fill { display: block; height: 100%; border-radius: 999px; transition: width .6s ease; }
+		.cb-kpi-bar-success { background: linear-gradient(90deg, #34d399, #059669); }
+		.cb-kpi-split { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
+		.cb-kpi-split strong { display: block; font-size: 22px; margin-top: 4px; }
+		.cb-kpi-mini { font-size: 10px; color: var(--cb-muted); text-transform: uppercase; font-weight: 700; }
+		.cb-text-danger { color: var(--cb-danger) !important; }
+		.cb-charts-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; margin-bottom: 16px; }
+		.cb-charts-grid--trend { grid-template-columns: 1.5fr 1fr; }
+		.cb-charts-grid--3 { grid-template-columns: repeat(3, 1fr); }
+		@media (max-width: 1200px) { .cb-charts-grid--3 { grid-template-columns: 1fr 1fr; } }
+		@media (max-width: 992px) {
+			.cb-charts-grid, .cb-charts-grid--3, .cb-charts-grid--trend { grid-template-columns: 1fr; }
+		}
+		.cb-insights {
+			display: grid;
+			grid-template-columns: repeat(4, 1fr);
+			gap: 12px;
+			margin-bottom: 16px;
+		}
+		@media (max-width: 900px) { .cb-insights { grid-template-columns: repeat(2, 1fr); } }
+		.cb-insight {
+			background: var(--cb-card);
+			border: 1px solid var(--cb-border);
+			border-radius: 14px;
+			padding: 14px 16px;
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+		}
+		.cb-insight-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--cb-muted); }
+		.cb-insight strong { font-size: 15px; font-weight: 800; color: var(--cb-text); }
+		.cb-insight small { font-size: 11px; color: var(--cb-muted); }
+		.cb-explain {
+			display: flex;
+			align-items: flex-start;
+			gap: 12px;
+			margin-bottom: 16px;
+			padding: 14px 16px;
+			border: 1px solid #c7d2fe;
+			border-radius: 14px;
+			background: #f5f7ff;
+			color: #3730a3;
+		}
+		.cb-explain-icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%; background: #4f46e5; color: #fff; font-size: 12px; font-weight: 800; }
+		.cb-explain strong { display: block; margin-bottom: 3px; font-size: 12px; }
+		.cb-explain span { display: block; color: #64748b; font-size: 12px; line-height: 1.5; }
+		.cb-chart-canvas-wrap { position: relative; height: 280px; padding: 4px 8px 8px; }
+		.cb-chart-canvas-wrap--lg { height: 320px; }
+		.cb-chart-canvas-wrap--md { height: 300px; }
+		.cb-chart-canvas-wrap canvas { display: block; width: 100% !important; height: 100% !important; }
+		.cb-chart-empty {
+			position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+			padding: 24px; text-align: center; font-size: 13px; color: var(--cb-muted); background: #fafbfc;
+			border-radius: 12px;
+		}
+		.cb-card {
+			background: var(--cb-card);
+			border: 1px solid var(--cb-border);
+			border-radius: 16px;
+			padding: 18px;
+			margin-bottom: 16px;
+			box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+		}
+		.cb-card-chart { margin-bottom: 0; }
+		.cb-card-table { padding: 0; overflow: hidden; }
+		.cb-card-head, .cb-table-head {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: flex-start;
+			justify-content: space-between;
+			gap: 12px;
+			margin-bottom: 12px;
+		}
+		.cb-table-head {
+			padding: 18px 18px 0;
+			margin-bottom: 0;
+			border-bottom: 1px solid var(--cb-border);
+			padding-bottom: 14px;
+		}
+		.cb-card-head h4, .cb-table-head h4 { margin: 0 0 2px; font-size: 15px; font-weight: 800; }
+		.cb-card-hint { font-size: 12px; color: var(--cb-muted); }
+		.cb-tabs { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+		.cb-tab {
+			border: 1px solid var(--cb-border);
+			background: #f8fafc;
+			color: var(--cb-muted);
+			border-radius: 10px;
+			padding: 7px 14px;
+			font-size: 12px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: all .15s;
+		}
+		.cb-tab:hover { border-color: #c7d2fe; color: var(--cb-primary); background: #fff; }
+		.cb-tab.active {
+			background: var(--cb-primary);
+			border-color: var(--cb-primary);
+			color: #fff;
+			box-shadow: 0 4px 12px rgba(79, 70, 229, 0.28);
+		}
+		.cb-card-payment { position: relative; }
+		.cb-payment-center {
+			position: absolute;
+			left: 50%;
+			top: 40%;
+			transform: translate(-50%, -50%);
+			text-align: center;
+			pointer-events: none;
+			z-index: 2;
+		}
+		.cb-payment-total { font-size: 18px; font-weight: 800; color: var(--cb-text); }
+		.cb-payment-sub { font-size: 11px; color: var(--cb-muted); text-transform: uppercase; font-weight: 600; }
+		.cb-table-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+		.cb-search, .cb-select {
+			background: #fff;
+			border: 1px solid var(--cb-border);
+			color: var(--cb-text);
+			border-radius: 10px;
+			padding: 9px 12px;
+			font-size: 13px;
+		}
+		.cb-search { flex: 1; min-width: 200px; }
+		.cb-search:focus, .cb-select:focus { outline: none; border-color: var(--cb-primary); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+		.cb-row-count { font-size: 12px; color: var(--cb-muted); font-weight: 600; }
+		.cb-table { margin: 0; font-size: 13px; background: #fff; }
+		.cb-table thead th {
+			background: #f8fafc;
+			border-color: var(--cb-border) !important;
+			color: var(--cb-muted);
+			font-size: 10px;
+			text-transform: uppercase;
+			letter-spacing: .06em;
+			font-weight: 800;
+			padding: 12px 14px;
+			white-space: nowrap;
+		}
+		.cb-table td { border-color: var(--cb-border) !important; vertical-align: middle !important; padding: 12px 14px; }
+		.cb-row-main { cursor: pointer; transition: background .15s; }
+		.cb-row-main:hover { background: #fafbff; }
+		.cb-row-main.expanded { background: #eef2ff; }
+		.cb-col-expand { width: 40px; padding: 8px !important; }
+		.cb-expand-btn {
+			border: none; background: #f1f5f9; width: 28px; height: 28px; border-radius: 8px;
+			cursor: pointer; font-size: 10px; color: var(--cb-muted);
+		}
+		.cb-expand-btn:hover { background: #e0e7ff; color: var(--cb-primary); }
+		.cb-contractor-cell { display: flex; align-items: center; gap: 10px; }
+		.cb-avatar {
+			width: 36px; height: 36px; border-radius: 10px;
+			background: linear-gradient(135deg, #4f46e5, #7c3aed);
+			color: #fff; font-size: 12px; font-weight: 800;
+			display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+		}
+		.cb-contractor-name { font-weight: 700; color: var(--cb-text); }
+		.cb-contractor-sub { font-size: 11px; color: var(--cb-muted); margin-top: 2px; }
+		.cb-sub-tag {
+			display: inline-block; margin-top: 4px; font-size: 10px; font-weight: 700;
+			color: var(--cb-warning); background: #fffbeb; padding: 2px 8px; border-radius: 999px;
+		}
+		.cb-process-pill {
+			display: inline-block; padding: 4px 10px; border-radius: 999px;
+			font-size: 11px; font-weight: 700; background: #eef2ff; color: #4338ca;
+		}
+		.cb-process-Sub-Assembly { background: #fffbeb; color: #b45309; }
+		.cb-process-Stitching { background: #ecfdf5; color: #047857; }
+		.cb-process-Cutting { background: #eef2ff; color: #4338ca; }
+		.cb-process-Quality { background: #faf5ff; color: #7e22ce; }
+		.cb-process-Packing { background: #ecfeff; color: #0e7490; }
+		.cb-status { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+		.cb-status-paid { background: #d1fae5; color: var(--cb-success); }
+		.cb-status-partial { background: #fef3c7; color: var(--cb-warning); }
+		.cb-status-due { background: #fee2e2; color: var(--cb-danger); }
+		.cb-money { font-variant-numeric: tabular-nums; font-weight: 600; }
+		.cb-paid { color: var(--cb-success); }
+		.cb-due { color: var(--cb-danger); font-weight: 800; }
+		.cb-qty { font-variant-numeric: tabular-nums; color: var(--cb-muted); font-weight: 600; }
+		.cb-progress-wrap { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+		.cb-progress-bar { flex: 1; height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+		.cb-progress-fill { height: 100%; background: linear-gradient(90deg, #34d399, #4f46e5); border-radius: 999px; transition: width .5s ease; }
+		.cb-progress-pct { font-size: 11px; color: var(--cb-muted); min-width: 34px; text-align: right; font-weight: 600; }
+		.cb-empty { color: var(--cb-muted); padding: 32px 24px; text-align: center; font-size: 13px; line-height: 1.5; }
+		.cb-empty-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.92); }
+		.cb-order { max-width: 220px; }
+		.cb-link { color: var(--cb-primary); font-weight: 600; text-decoration: none; }
+		.cb-link:hover { text-decoration: underline; }
+		.cb-report-refs { font-size: 10px; color: var(--cb-muted); margin-top: 4px; }
+		.cb-row-detail td { padding: 0 !important; background: #f8fafc; border-top: none !important; }
+		.cb-detail-panel { padding: 14px 18px 18px 52px; }
+		.cb-detail-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--cb-muted); margin-bottom: 10px; }
+		.cb-detail-table { margin: 0; background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid var(--cb-border); }
+		.cb-detail-table th { font-size: 10px; background: #f1f5f9; }
+		.cb-report-link { color: var(--cb-primary); font-weight: 600; }
+		/* Refined financial dashboard visual system */
+		.cb-dashboard {
+			--cb-bg: #f6f8fb;
+			--cb-border: #e2e8f0;
+			--cb-text: #111827;
+			--cb-muted: #64748b;
+			--cb-primary: #2563eb;
+			background: var(--cb-bg);
+			padding: 24px;
+			border: 1px solid #edf1f5;
+			border-radius: 12px;
+			font-size: 13px;
+		}
+		.cb-hero {
+			min-height: 132px;
+			margin-bottom: 18px;
+			padding: 24px 28px;
+			background: #101827;
+			border: 1px solid #1e293b;
+			border-radius: 14px;
+			box-shadow: 0 10px 30px rgba(15, 23, 42, .12);
+		}
+		.cb-hero::after {
+			right: -55px;
+			top: -100px;
+			width: 300px;
+			height: 300px;
+			background: radial-gradient(circle, rgba(37,99,235,.28), rgba(37,99,235,0) 68%);
+		}
+		.cb-hero-eyebrow { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; color: #93c5fd; opacity: 1; }
+		.cb-hero-eyebrow span { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.12); }
+		.cb-hero h2 { color: #fff !important; font-size: 26px; line-height: 1.2; margin-bottom: 7px; }
+		.cb-hero-sub { color: #aeb9c9; opacity: 1; margin: 0; max-width: 680px; font-size: 13px; }
+		.cb-hero-side { display: flex; align-items: center; gap: 20px; }
+		.cb-hero-side-copy { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+		.cb-hero-side-copy span { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+		.cb-hero-side-copy strong { color: #e2e8f0; font-size: 13px; font-weight: 700; white-space: nowrap; }
+		.cb-hero-ring { width: 82px; height: 82px; }
+		.cb-ring-bg { stroke: rgba(255,255,255,.1); stroke-width: 8; }
+		.cb-ring-fill { stroke: #38bdf8; stroke-width: 8; }
+		.cb-hero-ring-label span { color: #fff; font-size: 17px; }
+		.cb-hero-ring-label small { color: #94a3b8; font-size: 9px; }
+		.cb-alert { background: #fffbeb; border: 0; border-left: 3px solid #f59e0b; border-radius: 8px; color: #92400e; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+		.cb-alert-icon { background: #fef3c7; color: #b45309; border-radius: 50%; }
+		.cb-toolbar { padding: 10px 14px; border-radius: 10px; box-shadow: none; }
+		.cb-tab { border-color: transparent; background: #f1f5f9; border-radius: 7px; padding: 6px 12px; color: #475569; }
+		.cb-tab:hover { border-color: #bfdbfe; color: #1d4ed8; }
+		.cb-tab.active { background: #1e293b; border-color: #1e293b; box-shadow: none; }
+		.cb-viewbar { background: transparent; margin-top: 2px; }
+		.cb-view-tab { padding: 11px 12px; font-size: 12px; }
+		.cb-view-tab.active { color: #1d4ed8; border-bottom-color: #2563eb; }
+		.cb-kpi-grid { gap: 12px; margin-bottom: 18px; }
+		.cb-kpi {
+			position: relative;
+			min-height: 146px;
+			padding: 17px 18px 15px;
+			border: 1px solid var(--cb-border);
+			border-radius: 11px;
+			background: #fff;
+			box-shadow: 0 1px 3px rgba(15,23,42,.045);
+			overflow: hidden;
+		}
+		.cb-kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: #2563eb; }
+		.cb-kpi-paid::before { background: #10b981; }
+		.cb-kpi-outstanding::before { background: #f43f5e; }
+		.cb-kpi-coverage::before { background: #f59e0b; }
+		.cb-kpi:hover { transform: none; box-shadow: 0 5px 18px rgba(15,23,42,.07); }
+		.cb-kpi-top { margin-bottom: 12px; }
+		.cb-kpi-icon { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 7px; background: #eff6ff; color: #2563eb; font-size: 13px; font-weight: 800; }
+		.cb-kpi-paid .cb-kpi-icon { background: #ecfdf5; color: #059669; }
+		.cb-kpi-outstanding .cb-kpi-icon { background: #fff1f2; color: #e11d48; }
+		.cb-kpi-coverage .cb-kpi-icon { background: #fffbeb; color: #d97706; }
+		.cb-kpi-label { display: block; color: #64748b; font-size: 10px; }
+		.cb-kpi-value { margin-top: 5px; color: #111827 !important; font-size: 24px; text-align: left !important; letter-spacing: -.025em; }
+		.cb-kpi-outstanding .cb-kpi-value { color: #be123c !important; }
+		.cb-kpi-sub { margin-top: 7px; color: #8491a3; font-size: 11px; }
+		.cb-kpi-bar { margin-top: 11px; height: 4px; }
+		.cb-card { border-radius: 11px; border-color: var(--cb-border); box-shadow: 0 1px 3px rgba(15,23,42,.045); }
+		.cb-card-head h4, .cb-table-head h4 { color: #111827; font-size: 14px; }
+		.cb-card-hint { color: #8491a3; font-size: 11px; }
+		.cb-charts-grid--trend { grid-template-columns: minmax(0, 1.65fr) minmax(320px, .75fr); }
+		.cb-chart-canvas-wrap--lg { height: 285px; }
+		.cb-chart-canvas-wrap { height: 268px; }
+		.cb-insights { gap: 10px; }
+		.cb-insight { min-height: 82px; padding: 13px 15px; border-radius: 9px; box-shadow: 0 1px 2px rgba(15,23,42,.03); }
+		.cb-insight-label { color: #8491a3; }
+		.cb-insight strong { color: #1e293b; font-size: 14px; }
+		.cb-explain { background: #f8fafc; border-color: #dbeafe; color: #1e40af; border-radius: 9px; }
+		.cb-explain-icon { background: #2563eb; }
+		.cb-payment-total { color: #111827; font-size: 16px; }
+		.cb-card-table { border-radius: 11px; }
+		/* Reference-style application shell */
+		.cb-dashboard {
+			display: grid;
+			grid-template-columns: 220px minmax(0, 1fr);
+			padding: 0;
+			background: #f8fafc;
+			border: 1px solid #e2e8f0;
+			overflow: hidden;
+		}
+		.cb-sidebar { background: #fff; border-right: 1px solid #e2e8f0; min-height: 980px; padding: 20px 14px; }
+		.cb-brand { display: flex; align-items: center; gap: 12px; padding: 2px 8px 24px; color: #0f172a; font-size: 14px; }
+		.cb-brand-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; background: #2563eb; color: #fff; box-shadow: 0 6px 14px rgba(37,99,235,.22); }
+		.cb-side-nav { display: flex; flex-direction: column; gap: 5px; }
+		.cb-side-nav button { display: flex; align-items: center; gap: 11px; width: 100%; border: 0; border-radius: 8px; background: transparent; color: #48607f; padding: 10px 12px; text-align: left; font-size: 12px; cursor: pointer; }
+		.cb-side-nav button span { width: 18px; color: #617694; font-size: 16px; text-align: center; }
+		.cb-side-nav button:hover { background: #f1f5f9; color: #2563eb; }
+		.cb-side-nav button.active { background: #eaf2ff; color: #2563eb; font-weight: 700; }
+		.cb-side-nav button.active span { color: #2563eb; }
+		.cb-shortcuts { display: flex; flex-direction: column; gap: 3px; margin-top: 22px; padding: 18px 9px 0; border-top: 1px solid #e2e8f0; }
+		.cb-shortcuts strong { margin-bottom: 7px; color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+		.cb-shortcuts button { border: 0; background: transparent; color: #64748b; padding: 6px 0; text-align: left; font-size: 11px; cursor: pointer; }
+		.cb-shortcuts button:hover { color: #2563eb; }
+		.cb-main { min-width: 0; padding: 22px 24px 28px; }
+		.cb-hero { min-height: auto; margin: 0 0 22px; padding: 0 6px; background: transparent; border: 0; border-radius: 0; box-shadow: none; color: #0f172a; }
+		.cb-hero::after { display: none; }
+		.cb-hero h2 { color: #0f172a !important; font-size: 21px; margin-bottom: 4px; }
+		.cb-title-info { display: inline-grid; place-items: center; width: 15px; height: 15px; border: 1px solid #94a3b8; border-radius: 50%; color: #64748b; font-size: 9px; vertical-align: 3px; }
+		.cb-hero-sub { color: #64748b; font-size: 11px; }
+		.cb-hero-side { gap: 9px; }
+		.cb-date-button, .cb-header-button { height: 40px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; color: #334155; padding: 0 14px; font-size: 11px; cursor: pointer; box-shadow: 0 1px 2px rgba(15,23,42,.02); }
+		.cb-date-button { display: flex; align-items: center; gap: 12px; min-width: 250px; justify-content: space-between; }
+		.cb-header-button:hover, .cb-date-button:hover { border-color: #93c5fd; color: #1d4ed8; }
+		.cb-alert { display: none !important; }
+		.cb-toolbar { display: none; margin-top: -10px; }
+		.cb-dashboard.show-filters .cb-toolbar { display: flex; }
+		.cb-viewbar { display: none; }
+		.cb-kpi-grid { gap: 12px; }
+		.cb-kpi { min-height: 126px; border-radius: 8px; padding: 18px; }
+		.cb-kpi::before { display: none; }
+		.cb-kpi-billed { background: linear-gradient(135deg, #fff 55%, #eff6ff); border-color: #dbeafe; }
+		.cb-kpi-paid { background: linear-gradient(135deg, #fff 55%, #ecfdf5); border-color: #d1fae5; }
+		.cb-kpi-outstanding { background: linear-gradient(135deg, #fff 55%, #fff7ed); border-color: #ffedd5; }
+		.cb-kpi-coverage { background: linear-gradient(135deg, #fff 55%, #f5f3ff); border-color: #ede9fe; }
+		.cb-kpi-icon { width: 40px; height: 40px; border-radius: 10px; font-size: 19px; float: left; margin-right: 13px; }
+		.cb-kpi-icon { position: absolute; left: 18px; top: 27px; margin: 0; }
+		.cb-kpi-top { justify-content: flex-end; min-height: 23px; margin-bottom: 0; }
+		.cb-kpi-label { margin-left: 53px; padding-top: 0; color: #334155; font-size: 10px; }
+		.cb-kpi-value { margin-top: 3px; font-size: 22px; }
+		.cb-kpi-value { margin-left: 53px; }
+		.cb-kpi-sub, .cb-kpi-bar { margin-left: 53px; }
+		.cb-overview-charts { grid-template-columns: minmax(360px, .85fr) minmax(520px, 1.35fr); }
+		.cb-card-span-2 { grid-column: span 2; }
+		.cb-chart-select { border: 1px solid #dbe3ed; border-radius: 6px; padding: 7px 10px; color: #334155; font-size: 10px; }
+		.cb-chart-canvas-wrap--lg { height: 270px; }
+		.cb-overview-bottom { display: grid; grid-template-columns: minmax(0, 1fr) 265px; gap: 14px; margin-bottom: 14px; }
+		.cb-summary-card { padding: 0; overflow: hidden; }
+		.cb-summary-card .cb-card-head { padding: 16px 17px 12px; margin: 0; }
+		.cb-view-all { border: 1px solid #dbe3ed; border-radius: 6px; background: #fff; color: #334155; padding: 7px 12px; font-size: 10px; cursor: pointer; }
+		.cb-summary-table { margin: 0; font-size: 10px; }
+		.cb-summary-table thead th { background: #f8fafc; color: #475569; border-color: #e2e8f0 !important; padding: 10px; white-space: nowrap; }
+		.cb-summary-table td { border-color: #e2e8f0 !important; padding: 11px 10px; vertical-align: middle !important; white-space: nowrap; }
+		.cb-summary-table td strong { color: #2563eb; font-weight: 600; }
+		.cb-table-progress { display: flex; align-items: center; gap: 7px; }
+		.cb-table-progress i { display: block; width: 45px; height: 5px; background: #e2e8f0; border-radius: 9px; overflow: hidden; }
+		.cb-table-progress b { display: block; height: 100%; background: #10b981; border-radius: inherit; }
+		.cb-mini-process { display: inline-grid; place-items: center; min-width: 27px; height: 25px; margin-right: 4px; border-radius: 7px; background: #dbeafe; color: #2563eb; font-size: 9px; font-weight: 700; }
+		.cb-mini-process:nth-child(2) { background: #d1fae5; color: #059669; }
+		.cb-mini-process:nth-child(3) { background: #fef3c7; color: #d97706; }
+		.cb-overview-side { display: flex; flex-direction: column; gap: 12px; }
+		.cb-order-list-card { padding: 15px; }
+		.cb-order-list-card .cb-card-head { margin-bottom: 7px; }
+		.cb-order-list-card a { display: flex; justify-content: space-between; gap: 8px; padding: 7px 1px; color: #2563eb; font-size: 10px; text-decoration: none; }
+		.cb-order-list-card a strong { color: #0f172a; font-weight: 700; }
+		.cb-unbilled-card { display: flex; flex-direction: column; background: #fff8f8; border-color: #fecdd3; }
+		.cb-unbilled-card > span { color: #334155; font-size: 12px; font-weight: 700; }
+		.cb-unbilled-card > strong { margin: 8px 0 1px; color: #f43f5e; font-size: 26px; }
+		.cb-unbilled-card > small { color: #64748b; font-size: 10px; }
+		.cb-unbilled-card button { margin-top: 14px; border: 1px solid #fb7185; border-radius: 6px; background: transparent; color: #e11d48; padding: 9px; font-size: 10px; cursor: pointer; }
+		.cb-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 2px 2px 16px; }
+		.cb-section-heading h3 { margin: 0 0 3px; color: #0f172a; font-size: 18px; }
+		.cb-section-heading p { margin: 0; color: #64748b; font-size: 11px; }
+		.cb-section-heading input { width: 280px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; padding: 9px 12px; color: #334155; font-size: 11px; }
+		.cb-section-heading input:focus { outline: 0; border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+		.cb-work-table th { padding: 11px 13px; }
+		.cb-work-table td { padding: 12px 13px; }
+		.cb-work-table .cb-process-pill { margin: 2px; }
+		.cb-unbilled-summary { display: flex; align-items: baseline; gap: 9px; margin-bottom: 13px; padding: 14px 16px; border: 1px solid #fecdd3; border-radius: 9px; background: #fff7f8; }
+		.cb-unbilled-summary strong { color: #e11d48; font-size: 25px; }
+		.cb-unbilled-summary span { color: #475569; font-size: 12px; font-weight: 600; }
+		.cb-unbilled-summary small { margin-left: auto; color: #64748b; font-size: 10px; }
+		.cb-missing-reason { display: inline-block; border-radius: 999px; background: #fff1f2; color: #be123c; padding: 4px 8px; font-size: 10px; white-space: nowrap; }
+		.cb-insights { display: none; }
+		.cb-explain { margin: 0; padding: 11px 13px; background: transparent; border: 0; color: #64748b; }
+		.cb-explain-icon { width: 16px; height: 16px; background: transparent; border: 1px solid #64748b; color: #64748b; font-size: 9px; }
+		.cb-explain strong { display: none; }
+		.cb-explain span { color: #64748b; font-size: 10px; }
+		@media (max-width: 1250px) {
+			.cb-dashboard { grid-template-columns: 185px minmax(0, 1fr); }
+			.cb-overview-charts { grid-template-columns: 1fr; }
+			.cb-overview-bottom { grid-template-columns: 1fr; }
+			.cb-overview-side { display: grid; grid-template-columns: 1fr 1fr; }
+		}
+		@media (max-width: 900px) {
+			.cb-dashboard { display: block; }
+			.cb-sidebar { display: none; }
+			.cb-main { padding: 16px; }
+			.cb-hero-side { flex-wrap: wrap; }
+			.cb-date-button { min-width: 210px; }
+		}
+		@media (max-width: 640px) {
+			.cb-dashboard { padding: 12px; margin: -8px -12px 8px; border-radius: 0; }
+			.cb-hero { padding: 22px 18px; border-radius: 16px; }
+			.cb-hero h2 { font-size: 23px; }
+			.cb-viewbar { align-items: flex-start; flex-direction: column; gap: 0; }
+			.cb-updated { padding: 0 14px 8px; }
+			.cb-insights { grid-template-columns: 1fr; }
+			.cb-detail-panel { padding-left: 12px; }
+		}
+	`;
+	const style = document.createElement("style");
+	style.id = styleId;
+	style.textContent = css;
+	document.head.appendChild(style);
+}

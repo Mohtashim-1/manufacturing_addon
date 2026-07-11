@@ -1,6 +1,17 @@
 // Copyright (c) 2025, Manufacturing Addon and contributors
 // For license information, please see license.txt
 
+init_report_style_contractors({
+    parent_doctype: "Packing Report",
+    ct_doctype: "Packing Report CT",
+    ct_fieldname: "packing_report_ct",
+    contractor_filter: { packing: 1 },
+    operation: "Packing",
+    work_qty_field: "packaging_qty",
+    api_method:
+        "manufacturing_addon.manufacturing_addon.doctype.packing_report.packing_report.get_style_contractors_for_line",
+});
+
 frappe.ui.form.on("Packing Report", {
     order_sheet(frm) {
         if (!frm.doc.order_sheet) {
@@ -93,6 +104,12 @@ frappe.ui.form.on("Packing Report", {
         console.log("[Packing Report JS] refresh called");
         console.log("[Packing Report JS] packing_report_ct exists:", !!frm.fields_dict.packing_report_ct);
         render_packing_article_summary(frm);
+
+        if (frm.doc.order_sheet && frm.doc.docstatus === 1) {
+            frm.add_custom_button(__("Shipment Loading"), () => {
+                frappe.set_route("page", "shipment-loading-desk");
+            }, __("View"));
+        }
         
         // HTML fields in child tables should render automatically
         // But we can force refresh if needed

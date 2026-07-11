@@ -1,6 +1,17 @@
 // Copyright (c) 2025, Manufacturing Addon and contributors
 // For license information, please see license.txt
 
+init_report_style_contractors({
+    parent_doctype: "Cutting Report",
+    ct_doctype: "Cutting Report CT",
+    ct_fieldname: "cutting_report_ct",
+    contractor_filter: { cutting: 1 },
+    operation: "Cutting",
+    work_qty_field: "cutting_qty",
+    api_method:
+        "manufacturing_addon.manufacturing_addon.doctype.cutting_report.cutting_report.get_style_contractors_for_line",
+});
+
 frappe.ui.form.on("Cutting Report", {
     refresh(frm) {
         render_article_wise_summary(frm);

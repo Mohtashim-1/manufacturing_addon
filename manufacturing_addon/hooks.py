@@ -33,7 +33,10 @@ doctype_js = {
         "public/js/sales_order.js",
         "public/js/sales_order_connection_dashboard.js",
     ],
-    "Item" : "public/js/item.js",
+    "Item": [
+        "public/js/item.js",
+        "public/js/item_connections.js",
+    ],
     "BOM" : "public/js/bom.js",
     "Purchase Receipt" : "public/js/purchase_receipt.js",
     "Purchase Order" : "public/js/purchase_order.js",
@@ -41,9 +44,20 @@ doctype_js = {
     "Order Sheet": [
         "public/js/contractor_performance_embed.js",
     ],
+    "Cutting Report": [
+        "public/js/report_style_contractors.js",
+    ],
+    "Checking Report": [
+        "public/js/report_style_contractors.js",
+    ],
+    "Packing Report": [
+        "public/js/report_style_contractors.js",
+    ],
+    "Subcontracting Order": "public/js/subcontracting_order.js",
     }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order_list.js",
+    "Shipment Loading": "public/js/shipment_loading_list.js",
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -153,12 +167,18 @@ doc_events = {
                     # "manufacturing_addon.manufacturing_addon.doctype.bom.bom.get_bom_items_from_bom_template"
                     ],
         "before_save": "manufacturing_addon.manufacturing_addon.doctype.bom.bom.update_bom_stock_qty",
+        "on_submit": "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.sync_order_sheets_on_bom_change",
+        "on_update_after_submit": "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.sync_order_sheets_on_bom_change",
     },
     "Subcontracting Order": {
         "before_validate": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.before_validate_currency_conversion",
         "validate": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.validate_currency_conversion",
         "on_update": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.on_update_currency_conversion",
-    }
+    },
+    "Packing Report": {
+        "on_submit": "manufacturing_addon.manufacturing_addon.doctype.shipment_loading.shipment_loading.sync_shipment_loading_from_packing_report",
+        "on_cancel": "manufacturing_addon.manufacturing_addon.doctype.shipment_loading.shipment_loading.sync_shipment_loading_from_packing_report",
+    },
 }
 
 # doc_events = {
@@ -208,6 +228,7 @@ override_doctype_dashboards = {
 	"Raw Material Transfer Planning": "manufacturing_addon.manufacturing_addon.doctype.raw_material_transfer_planning.raw_material_transfer_planning_dashboard.get_data",
 	"Production Plan": "manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan_dashboard.get_data",
 	"Sales Order": "manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order_dashboard.get_data",
+	"Item": "manufacturing_addon.manufacturing_addon.doctype.item.item_dashboard.get_data",
 	}
 
 # exempt linked doctypes from being automatically cancelled

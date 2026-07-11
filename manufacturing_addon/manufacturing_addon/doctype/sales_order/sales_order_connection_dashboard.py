@@ -30,6 +30,8 @@ def get_sales_order_connection_dashboard(sales_order):
 		"cutting_report_rows": [],
 		"stitching_reports_count": 0,
 		"stitching_report_rows": [],
+		"checking_reports_count": 0,
+		"checking_report_rows": [],
 		"packing_reports_count": 0,
 		"packing_report_rows": [],
 	}
@@ -58,6 +60,8 @@ def _manufacturing_doc_rows(sales_order):
 		"cutting_report_rows": [],
 		"stitching_reports_count": 0,
 		"stitching_report_rows": [],
+		"checking_reports_count": 0,
+		"checking_report_rows": [],
 		"packing_reports_count": 0,
 		"packing_report_rows": [],
 	}
@@ -75,6 +79,7 @@ def _manufacturing_doc_rows(sales_order):
 	for dt, count_key, rows_key in (
 		("Cutting Report", "cutting_reports_count", "cutting_report_rows"),
 		("Stitching Report", "stitching_reports_count", "stitching_report_rows"),
+		("Checking Report", "checking_reports_count", "checking_report_rows"),
 		("Packing Report", "packing_reports_count", "packing_report_rows"),
 	):
 		if not frappe.db.exists("DocType", dt):

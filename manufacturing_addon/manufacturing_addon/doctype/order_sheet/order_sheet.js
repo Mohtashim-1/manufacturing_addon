@@ -40,6 +40,31 @@ frappe.ui.form.on("Order Sheet", {
 			}, __("Actions"));
 		}
 
+		if (frm.doc.docstatus < 2 && frm.doc.order_sheet_ct && frm.doc.order_sheet_ct.length > 0) {
+			frm.add_custom_button(__("Refresh BOM & Carton Details"), () => {
+				frappe.call({
+					method:
+						"manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.refresh_order_sheet_bom_carton",
+					args: { order_sheet: frm.doc.name },
+					freeze: true,
+					freeze_message: __("Refreshing BOM and carton details..."),
+					callback(r) {
+						if (!r.exc) {
+							const msg = r.message || {};
+							frappe.show_alert({
+								message: __(
+									"Updated {0} row(s); {1} BOM change(s) detected",
+									[msg.updated_rows || 0, msg.bom_changed_rows || 0]
+								),
+								indicator: "green",
+							}, 5);
+						}
+						frm.reload_doc();
+					},
+				});
+			}, __("Actions"));
+		}
+
 		// ── Intercept GridView column saves so doc field stays current without a full save ──
 		// grid_row.js calls frappe.model.user_settings.save("Order Sheet","GridView",{...}) after
 		// the user applies Configure Columns. We wrap it here to also persist the selection to

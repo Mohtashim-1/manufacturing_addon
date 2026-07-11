@@ -36,7 +36,9 @@
   "ready_cartoons_copy",
   "ready_cbm_copy",
   "section_break_hohu",
-  "bundle_items"
+  "bundle_items",
+  "section_break_styles",
+  "style_contractors"
  ],
  "fields": [
   {
@@ -311,6 +313,17 @@
   {
    "fieldname": "section_break_hohu",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_styles",
+   "fieldtype": "Section Break",
+   "label": "Style Contractors"
+  },
+  {
+   "fieldname": "style_contractors",
+   "fieldtype": "Table",
+   "label": "Style Contractors",
+   "options": "Report Style Contractor"
   }
  ],
  "index_web_pages_for_search": 1,

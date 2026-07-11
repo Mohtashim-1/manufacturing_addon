@@ -1,0 +1,31 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2026-06-28 23:41:10.520417",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 0,
+ "is_standard": "Yes",
+ "letter_head": null,
+ "modified": "2026-06-28 23:41:10.520417",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Order Target Dashboard",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Order Sheet",
+ "report_name": "Order Target Dashboard",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Order Sheet Create"
+  }
+ ],
+ "timeout": 0
+}

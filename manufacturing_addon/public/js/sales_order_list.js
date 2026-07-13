@@ -56,6 +56,7 @@ frappe.listview_settings["Sales Order"] = {
 		const method = "erpnext.selling.doctype.sales_order.sales_order.close_or_unclose_sales_orders";
 
 		sales_order_list_dashboard.boot(listview);
+		sales_order_list_dashboard.patch_result_height(listview);
 
 		listview.page.add_menu_item(__("Close"), function () {
 			listview.call_for_selected_items(method, { status: "Closed" });
@@ -118,20 +119,48 @@ const sales_order_list_dashboard = (() => {
 	}
 
 	function ensure_host(listview) {
-		const container =
-			listview.page.main?.parent()?.get?.(0) ||
-			listview.page.main?.get?.(0) ||
-			document.querySelector(".layout-main-section");
-		if (!container) return null;
+		const wrapper =
+			listview.page.wrapper?.find?.(".layout-main-section-wrapper")?.get?.(0) ||
+			listview.page.main?.parent()?.get?.(0);
+		if (!wrapper) return null;
 
-		let host = container.querySelector(`#${BLOCK_ID}`);
+		let host = wrapper.querySelector(`#${BLOCK_ID}`);
 		if (!host) {
 			host = document.createElement("section");
 			host.id = BLOCK_ID;
 			host.className = "sold-shell";
-			container.prepend(host);
+			const mainSection = wrapper.querySelector(".layout-main-section");
+			if (mainSection) {
+				wrapper.insertBefore(host, mainSection);
+			} else {
+				wrapper.prepend(host);
+			}
 		}
 		return host;
+	}
+
+	function patch_result_height(listview) {
+		if (!listview?.set_result_height || listview.__sold_height_patched) return;
+		listview.__sold_height_patched = true;
+
+		const originalSetHeight = listview.set_result_height.bind(listview);
+		listview.set_result_height = function () {
+			originalSetHeight();
+			const container = this.$result?.parent?.(".result-container");
+			if (!container?.length) return;
+
+			const parsedHeight = parseFloat(container.css("height"));
+			if (Number.isFinite(parsedHeight) && parsedHeight >= 240) return;
+
+			const pagingHeight = this.$paging_area?.get?.(0)?.offsetHeight || 0;
+			const resultTop = this.$result?.get?.(0)?.offsetTop || 0;
+			const minHeight = Math.max(240, window.innerHeight - resultTop - pagingHeight - 16);
+
+			container.css("height", `${minHeight}px`);
+			if (this.$result?.[0]) {
+				this.$result[0].style.height = `${minHeight}px`;
+			}
+		};
 	}
 
 	function dashboard_shell() {
@@ -155,6 +184,9 @@ const sales_order_list_dashboard = (() => {
 			callback: (response) => {
 				const data = response.message || {};
 				render_dashboard(host, data);
+				if (listview.set_result_height) {
+					listview.set_result_height();
+				}
 			},
 			error: () => {
 				host.querySelector('[data-role="body"]').innerHTML = '<div class="sold-empty">Unable to load Sales Order summary.</div>';
@@ -453,6 +485,8 @@ const sales_order_list_dashboard = (() => {
 				border-radius: 18px;
 				background: #f8fafc;
 				border: 1px solid #e2e8f0;
+				max-height: min(520px, 45vh);
+				overflow: auto;
 			}
 			#${BLOCK_ID} .sold-head {
 				display: flex;
@@ -767,5 +801,5 @@ const sales_order_list_dashboard = (() => {
 		document.head.appendChild(style);
 	}
 
-	return { boot, render };
+	return { boot, render, patch_result_height };
 })();

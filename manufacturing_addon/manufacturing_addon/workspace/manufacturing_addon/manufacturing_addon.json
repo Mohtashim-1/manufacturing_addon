@@ -1,4 +1,5 @@
 {
+ "app": "manufacturing_addon",
  "charts": [],
  "content": "[{\"id\":\"IM3VaN_w-W\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Manufacturing Addon</span>\",\"col\":12}},{\"id\":\"a0enumBPU6\",\"type\":\"card\",\"data\":{\"card_name\":\"Master\",\"col\":4}},{\"id\":\"oTz0a8s8VJ\",\"type\":\"card\",\"data\":{\"card_name\":\"Transactions\",\"col\":4}},{\"id\":\"z9dMjoWv8E\",\"type\":\"card\",\"data\":{\"card_name\":\"Report\",\"col\":4}}]",
  "creation": "2025-02-12 16:53:03.062250",
@@ -96,7 +97,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Report",
-   "link_count": 8,
+   "link_count": 6,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -107,16 +108,6 @@
    "label": "Order Tracking Dashboard",
    "link_count": 0,
    "link_to": "order-tracking",
-   "link_type": "Page",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipment Loading Desk",
-   "link_count": 0,
-   "link_to": "shipment-loading-desk",
    "link_type": "Page",
    "onboard": 0,
    "type": "Link"
@@ -167,26 +158,6 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Contractor Style Split",
-   "link_count": 0,
-   "link_to": "contractor-style-split",
-   "link_type": "Page",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Cutting Plan Tolerance",
-   "link_count": 0,
-   "link_to": "cutting-plan-tolerance",
-   "link_type": "Page",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Contractor Production Performance",
    "link_count": 0,
    "link_to": "contractor-performan",
@@ -198,20 +169,10 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Master",
-   "link_count": 6,
+   "link_count": 5,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Manufacturing Addon Setting",
-   "link_count": 0,
-   "link_to": "Manufacturing Addon Setting",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
   },
   {
    "hidden": 0,
@@ -264,7 +225,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-28 23:23:52.653190",
+ "modified": "2026-07-13 18:26:27.581890",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Addon",
@@ -273,8 +234,16 @@
  "parent_page": "",
  "public": 1,
  "quick_lists": [],
- "roles": [],
+ "roles": [
+  {
+   "role": "Manufacturing User SAH"
+  },
+  {
+   "role": "Manufacturing Manager"
+  }
+ ],
  "sequence_id": 24.0,
  "shortcuts": [],
- "title": "Manufacturing Addon"
+ "title": "Manufacturing Addon",
+ "type": "Workspace"
 }

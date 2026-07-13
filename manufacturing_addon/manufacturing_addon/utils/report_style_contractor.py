@@ -218,16 +218,25 @@ def append_style_contractors(
 	"""Populate nested style_contractors on a report CT row."""
 	config = OPERATION_CONFIG.get(operation) or {}
 	work_qty = flt(getattr(ct_row, work_qty_field, None)) if work_qty_field else 0
-	ct_row.style_contractors = []
-	for row_data in build_style_contractor_rows(
+	rows = build_style_contractor_rows(
 		item_code,
 		operation=operation,
 		combo_item=combo_item,
 		article=article,
 		mandatory_only=mandatory_only,
 		work_qty=work_qty,
-	):
-		ct_row.append("style_contractors", row_data)
+	)
+	if not rows:
+		return
+
+	try:
+		ct_row.style_contractors = []
+		for row_data in rows:
+			ct_row.append("style_contractors", row_data)
+	except (AttributeError, TypeError):
+		# Unsaved CT rows cannot host nested children yet; load after parent save.
+		return
+
 	if work_qty_field:
 		apply_subassembly_contractor_qty(ct_row, work_qty_field)
 

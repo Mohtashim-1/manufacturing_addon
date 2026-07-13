@@ -15,6 +15,9 @@ init_report_style_contractors({
 frappe.ui.form.on("Cutting Report", {
     refresh(frm) {
         render_article_wise_summary(frm);
+        if (!frm.is_new() && frm.doc.order_sheet) {
+            frm.add_custom_button(__("Repair Missing Rows"), () => frm.events.repair_missing_rows(frm));
+        }
     },
 
     cutting_report_ct(frm) {
@@ -47,6 +50,32 @@ frappe.ui.form.on("Cutting Report", {
                 console.error("[Cutting Report JS] Error:", r);
                 frappe.msgprint(__("Error fetching data: {0}", [r.message || r.exc]));
             }
+        });
+    },
+
+    repair_missing_rows(frm) {
+        if (frm.doc.docstatus === 1) {
+            frappe.msgprint(
+                __("Cancel and amend this Cutting Report first, then use Repair Missing Rows.")
+            );
+            return;
+        }
+        frm.call({
+            method:
+                "manufacturing_addon.manufacturing_addon.doctype.cutting_report.cutting_report.repair_missing_combo_rows",
+            args: { docname: frm.doc.name },
+            freeze: true,
+            freeze_message: __("Adding missing combo rows..."),
+            callback(r) {
+                const count = (r.message && r.message.added_count) || 0;
+                frappe.show_alert({
+                    message: count
+                        ? __("Added {0} missing row(s).", [count])
+                        : __("No missing rows found."),
+                    indicator: count ? "green" : "blue",
+                });
+                frm.reload_doc();
+            },
         });
     },
 });

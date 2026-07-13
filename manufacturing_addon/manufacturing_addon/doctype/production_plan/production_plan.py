@@ -114,7 +114,7 @@ class ProductionPlan(ERPNextProductionPlan):
 
 		wo_list, po_list = [], []
 		subcontracted_po = {}
-		default_warehouses = get_default_warehouse()
+		default_warehouses = get_default_warehouse(self.company)
 
 		self.make_work_order_for_finished_goods(wo_list, default_warehouses)
 		self.make_work_order_for_subassembly_items(wo_list, subcontracted_po, default_warehouses)
@@ -183,3 +183,80 @@ class ProductionPlan(ERPNextProductionPlan):
 		valid = [opt.strip() for opt in field.options.split("\n") if opt.strip()]
 		if po_naming_series not in valid:
 			frappe.throw(_("Invalid Purchase Order naming series: {0}").format(po_naming_series))
+
+
+@frappe.whitelist()
+def get_production_plan_list_for_user(**kwargs):
+	"""Fallback list endpoint for Production Plan list view.
+
+	The standard reportview endpoint is returning an empty response for some
+	browser sessions even though the user has read permission. Keep this scoped
+	to Production Plan and let Frappe permissions apply through get_list.
+	"""
+	user = frappe.session.user
+	if not frappe.has_permission("Production Plan", "read", user=user):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	start = frappe.utils.cint(kwargs.get("start"))
+	page_length = frappe.utils.cint(kwargs.get("page_length")) or 20
+	order_by = kwargs.get("order_by") or "modified desc"
+	filters = kwargs.get("filters") or []
+
+	if isinstance(filters, str):
+		filters = frappe.parse_json(filters)
+
+	requested_fields = kwargs.get("fields") or []
+	if isinstance(requested_fields, str):
+		requested_fields = frappe.parse_json(requested_fields)
+
+	allowed_fields = {df.fieldname for df in frappe.get_meta("Production Plan").fields if df.fieldname}
+	allowed_fields.update({
+		"name",
+		"owner",
+		"creation",
+		"modified",
+		"modified_by",
+		"docstatus",
+		"idx",
+		"_user_tags",
+		"_comments",
+		"_assign",
+		"_liked_by",
+	})
+
+	fields = []
+	for field in requested_fields:
+		field = str(field).replace("`", "")
+		if "." in field:
+			field = field.rsplit(".", 1)[1]
+		if field in allowed_fields and field not in fields:
+			fields.append(field)
+
+	for field in ["name", "status", "modified", "owner", "creation", "docstatus"]:
+		if field not in fields:
+			fields.append(field)
+
+	frappe.logger().info(
+		"[PP List Debug] fallback endpoint user=%s roles=%s filters=%s fields=%s order_by=%s start=%s page_length=%s",
+		user,
+		frappe.get_roles(user),
+		filters,
+		fields,
+		order_by,
+		start,
+		page_length,
+	)
+
+	# Read permission is checked above. Use get_all here because the standard
+	# list-query path is returning an empty result for valid read users.
+	rows = frappe.get_all(
+		"Production Plan",
+		fields=fields,
+		filters=filters,
+		order_by=order_by,
+		start=start,
+		page_length=page_length,
+	)
+
+	frappe.logger().info("[PP List Debug] fallback endpoint returned %s rows", len(rows))
+	return rows

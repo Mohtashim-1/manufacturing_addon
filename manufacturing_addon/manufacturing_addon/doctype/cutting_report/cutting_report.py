@@ -59,14 +59,20 @@ class CuttingReport(Document):
     def _append_cutting_ct_row(self, row_data):
         self.append("cutting_report_ct", row_data)
         ct_row = self.cutting_report_ct[-1]
-        append_style_contractors(
-            ct_row,
-            row_data.get("so_item"),
-            operation="Cutting",
-            combo_item=row_data.get("combo_item"),
-            article=row_data.get("article"),
-            work_qty_field="cutting_qty",
-        )
+        try:
+            append_style_contractors(
+                ct_row,
+                row_data.get("so_item"),
+                operation="Cutting",
+                combo_item=row_data.get("combo_item"),
+                article=row_data.get("article"),
+                work_qty_field="cutting_qty",
+            )
+        except Exception:
+            frappe.log_error(
+                title="Cutting Report Style Contractors",
+                message=frappe.get_traceback(),
+            )
 
     def _apply_subassembly_style_qty(self):
         for row in self.cutting_report_ct or []:
@@ -179,7 +185,9 @@ class CuttingReport(Document):
                         if combo_items and len(combo_items) > 0:
                             print(f"[get_data1] ✓ Found {len(combo_items)} combo items in Item")
                             # Add each combo item to cutting report
-                            for combo_item_row in combo_items:
+                            for combo_item_row in sorted(
+                                combo_items, key=lambda row: row.idx or 0
+                            ):
                                 combo_item_code = combo_item_row.item
                                 combo_pcs = combo_item_row.pcs or 1
                                 calculated_qty = combo_pcs * planned_qty
@@ -223,22 +231,35 @@ class CuttingReport(Document):
                                 print(f"  - qty_ctn: {r.get('qty_ctn')} (from Order Sheet CT)")
                                 print(f"{'='*60}")
                                 
-                                self._append_cutting_ct_row({
-                                    "customer": r.get("customer"),
-                                    "design": r.get("design"),
-                                    "colour": r.get("colour"),
-                                    "finished_size": r.get("size"),
-                                    "qty_ctn": r.get("qty_ctn"),
-                                    "article": r.get("stitching_article_no"),
-                                    "ean": r.get("ean"),
-                                    "order_qty": order_qty,  # Finished-item order qty (not multiplied by PCS)
-                                    "pcs": combo_pcs,
-                                    "qty": calculated_qty,  # component qty = planned_qty * pcs
-                                    "planned_qty": planned_qty,  # Finished-item planned qty (same for duvet/pillow)
-                                    "so_item": so_item,
-                                    "combo_item": combo_item_code,
-                                })
-                                
+                                try:
+                                    self._append_cutting_ct_row({
+                                        "customer": r.get("customer"),
+                                        "design": r.get("design"),
+                                        "colour": r.get("colour"),
+                                        "finished_size": r.get("size"),
+                                        "qty_ctn": r.get("qty_ctn"),
+                                        "article": r.get("stitching_article_no"),
+                                        "ean": r.get("ean"),
+                                        "order_qty": order_qty,  # Finished-item order qty (not multiplied by PCS)
+                                        "pcs": combo_pcs,
+                                        "qty": calculated_qty,  # component qty = planned_qty * pcs
+                                        "planned_qty": planned_qty,  # Finished-item planned qty (same for duvet/pillow)
+                                        "so_item": so_item,
+                                        "combo_item": combo_item_code,
+                                    })
+                                except Exception as combo_error:
+                                    print(
+                                        f"[get_data1] Combo row failed ({combo_item_code}): {combo_error}"
+                                    )
+                                    frappe.log_error(
+                                        title="Cutting Report Combo Row",
+                                        message=(
+                                            f"so_item={so_item}, combo_item={combo_item_code}\n"
+                                            f"{frappe.get_traceback()}"
+                                        ),
+                                    )
+                                    continue
+
                                 print(f"[get_data1] ✓ Row added successfully!")
                                 print(f"{'='*60}\n")
                         else:
@@ -265,7 +286,10 @@ class CuttingReport(Document):
                                     if stitching_size_doc.combo_detail and len(stitching_size_doc.combo_detail) > 0:
                                         print(f"[get_data1] ✓ Found {len(stitching_size_doc.combo_detail)} combo items in Stitching Size")
                                         # Use combo items from Stitching Size
-                                        for combo_item_row in stitching_size_doc.combo_detail:
+                                        for combo_item_row in sorted(
+                                            stitching_size_doc.combo_detail,
+                                            key=lambda row: row.idx or 0,
+                                        ):
                                             combo_item_code = combo_item_row.item
                                             combo_pcs = combo_item_row.pcs or 1
                                             calculated_qty = combo_pcs * planned_qty
@@ -309,22 +333,35 @@ class CuttingReport(Document):
                                             print(f"  - qty_ctn: {r.get('qty_ctn')} (from Order Sheet CT)")
                                             print(f"{'='*60}")
                                             
-                                            self._append_cutting_ct_row({
-                                                "customer": r.get("customer"),
-                                                "design": r.get("design"),
-                                                "colour": r.get("colour"),
-                                                "finished_size": r.get("size"),
-                                                "qty_ctn": r.get("qty_ctn"),
-                                                "article": r.get("stitching_article_no"),
-                                                "ean": r.get("ean"),
-                                                "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
-                                                "pcs": combo_pcs,
-                                                "qty": calculated_qty,  # planned_qty * pcs
-                                                "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
-                                                "so_item": so_item,
-                                                "combo_item": combo_item_code,
-                                            })
-                                            
+                                            try:
+                                                self._append_cutting_ct_row({
+                                                    "customer": r.get("customer"),
+                                                    "design": r.get("design"),
+                                                    "colour": r.get("colour"),
+                                                    "finished_size": r.get("size"),
+                                                    "qty_ctn": r.get("qty_ctn"),
+                                                    "article": r.get("stitching_article_no"),
+                                                    "ean": r.get("ean"),
+                                                    "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
+                                                    "pcs": combo_pcs,
+                                                    "qty": calculated_qty,  # planned_qty * pcs
+                                                    "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                                                    "so_item": so_item,
+                                                    "combo_item": combo_item_code,
+                                                })
+                                            except Exception as combo_error:
+                                                print(
+                                                    f"[get_data1] Combo row failed ({combo_item_code}): {combo_error}"
+                                                )
+                                                frappe.log_error(
+                                                    title="Cutting Report Combo Row",
+                                                    message=(
+                                                        f"so_item={so_item}, combo_item={combo_item_code}\n"
+                                                        f"{frappe.get_traceback()}"
+                                                    ),
+                                                )
+                                                continue
+
                                             print(f"[get_data1] ✓ Row added successfully!")
                                             print(f"{'='*60}\n")
                                         continue
@@ -360,6 +397,9 @@ class CuttingReport(Document):
                 self.flags.ignore_links = True
                 
                 try:
+                    self.save(ignore_permissions=True)
+                    self.load_style_contractors()
+                    self.flags.ignore_links = True
                     self.save(ignore_permissions=True)
                     print(f"[get_data1] ✓ Saved successfully")
                 except Exception as e:
@@ -500,3 +540,86 @@ class CuttingReport(Document):
         for i in self.cutting_report_ct:
             total_qty += i.qty or 0
             self.ordered_qty = total_qty
+
+
+def _expected_combo_rows_for_order_sheet(order_sheet):
+    """Return expected (so_item, combo_item) keys from Order Sheet combo breakdown."""
+    from frappe.utils import flt
+
+    expected = []
+    if not order_sheet or not frappe.db.exists("Order Sheet", order_sheet):
+        return expected
+
+    os_doc = frappe.get_doc("Order Sheet", order_sheet)
+    for row in os_doc.order_sheet_ct or []:
+        so_item = row.so_item
+        if not so_item:
+            continue
+        try:
+            item_doc = frappe.get_doc("Item", so_item)
+            combo_items = getattr(item_doc, "custom_product_combo_item", []) or []
+            if combo_items:
+                for combo_row in sorted(combo_items, key=lambda r: r.idx or 0):
+                    if combo_row.item:
+                        expected.append(
+                            {
+                                "so_item": so_item,
+                                "combo_item": combo_row.item,
+                                "pcs": flt(combo_row.pcs) or 1,
+                                "order_qty": flt(row.order_qty),
+                                "planned_qty": flt(row.planned_qty),
+                                "customer": getattr(os_doc, "customer", None),
+                                "design": row.design,
+                                "colour": row.colour,
+                                "finished_size": row.size,
+                                "qty_ctn": row.qty_ctn,
+                                "article": row.stitching_article_no,
+                                "ean": row.ean,
+                            }
+                        )
+        except Exception:
+            frappe.log_error(
+                title="Cutting Report Expected Combo Rows",
+                message=frappe.get_traceback(),
+            )
+    return expected
+
+
+@frappe.whitelist()
+def repair_missing_combo_rows(docname):
+    """Add missing DUVET/PILLOW (combo) rows without removing existing lines."""
+    doc = frappe.get_doc("Cutting Report", docname)
+    if doc.docstatus == 1:
+        frappe.throw(
+            _("Cancel and amend this Cutting Report before repairing rows."),
+            title=_("Submitted Document"),
+        )
+    if not doc.order_sheet:
+        frappe.throw(_("Please set Order Sheet first."))
+
+    existing = {(r.so_item, r.combo_item or "") for r in doc.cutting_report_ct or []}
+    added = []
+
+    for row_data in _expected_combo_rows_for_order_sheet(doc.order_sheet):
+        key = (row_data["so_item"], row_data["combo_item"])
+        if key in existing:
+            continue
+        pcs = row_data["pcs"]
+        planned_qty = row_data["planned_qty"]
+        doc._append_cutting_ct_row(
+            {
+                **row_data,
+                "qty": pcs * planned_qty,
+            }
+        )
+        existing.add(key)
+        added.append(f"{row_data['colour']} / {row_data['combo_item']}")
+
+    if added:
+        doc.flags.ignore_links = True
+        doc.save(ignore_permissions=True)
+        doc.load_style_contractors()
+        doc.flags.ignore_links = True
+        doc.save(ignore_permissions=True)
+
+    return {"added": added, "added_count": len(added)}

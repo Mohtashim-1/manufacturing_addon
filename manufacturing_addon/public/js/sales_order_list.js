@@ -55,8 +55,12 @@ frappe.listview_settings["Sales Order"] = {
 	onload(listview) {
 		const method = "erpnext.selling.doctype.sales_order.sales_order.close_or_unclose_sales_orders";
 
-		sales_order_list_dashboard.boot(listview);
-		sales_order_list_dashboard.patch_result_height(listview);
+		if (sales_order_list_dashboard.can_view()) {
+			sales_order_list_dashboard.boot(listview);
+			sales_order_list_dashboard.patch_result_height(listview);
+		} else {
+			sales_order_list_dashboard.remove(listview);
+		}
 
 		listview.page.add_menu_item(__("Close"), function () {
 			listview.call_for_selected_items(method, { status: "Closed" });
@@ -86,7 +90,11 @@ frappe.listview_settings["Sales Order"] = {
 	},
 
 	refresh(listview) {
-		sales_order_list_dashboard.render(listview);
+		if (sales_order_list_dashboard.can_view()) {
+			sales_order_list_dashboard.render(listview);
+		} else {
+			sales_order_list_dashboard.remove(listview);
+		}
 	},
 };
 
@@ -97,13 +105,31 @@ const sales_order_list_dashboard = (() => {
 	const BAR_COLORS = ["#2563eb", "#7c3aed", "#0891b2", "#d97706", "#059669", "#dc2626"];
 	let apexPromise = null;
 
+	function can_view() {
+		return (frappe.user_roles || []).includes("System Manager");
+	}
+
+	function remove(listview) {
+		if (!listview?.page) return;
+		listview.page.main.find(`#${BLOCK_ID}`).remove();
+		listview.page.wrapper && listview.page.wrapper.removeClass("has-sales-order-dashboard");
+	}
+
 	function boot(listview) {
+		if (!can_view()) {
+			remove(listview);
+			return;
+		}
 		inject_fonts();
 		inject_style();
 		render(listview);
 	}
 
 	function render(listview) {
+		if (!can_view()) {
+			remove(listview);
+			return;
+		}
 		if (!listview?.page) return;
 		const host = ensure_host(listview);
 		if (!host) return;
@@ -801,5 +827,5 @@ const sales_order_list_dashboard = (() => {
 		document.head.appendChild(style);
 	}
 
-	return { boot, render, patch_result_height };
+	return { can_view, remove, boot, render, patch_result_height };
 })();

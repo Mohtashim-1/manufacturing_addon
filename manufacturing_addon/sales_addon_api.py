@@ -291,6 +291,9 @@ def _ordered_status_pipeline(rows):
 
 @frappe.whitelist()
 def get_sales_order_listview_dashboard(from_date=None, to_date=None, company=None):
+	if "System Manager" not in frappe.get_roles():
+		frappe.throw(_("Only System Managers can view Sales Order list KPIs."), frappe.PermissionError)
+
 	today = getdate(nowdate())
 	to_date = getdate(to_date) if to_date else today
 	default_from_date = get_first_day(add_months(to_date, -11))

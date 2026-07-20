@@ -70,7 +70,31 @@ class ProductionPlan(ERPNextProductionPlan):
 	Override ProductionPlan to update BOMs to use default active BOM
 	instead of the BOM from sales order if it's inactive.
 	"""
-	
+
+	def combine_subassembly_items(self, sub_assembly_items_store):
+		"""Also sum required_qty when consolidating (ERPNext only summed qty)."""
+		from frappe.utils import flt
+
+		key_wise_data = {}
+		for row in sub_assembly_items_store:
+			key = (
+				row.get("production_item"),
+				row.get("fg_warehouse"),
+				row.get("bom_no"),
+				row.get("type_of_manufacturing"),
+			)
+			if key not in key_wise_data:
+				key_wise_data[key] = row
+				continue
+
+			existing_row = key_wise_data[key]
+			existing_row.qty = flt(existing_row.qty) + flt(row.qty)
+			existing_row.stock_qty = flt(existing_row.stock_qty) + flt(row.stock_qty)
+			existing_row.required_qty = flt(existing_row.required_qty) + flt(row.required_qty)
+			existing_row.bom_level = max(flt(existing_row.bom_level), flt(row.bom_level))
+
+		return [key_wise_data[key] for key in key_wise_data]
+
 	def add_items(self, items):
 		"""
 		Override add_items to update BOM to default active before adding items.

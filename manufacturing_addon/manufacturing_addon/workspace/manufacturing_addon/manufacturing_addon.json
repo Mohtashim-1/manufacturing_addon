@@ -225,7 +225,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-13 18:26:27.581890",
+ "modified": "2026-07-14 14:51:16.066244",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Addon",
@@ -240,6 +240,9 @@
   },
   {
    "role": "Manufacturing Manager"
+  },
+  {
+   "role": "Production Plan View"
   }
  ],
  "sequence_id": 24.0,

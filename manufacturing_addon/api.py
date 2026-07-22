@@ -63,7 +63,13 @@ def add_parameter(doc, method):
                 row = doc.append("custom_item_parameter", {})
                 row.parameter = param.parameter
     
-    # Copy combo_detail from Stitching Size to Item's custom_product_combo_item
+    # Copy combo_detail from Stitching Size to Item's custom_product_combo_item.
+    # Only do this while the Item is being CREATED. On existing items we must
+    # respect manual edits — including the user deleting all combo rows — otherwise
+    # removed rows keep getting re-added from Stitching Size on every save.
+    if not doc.is_new():
+        return
+
     print(f"\n{'='*60}")
     print(f"[add_parameter] Processing Item: '{doc.name}'")
     print(f"{'='*60}")

@@ -341,6 +341,7 @@ frappe.ui.form.on("Order Sheet", {
 				row.carton_item = item.carton_item || "";
 				row.carton_dimension = item.carton_dimension || "";
 				row.so_item_weight_per_unit = item.so_item_weight_per_unit || 0;
+				row.so_item_gross_weight_per_unit = item.so_item_gross_weight_per_unit || 0;
 				row.carton_weight_per_unit = item.carton_weight_per_unit || 0;
 				if (item.qty_ctn) {
 					row.qty_ctn = item.qty_ctn;
@@ -478,7 +479,7 @@ function compute_order_sheet_header_totals(frm) {
 	}
 }
 
-function update_total_cartoons_for_row(cdt, cdn) {
+function update_total_cartoons_for_row(cdt, cdn, { force_weight = false } = {}) {
 	const row = locals[cdt] && locals[cdt][cdn];
 	if (!row) return;
 	const qtyCtn = toFloat(row.qty_ctn);
@@ -489,19 +490,31 @@ function update_total_cartoons_for_row(cdt, cdn) {
 	const totalPlanned = qtyCtn > 0 ? (qtyForPlanned / qtyCtn) : 0;
 	const dimensions = parse_carton_dimensions(row.carton_dimension);
 	const soWeightPerUnit = toFloat(row.so_item_weight_per_unit);
+	const soGrossPerUnit = toFloat(row.so_item_gross_weight_per_unit);
 	const cartonWeightPerUnit = toFloat(row.carton_weight_per_unit);
 	const perCartonCbm = dimensions ? (dimensions.length * dimensions.width * dimensions.height) / 1000000 : 0;
 	const orderCbm = perCartonCbm * total;
 	const plannedCbm = perCartonCbm * totalPlanned;
+	const cartonsForWeight = totalPlanned || total;
 	const netWeight = qtyForPlanned * soWeightPerUnit;
-	const grossWeight = netWeight + (total * cartonWeightPerUnit);
+	const grossWeight =
+		soGrossPerUnit > 0
+			? qtyForPlanned * soGrossPerUnit
+			: netWeight + cartonsForWeight * cartonWeightPerUnit;
 
 	frappe.model.set_value(cdt, cdn, "total_carton", total);
 	frappe.model.set_value(cdt, cdn, "total_planned_ctn", totalPlanned);
 	frappe.model.set_value(cdt, cdn, "order_cbm", orderCbm);
 	frappe.model.set_value(cdt, cdn, "planned_cbm", plannedCbm);
-	frappe.model.set_value(cdt, cdn, "net_weight", netWeight);
-	frappe.model.set_value(cdt, cdn, "gross_weight", grossWeight);
+
+	const manual = cint(row.manual_weight);
+	if (force_weight || !manual) {
+		if (force_weight) {
+			frappe.model.set_value(cdt, cdn, "manual_weight", 0);
+		}
+		frappe.model.set_value(cdt, cdn, "net_weight", netWeight);
+		frappe.model.set_value(cdt, cdn, "gross_weight", grossWeight);
+	}
 
 	if (cur_frm && cur_frm.doctype === "Order Sheet") {
 		compute_order_sheet_header_totals(cur_frm);
@@ -528,8 +541,9 @@ frappe.ui.form.on("Order Sheet CT", {
 			frappe.model.set_value(cdt, cdn, "carton_item", "");
 			frappe.model.set_value(cdt, cdn, "carton_dimension", "");
 			frappe.model.set_value(cdt, cdn, "so_item_weight_per_unit", 0);
+			frappe.model.set_value(cdt, cdn, "so_item_gross_weight_per_unit", 0);
 			frappe.model.set_value(cdt, cdn, "carton_weight_per_unit", 0);
-			update_total_cartoons_for_row(cdt, cdn);
+			update_total_cartoons_for_row(cdt, cdn, { force_weight: true });
 			return;
 		}
 
@@ -545,27 +559,73 @@ frappe.ui.form.on("Order Sheet CT", {
 				frappe.model.set_value(cdt, cdn, "carton_item", r.message.carton_item || "");
 				frappe.model.set_value(cdt, cdn, "carton_dimension", r.message.carton_dimension || "");
 				frappe.model.set_value(cdt, cdn, "so_item_weight_per_unit", r.message.so_item_weight_per_unit || 0);
+				frappe.model.set_value(cdt, cdn, "so_item_gross_weight_per_unit", r.message.so_item_gross_weight_per_unit || 0);
 				frappe.model.set_value(cdt, cdn, "carton_weight_per_unit", r.message.carton_weight_per_unit || 0);
 				if (r.message.qty_ctn) {
 					frappe.model.set_value(cdt, cdn, "qty_ctn", r.message.qty_ctn);
 				}
-				update_total_cartoons_for_row(cdt, cdn);
+				update_total_cartoons_for_row(cdt, cdn, { force_weight: true });
 			}
 		});
 	},
 
 	planned_qty(frm, cdt, cdn) {
-		update_total_cartoons_for_row(cdt, cdn);
+		update_total_cartoons_for_row(cdt, cdn, { force_weight: true });
 	},
 
 	order_qty(frm, cdt, cdn) {
-		update_total_cartoons_for_row(cdt, cdn);
+		update_total_cartoons_for_row(cdt, cdn, { force_weight: true });
 	},
 
 	qty_ctn(frm, cdt, cdn) {
-		update_total_cartoons_for_row(cdt, cdn);
+		update_total_cartoons_for_row(cdt, cdn, { force_weight: true });
+	},
+
+	carton_item(frm, cdt, cdn) {
+		update_total_cartoons_for_row(cdt, cdn, { force_weight: true });
+	},
+
+	net_weight(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		const expected = _expected_row_weights(row).net;
+		if (Math.abs(toFloat(row.net_weight) - expected) > 0.0001) {
+			frappe.model.set_value(cdt, cdn, "manual_weight", 1);
+		}
+		if (cur_frm && cur_frm.doctype === "Order Sheet") {
+			compute_order_sheet_header_totals(cur_frm);
+		}
+	},
+
+	gross_weight(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		const expected = _expected_row_weights(row).gross;
+		if (Math.abs(toFloat(row.gross_weight) - expected) > 0.0001) {
+			frappe.model.set_value(cdt, cdn, "manual_weight", 1);
+		}
+		if (cur_frm && cur_frm.doctype === "Order Sheet") {
+			compute_order_sheet_header_totals(cur_frm);
+		}
 	}
 });
+
+function _expected_row_weights(row) {
+	const orderQty = toFloat(row.order_qty);
+	const plannedQty = toFloat(row.planned_qty);
+	const qtyForPlanned = plannedQty || orderQty;
+	const qtyCtn = toFloat(row.qty_ctn);
+	const totalPlanned = qtyCtn > 0 ? qtyForPlanned / qtyCtn : 0;
+	const total = qtyCtn > 0 ? orderQty / qtyCtn : 0;
+	const cartonsForWeight = totalPlanned || total;
+	const soWeightPerUnit = toFloat(row.so_item_weight_per_unit);
+	const soGrossPerUnit = toFloat(row.so_item_gross_weight_per_unit);
+	const cartonWeightPerUnit = toFloat(row.carton_weight_per_unit);
+	const netWeight = qtyForPlanned * soWeightPerUnit;
+	const grossWeight =
+		soGrossPerUnit > 0
+			? qtyForPlanned * soGrossPerUnit
+			: netWeight + cartonsForWeight * cartonWeightPerUnit;
+	return { net: netWeight, gross: grossWeight };
+}
 
 const orderSheetDashboard = {
 	_originalDetails: [],

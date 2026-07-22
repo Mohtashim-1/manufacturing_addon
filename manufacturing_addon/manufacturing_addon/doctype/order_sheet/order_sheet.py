@@ -4,7 +4,7 @@
 import frappe
 import re
 from frappe.model.document import Document
-from frappe.utils import today, now_datetime, flt
+from frappe.utils import today, now_datetime, flt, cint
 
 
 class OrderSheet(Document):
@@ -107,6 +107,7 @@ class OrderSheet(Document):
 			planned_qty = row.planned_qty if row.planned_qty else (row.order_qty or 0)
 			total_cartoons = flt(row.total_carton)
 			total_planned_ctn = flt(row.total_planned_ctn)
+			cartons_for_weight = total_planned_ctn if total_planned_ctn else total_cartoons
 
 			# CBM = number of cartons * (L * W * H in cm / 1,000,000)
 			lenght_cm, width_cm, height_cm = parse_carton_dimension(row.carton_dimension)
@@ -119,15 +120,25 @@ class OrderSheet(Document):
 			else:
 				row.planned_cbm = 0
 
-			# Net weight = planned pcs * finished good weight_per_unit (kg)
-			so_weight_per_unit = get_item_weight_per_unit(row.so_item, item_weight_cache)
+			# Per-unit weights from Item (custom_net_weight / custom_gross_weight preferred)
+			so_weight_per_unit = get_item_net_weight_per_unit(row.so_item, item_weight_cache)
+			so_gross_per_unit = get_item_gross_weight_per_unit(row.so_item, item_weight_cache)
+			carton_weight_per_unit = get_item_net_weight_per_unit(row.carton_item, item_weight_cache)
 			row.so_item_weight_per_unit = so_weight_per_unit
-			row.net_weight = flt(planned_qty) * so_weight_per_unit
-
-			# Gross weight = net weight + (cartons * carton weight_per_unit)
-			carton_weight_per_unit = get_item_weight_per_unit(row.carton_item, item_weight_cache)
+			if hasattr(row, "so_item_gross_weight_per_unit"):
+				row.so_item_gross_weight_per_unit = so_gross_per_unit
 			row.carton_weight_per_unit = carton_weight_per_unit
-			row.gross_weight = row.net_weight + (total_cartoons * carton_weight_per_unit)
+
+			computed_net = flt(planned_qty) * so_weight_per_unit
+			if so_gross_per_unit > 0:
+				computed_gross = flt(planned_qty) * so_gross_per_unit
+			else:
+				computed_gross = computed_net + (cartons_for_weight * carton_weight_per_unit)
+
+			# Keep user overrides unless drivers force a fresh auto-calc
+			if not cint(row.get("manual_weight")):
+				row.net_weight = computed_net
+				row.gross_weight = computed_gross
 
 	def consumption(self):
 		total_consumption = 0
@@ -735,16 +746,45 @@ def parse_carton_dimension(dimension_text):
 
 
 def get_item_weight_per_unit(item_code, cache=None):
-	"""Get Item.weight_per_unit in KG, defaulting to zero."""
+	"""Backward-compatible alias → net weight per unit."""
+	return get_item_net_weight_per_unit(item_code, cache)
+
+
+def get_item_net_weight_per_unit(item_code, cache=None):
+	"""Net weight per unit (KG): prefer Item.custom_net_weight, else weight_per_unit."""
 	if not item_code:
 		return 0
 
-	if cache is not None and item_code in cache:
-		return cache[item_code]
+	cache_key = f"net::{item_code}"
+	if cache is not None and cache_key in cache:
+		return cache[cache_key]
 
-	weight = flt(frappe.db.get_value("Item", item_code, "weight_per_unit") or 0)
+	vals = frappe.db.get_value(
+		"Item",
+		item_code,
+		["custom_net_weight", "weight_per_unit"],
+		as_dict=True,
+	) or {}
+	weight = flt(vals.get("custom_net_weight") or 0)
+	if weight <= 0:
+		weight = flt(vals.get("weight_per_unit") or 0)
 	if cache is not None:
-		cache[item_code] = weight
+		cache[cache_key] = weight
+	return weight
+
+
+def get_item_gross_weight_per_unit(item_code, cache=None):
+	"""Gross weight per unit (KG): Item.custom_gross_weight, else 0."""
+	if not item_code:
+		return 0
+
+	cache_key = f"gross::{item_code}"
+	if cache is not None and cache_key in cache:
+		return cache[cache_key]
+
+	weight = flt(frappe.db.get_value("Item", item_code, "custom_gross_weight") or 0)
+	if cache is not None:
+		cache[cache_key] = weight
 	return weight
 
 
@@ -758,6 +798,7 @@ def get_bom_carton_details(item_code):
 			"carton_dimension": None,
 			"qty_ctn": None,
 			"so_item_weight_per_unit": 0,
+			"so_item_gross_weight_per_unit": 0,
 			"carton_weight_per_unit": 0
 		}
 
@@ -836,8 +877,9 @@ def get_bom_carton_details(item_code):
 		"carton_item": carton_item,
 		"carton_dimension": carton_dimension,
 		"qty_ctn": qty_ctn,
-		"so_item_weight_per_unit": get_item_weight_per_unit(item_code),
-		"carton_weight_per_unit": get_item_weight_per_unit(carton_item)
+		"so_item_weight_per_unit": get_item_net_weight_per_unit(item_code),
+		"so_item_gross_weight_per_unit": get_item_gross_weight_per_unit(item_code),
+		"carton_weight_per_unit": get_item_net_weight_per_unit(carton_item)
 	}
 
 
@@ -853,6 +895,8 @@ def apply_bom_carton_details_to_row(row, details, force_qty_ctn=False):
 	row.carton_item = details.get("carton_item")
 	row.carton_dimension = details.get("carton_dimension")
 	row.so_item_weight_per_unit = details.get("so_item_weight_per_unit") or 0
+	if hasattr(row, "so_item_gross_weight_per_unit"):
+		row.so_item_gross_weight_per_unit = details.get("so_item_gross_weight_per_unit") or 0
 	row.carton_weight_per_unit = details.get("carton_weight_per_unit") or 0
 
 	# Refresh qty/ctn when empty or when BOM reference changed (new version / default switch).
@@ -1216,6 +1260,7 @@ def create_order_sheet_from_sales_order(sales_order):
 		row.carton_dimension = item.get("carton_dimension")
 		row.qty_ctn = item.get("qty_ctn")
 		row.so_item_weight_per_unit = item.get("so_item_weight_per_unit") or 0
+		row.so_item_gross_weight_per_unit = item.get("so_item_gross_weight_per_unit") or 0
 		row.carton_weight_per_unit = item.get("carton_weight_per_unit") or 0
 
 	order_sheet.insert(ignore_permissions=True)

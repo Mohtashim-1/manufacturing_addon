@@ -3,6 +3,8 @@
 
 """BOM-based quantity helpers for button/zip sub-assembly styles."""
 
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import cstr, flt
@@ -14,13 +16,43 @@ MATERIAL_KEYWORDS = {
 	"zip": ("ZIP",),
 }
 
+# Dedicated zip/button *making* styles only — not product styles like
+# "QUILT COVER BUTTON MF (ST)" / "QUILT COVER WITH ZIP (CK)".
+_BUTTON_MAKING_RE = re.compile(
+	r"(REB+E?T\s+BUTTON|RIB+E?T\s+BUTTON|BUTTON\s+SET|SET\s+BUTTON|^BUTTON$)",
+	re.I,
+)
+_ZIP_MAKING_RE = re.compile(
+	r"((BASIC\s+)?ZIP\s*(CUTTING|MAKING)|SET\s+ZIP|ZIP\s+SET|^ZIP$)",
+	re.I,
+)
+
 
 def subassembly_material_type(style_name):
-	"""Infer button/zip material type from Style name."""
-	name = cstr(style_name).upper()
-	if "BUTTON" in name:
+	"""Infer button/zip material type for dedicated making styles only.
+
+	Uses Style.is_subassembly when the Style master exists. Falls back to
+	strict name patterns (REBET BUTTON SET, BASIC ZIP CUTTING, etc.).
+	Product styles that only mention zip/button in the name are ignored.
+	"""
+	name = cstr(style_name).strip()
+	if not name:
+		return None
+
+	is_sub = frappe.db.get_value("Style", name, "is_subassembly")
+	if is_sub is not None:
+		if not int(is_sub or 0):
+			return None
+		upper = name.upper()
+		if "BUTTON" in upper:
+			return "button"
+		if "ZIP" in upper:
+			return "zip"
+		return None
+
+	if _BUTTON_MAKING_RE.search(name):
 		return "button"
-	if "ZIP" in name:
+	if _ZIP_MAKING_RE.search(name):
 		return "zip"
 	return None
 

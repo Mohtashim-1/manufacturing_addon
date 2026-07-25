@@ -1,0 +1,22 @@
+/* Align Subcontracting Receipt supplied_items footer with header/body columns */
+.frappe-control[data-fieldname="supplied_items"] .grid-total-row .data-row {
+	display: flex !important;
+	flex-wrap: nowrap !important;
+}
+
+.frappe-control[data-fieldname="supplied_items"] .grid-total-row .col,
+.frappe-control[data-fieldname="supplied_items"] .grid-total-row .row-check,
+.frappe-control[data-fieldname="supplied_items"] .grid-total-row .row-index,
+.frappe-control[data-fieldname="supplied_items"] .grid-total-row .edit-icon {
+	box-sizing: border-box;
+}
+
+.frappe-control[data-fieldname="supplied_items"] .scr-transferred-rm-summary table {
+	font-size: 12px;
+}
+
+.frappe-control[data-fieldname="supplied_items"] .scr-transferred-rm-summary th,
+.frappe-control[data-fieldname="supplied_items"] .scr-transferred-rm-summary td {
+	padding: 4px 8px;
+	vertical-align: middle;
+}

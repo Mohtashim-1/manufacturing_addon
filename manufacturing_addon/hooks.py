@@ -54,7 +54,11 @@ doctype_js = {
         "public/js/report_style_contractors.js",
     ],
     "Subcontracting Order": "public/js/subcontracting_order.js",
+    "Subcontracting Receipt": "public/js/subcontracting_receipt.js",
     }
+app_include_css = [
+	"/assets/manufacturing_addon/css/subcontracting_receipt.css",
+]
 doctype_list_js = {
     "Sales Order": "public/js/sales_order_list.js",
     "Shipment Loading": "public/js/shipment_loading_list.js",
@@ -174,6 +178,9 @@ doc_events = {
         "before_validate": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.before_validate_currency_conversion",
         "validate": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.validate_currency_conversion",
         "on_update": "manufacturing_addon.manufacturing_addon.doctype.subcontracting_order.subcontracting_order.on_update_currency_conversion",
+    },
+    "Subcontracting Receipt": {
+        "validate": "manufacturing_addon.manufacturing_addon.utils.subcontracting_receipt_rm.set_transferred_qty_on_supplied_items",
     },
     "Packing Report": {
         "on_submit": "manufacturing_addon.manufacturing_addon.doctype.shipment_loading.shipment_loading.sync_shipment_loading_from_packing_report",

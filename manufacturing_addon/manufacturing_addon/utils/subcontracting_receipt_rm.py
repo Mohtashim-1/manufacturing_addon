@@ -144,6 +144,9 @@ def load_supplied_items_from_transfers(doc):
 	(same as Reset Raw Materials when backflush = Material Transferred),
 	then stamp transferred qty on each row.
 	"""
+	if "System Manager" not in frappe.get_roles():
+		frappe.throw(_("Only System Managers can reload supplied items from transfers"), frappe.PermissionError)
+
 	if isinstance(doc, str):
 		doc = frappe.parse_json(doc)
 	if isinstance(doc, dict):

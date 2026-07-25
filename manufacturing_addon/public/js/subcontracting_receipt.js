@@ -81,6 +81,7 @@ frappe.ui.form.on("Subcontracting Receipt", {
 		frm.remove_custom_button(__("Load from Stock Transfers"));
 		frm.remove_custom_button(__("Fix Consumed Qty from Transfers"));
 
+		if (!frappe.user.has_role("System Manager")) return;
 		if (!frm.doc.items?.length) return;
 
 		// Standalone toolbar buttons (not buried in a dropdown)
@@ -107,6 +108,7 @@ frappe.ui.form.on("Subcontracting Receipt", {
 		if (!$section || !$section.length) return;
 
 		$section.find(".scr-fix-from-transfers-btn").remove();
+		if (!frappe.user.has_role("System Manager")) return;
 		if (frm.doc.docstatus !== 0) return;
 
 		const $btn = $(`

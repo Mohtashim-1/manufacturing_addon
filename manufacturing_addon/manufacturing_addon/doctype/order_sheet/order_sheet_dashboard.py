@@ -13,9 +13,11 @@ def get_data():
 				"items": [
 					"Production Plan",
 					"Cutting Report",
+					"Sub Assembly Report",
 					"Stitching Report",
 					"Checking Report",
 					"Packing Report",
+					"Quality Report",
 				],
 			},
 			{

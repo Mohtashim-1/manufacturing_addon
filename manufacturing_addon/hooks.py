@@ -36,6 +36,7 @@ doctype_js = {
     "Item": [
         "public/js/item.js",
         "public/js/item_connections.js",
+        "public/js/style_rate_history_button.js",
     ],
     "BOM" : "public/js/bom.js",
     "Purchase Receipt" : "public/js/purchase_receipt.js",
@@ -43,8 +44,15 @@ doctype_js = {
     "Production Plan" : "public/js/production_plan.js",
     "Order Sheet": [
         "public/js/contractor_performance_embed.js",
+        "public/js/style_rate_history_button.js",
+    ],
+    "Style": [
+        "public/js/style_rate_history_button.js",
     ],
     "Cutting Report": [
+        "public/js/report_style_contractors.js",
+    ],
+    "Sub Assembly Report": [
         "public/js/report_style_contractors.js",
     ],
     "Checking Report": [
@@ -161,6 +169,10 @@ override_doctype_class = {
 doc_events = {
 	"Item": {
 		"validate": "manufacturing_addon.api.add_parameter",
+		"on_update": "manufacturing_addon.manufacturing_addon.utils.style_rate_history.on_item_update",
+	},
+	"Style": {
+		"on_update": "manufacturing_addon.manufacturing_addon.utils.style_rate_history.on_style_update",
 	},
     "Sales Order": {
 		"validate": "manufacturing_addon.api.validate_sales_order",

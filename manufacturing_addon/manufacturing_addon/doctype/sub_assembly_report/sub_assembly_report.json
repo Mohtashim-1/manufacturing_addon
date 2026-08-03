@@ -1,0 +1,298 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:SAR-{YY}-{MM}-{DD}-{####}",
+ "creation": "2025-01-20 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "details_section",
+  "date",
+  "column_break_mwvt",
+  "time",
+  "column_break_qnok",
+  "get_data",
+  "order_details_section",
+  "order_sheet",
+  "column_break_qcib",
+  "customer",
+  "column_break_jvkk",
+  "shipment_date",
+  "column_break_cwel",
+  "supplier",
+  "sub_assembly_report_data_section",
+  "sub_assembly_report_ct",
+  "section_break_yedn",
+  "ordered_qty",
+  "column_break_lyzi",
+  "ready_qty",
+  "column_break_ruhf",
+  "percentage",
+  "section_break_lrdd",
+  "article_wise_report",
+  "section_break_c7ga",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Details"
+  },
+  {
+   "default": "Today",
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Posting Date"
+  },
+  {
+   "fieldname": "column_break_mwvt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Now",
+   "fieldname": "time",
+   "fieldtype": "Time",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Posting Time"
+  },
+  {
+   "fieldname": "column_break_qnok",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "get_data",
+   "fieldtype": "Button",
+   "label": "Get Data"
+  },
+  {
+   "fieldname": "order_details_section",
+   "fieldtype": "Section Break",
+   "label": "Order"
+  },
+  {
+   "fieldname": "order_sheet",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Order Sheet",
+   "options": "Order Sheet",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_qcib",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "order_sheet.customer",
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_jvkk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "order_sheet.shipment_date",
+   "fieldname": "shipment_date",
+   "fieldtype": "Data",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Shipment Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_cwel",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Supplier",
+   "options": "Manufacturing Contractor",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sub_assembly_report_data_section",
+   "fieldtype": "Section Break",
+   "label": "Sub Assembly Report Data"
+  },
+  {
+   "fieldname": "sub_assembly_report_ct",
+   "fieldtype": "Table",
+   "label": "Sub Assembly Report CT",
+   "options": "Sub Assembly Report CT"
+  },
+  {
+   "fieldname": "section_break_yedn",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "ordered_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Ordered Qty",
+   "non_negative": 1,
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_lyzi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ready_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Ready Qty",
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ruhf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "percentage",
+   "fieldtype": "Percent",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Percentage",
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_lrdd",
+   "fieldtype": "Section Break",
+   "label": "Article Wise Report"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "article_wise_report",
+   "fieldtype": "HTML",
+   "label": "Article Wise Report"
+  },
+  {
+   "fieldname": "section_break_c7ga",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Sub Assembly Report",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-31 14:55:00.000000",
+ "modified_by": "Administrator",
+ "module": "Manufacturing Addon",
+ "name": "Sub Assembly Report",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Order Sheet Create",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Subcontracting Role",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

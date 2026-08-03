@@ -3,7 +3,10 @@
 
 from frappe.model.document import Document
 
+from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
+	StyleContractorsChildMixin,
+)
 
-class PackingReportCT(Document):
+
+class PackingReportCT(StyleContractorsChildMixin, Document):
 	pass
-

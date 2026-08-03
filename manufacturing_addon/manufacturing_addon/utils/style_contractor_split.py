@@ -10,8 +10,10 @@ from frappe.utils import flt
 from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
 	billing_amount_for_work,
 )
-from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import resolve_subassembly_unit_qty
-
+from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
+	resolve_subassembly_unit_qty,
+	set_sc_value,
+)
 
 def sc_matches_style(sc, style_row):
 	if sc.get("item_style_row") and style_row.get("name"):
@@ -85,13 +87,14 @@ def apply_split_qty_defaults(ct_row, work_qty_field):
 
 	by_style = {}
 	for sc in ct_row.get("style_contractors") or []:
-		if not sc.get("style"):
+		style_name = sc.get("style") if hasattr(sc, "get") else getattr(sc, "style", None)
+		if not style_name:
 			continue
-		by_style.setdefault(sc.style, []).append(sc)
+		by_style.setdefault(style_name, []).append(sc)
 
 	for _style, rows in by_style.items():
-		if len(rows) == 1 and not flt(rows[0].get("split_qty")):
-			rows[0].split_qty = work_qty
+		if len(rows) == 1:
+			set_sc_value(rows[0], "split_qty", work_qty)
 			_update_sc_amounts_from_split(ct_row.so_item, rows[0], work_qty)
 
 
@@ -121,16 +124,28 @@ def _style_row_for_sc(so_item, sc_row):
 
 def _update_sc_amounts_from_split(so_item, sc_row, split_work_qty):
 	"""Refresh qty/amount on a style contractor row from split work qty."""
-	if sc_row.get("is_subassembly"):
-		unit_qty = flt(sc_row.get("unit_qty")) or 1
-		sc_row.qty = flt(split_work_qty) * unit_qty
-		sc_row.amount = flt(sc_row.qty) * flt(sc_row.get("rate"))
+	from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
+		finished_work_qty,
+		get_subassembly_unit_qty,
+		subassembly_material_type,
+	)
+
+	# Build a tiny stand-in so finished_work_qty can read pcs from parent CT if passed
+	style_name = sc_row.get("style")
+	is_sub = bool(sc_row.get("is_subassembly")) or bool(subassembly_material_type(style_name))
+	if is_sub:
+		unit_qty = get_subassembly_unit_qty(so_item, style_name, sc_row.get("unit_qty") or 1)
+		set_sc_value(sc_row, "is_subassembly", 1)
+		set_sc_value(sc_row, "unit_qty", unit_qty)
+		qty = flt(split_work_qty) * unit_qty
+		set_sc_value(sc_row, "qty", qty)
+		set_sc_value(sc_row, "amount", flt(qty) * flt(sc_row.get("rate")))
 		return
 
 	style_row = _style_row_for_sc(so_item, sc_row)
 	billable_qty, amount = billable_amount_for_split(so_item, style_row, split_work_qty, sc_row)
-	sc_row.qty = billable_qty
-	sc_row.amount = amount
+	set_sc_value(sc_row, "qty", billable_qty)
+	set_sc_value(sc_row, "amount", amount)
 
 
 def apply_all_style_contractor_amounts(ct_row, work_qty_field):
@@ -142,17 +157,22 @@ def apply_all_style_contractor_amounts(ct_row, work_qty_field):
 
 	by_style = {}
 	for sc in ct_row.get("style_contractors") or []:
-		if not sc.get("style"):
+		style_name = sc.get("style") if hasattr(sc, "get") else getattr(sc, "style", None)
+		if not style_name:
 			continue
-		by_style.setdefault(sc.style, []).append(sc)
+		by_style.setdefault(style_name, []).append(sc)
 
 	for style, rows in by_style.items():
-		if len(rows) == 1 and not flt(rows[0].get("split_qty")) and work_qty > 0:
-			rows[0].split_qty = work_qty
+		if len(rows) == 1 and work_qty > 0:
+			set_sc_value(rows[0], "split_qty", work_qty)
 		for sc in rows:
-			split_wq = flt(sc.get("split_qty"))
+			split_wq = flt(sc.get("split_qty") if hasattr(sc, "get") else getattr(sc, "split_qty", 0))
 			if split_wq > 0:
 				_update_sc_amounts_from_split(so_item, sc, split_wq)
+			elif work_qty > 0 and (
+				sc.get("is_subassembly") if hasattr(sc, "get") else getattr(sc, "is_subassembly", 0)
+			):
+				_update_sc_amounts_from_split(so_item, sc, work_qty)
 
 
 def validate_style_contractor_splits(report_rows, qty_field, report_label):

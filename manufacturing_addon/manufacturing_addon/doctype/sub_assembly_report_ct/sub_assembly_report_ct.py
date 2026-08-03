@@ -8,5 +8,5 @@ from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors impo
 )
 
 
-class CheckingReportCT(StyleContractorsChildMixin, Document):
+class SubAssemblyReportCT(StyleContractorsChildMixin, Document):
 	pass

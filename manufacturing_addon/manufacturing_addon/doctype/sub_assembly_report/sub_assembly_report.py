@@ -8,6 +8,7 @@ from frappe.utils import flt
 
 from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
     append_style_contractors,
+    get_item_styles,
     validate_mandatory_contractors,
 )
 from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
@@ -18,9 +19,6 @@ from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import
     apply_all_style_contractor_amounts,
     apply_split_qty_defaults,
 )
-from manufacturing_addon.manufacturing_addon.utils.cutting_plan_tolerance import (
-    validate_cutting_report_tolerance,
-)
 from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
     load_nested_style_contractors,
     save_nested_style_contractors,
@@ -29,7 +27,7 @@ from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors impo
 
 @frappe.whitelist()
 def get_style_contractors_for_line(
-    so_item, combo_item=None, article=None, operation="Cutting", work_qty=0
+    so_item, combo_item=None, article=None, operation="Sub Assembly", work_qty=0
 ):
     """Return style contractor rows for one report line (client-side populate)."""
     from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
@@ -45,61 +43,91 @@ def get_style_contractors_for_line(
     )
 
 
-class CuttingReport(Document):
+class SubAssemblyReport(Document):
     def load_from_db(self):
         super().load_from_db()
-        load_nested_style_contractors(self, "cutting_report_ct", "Cutting Report CT")
+        load_nested_style_contractors(self, "sub_assembly_report_ct", "Sub Assembly Report CT")
         return self
 
     def update_children(self):
         super().update_children()
-        save_nested_style_contractors(self, "cutting_report_ct", "Cutting Report CT")
-        load_nested_style_contractors(self, "cutting_report_ct", "Cutting Report CT")
+        save_nested_style_contractors(self, "sub_assembly_report_ct", "Sub Assembly Report CT")
+        load_nested_style_contractors(self, "sub_assembly_report_ct", "Sub Assembly Report CT")
 
-    def _append_cutting_ct_row(self, row_data):
-        self.append("cutting_report_ct", row_data)
-        ct_row = self.cutting_report_ct[-1]
+    def _line_has_subassembly(self, so_item, combo_item=None, article=None):
+        """Only Order Sheet lines with Item Sub Assembly styles belong on this report."""
+        if not so_item:
+            return False
+        return bool(
+            get_item_styles(
+                so_item,
+                operation="Sub Assembly",
+                combo_item=combo_item,
+                article=article,
+            )
+        )
+
+    def _append_sub_assembly_ct_row(self, row_data):
+        if not self._line_has_subassembly(
+            row_data.get("so_item"),
+            row_data.get("combo_item"),
+            row_data.get("article"),
+        ):
+            return
+        self.append("sub_assembly_report_ct", row_data)
+        ct_row = self.sub_assembly_report_ct[-1]
         try:
             append_style_contractors(
                 ct_row,
                 row_data.get("so_item"),
-                operation="Cutting",
+                operation="Sub Assembly",
                 combo_item=row_data.get("combo_item"),
                 article=row_data.get("article"),
-                work_qty_field="cutting_qty",
+                work_qty_field="sub_assembly_qty",
             )
         except Exception:
             frappe.log_error(
-                title="Cutting Report Style Contractors",
+                title="Sub Assembly Report Style Contractors",
                 message=frappe.get_traceback(),
             )
 
     def _apply_subassembly_style_qty(self):
-        for row in self.cutting_report_ct or []:
-            apply_split_qty_defaults(row, "cutting_qty")
-            apply_subassembly_contractor_qty(row, "cutting_qty")
-            apply_all_style_contractor_amounts(row, "cutting_qty")
+        for row in self.sub_assembly_report_ct or []:
+            self._autofill_style_contractors(row)
+            apply_split_qty_defaults(row, "sub_assembly_qty")
+            apply_subassembly_contractor_qty(row, "sub_assembly_qty")
+            apply_all_style_contractor_amounts(row, "sub_assembly_qty")
+
+    def _autofill_style_contractors(self, ct_row):
+        """Default style contractor to report supplier when blank."""
+        supplier = self.get("supplier")
+        if not supplier:
+            return
+        for sc in ct_row.get("style_contractors") or []:
+            if not sc.get("contractor"):
+                sc.contractor = supplier
 
     @frappe.whitelist()
     def load_style_contractors(self):
         """Refresh nested style_contractors from Item master for all CT rows."""
-        for row in self.cutting_report_ct or []:
+        for row in self.sub_assembly_report_ct or []:
             if not row.so_item:
                 continue
             append_style_contractors(
                 row,
                 row.so_item,
-                operation="Cutting",
+                operation="Sub Assembly",
                 combo_item=row.combo_item,
                 article=row.article,
-                work_qty_field="cutting_qty",
+                work_qty_field="sub_assembly_qty",
             )
-        return len(self.cutting_report_ct or [])
+            self._autofill_style_contractors(row)
+        return len(self.sub_assembly_report_ct or [])
 
     @frappe.whitelist()
     def get_data1(self):
         print(f"\n{'='*60}")
-        print(f"[get_data1] Starting for Cutting Report: '{self.name}'")
+        print(f"[get_data1] Starting for Sub Assembly Report: '{self.name}'")
         print(f"[get_data1] Order Sheet: '{self.order_sheet}'")
         print(f"{'='*60}")
         
@@ -125,17 +153,17 @@ class CuttingReport(Document):
             print(f"[get_data1] ERROR: Invalid Order Sheet type")
             frappe.throw("Invalid Order Sheet reference.")
         
-        # Check if cutting_report_ct is empty or not
-        existing_rows = len(self.cutting_report_ct) if self.cutting_report_ct else 0
-        print(f"[get_data1] Existing cutting_report_ct rows: {existing_rows}")
+        # Check if sub_assembly_report_ct is empty or not
+        existing_rows = len(self.sub_assembly_report_ct) if self.sub_assembly_report_ct else 0
+        print(f"[get_data1] Existing sub_assembly_report_ct rows: {existing_rows}")
         
         # Clear existing rows to allow re-fetch with new calculations
         if existing_rows > 0:
             print(f"[get_data1] Clearing {existing_rows} existing rows to re-fetch data...")
-            self.cutting_report_ct = []
+            self.sub_assembly_report_ct = []
         
-        if not self.cutting_report_ct or existing_rows == 0:
-            print(f"[get_data1] cutting_report_ct is empty, will fetch data")
+        if not self.sub_assembly_report_ct or existing_rows == 0:
+            print(f"[get_data1] sub_assembly_report_ct is empty, will fetch data")
             if doc.is_or == 0:
                 print(f"[get_data1] Order Sheet is_or = 0, fetching data...")
                 rec = frappe.db.sql("""
@@ -147,7 +175,7 @@ class CuttingReport(Document):
                 
                 print(f"[get_data1] Found {len(rec)} rows from Order Sheet")
 
-                self.cutting_report_ct = []
+                self.sub_assembly_report_ct = []
                 print(f"[get_data1] Processing {len(rec)} Order Sheet CT rows...")
                 for idx, r in enumerate(rec):
                     so_item = r.get("so_item")
@@ -232,7 +260,7 @@ class CuttingReport(Document):
                                 print(f"{'='*60}")
                                 
                                 try:
-                                    self._append_cutting_ct_row({
+                                    self._append_sub_assembly_ct_row({
                                         "customer": r.get("customer"),
                                         "design": r.get("design"),
                                         "colour": r.get("colour"),
@@ -252,7 +280,7 @@ class CuttingReport(Document):
                                         f"[get_data1] Combo row failed ({combo_item_code}): {combo_error}"
                                     )
                                     frappe.log_error(
-                                        title="Cutting Report Combo Row",
+                                        title="Sub Assembly Report Combo Row",
                                         message=(
                                             f"so_item={so_item}, combo_item={combo_item_code}\n"
                                             f"{frappe.get_traceback()}"
@@ -334,7 +362,7 @@ class CuttingReport(Document):
                                             print(f"{'='*60}")
                                             
                                             try:
-                                                self._append_cutting_ct_row({
+                                                self._append_sub_assembly_ct_row({
                                                     "customer": r.get("customer"),
                                                     "design": r.get("design"),
                                                     "colour": r.get("colour"),
@@ -354,7 +382,7 @@ class CuttingReport(Document):
                                                     f"[get_data1] Combo row failed ({combo_item_code}): {combo_error}"
                                                 )
                                                 frappe.log_error(
-                                                    title="Cutting Report Combo Row",
+                                                    title="Sub Assembly Report Combo Row",
                                                     message=(
                                                         f"so_item={so_item}, combo_item={combo_item_code}\n"
                                                         f"{frappe.get_traceback()}"
@@ -373,16 +401,16 @@ class CuttingReport(Document):
                         error_msg = f"Error processing item {so_item}: {str(e)}"
                         print(f"[get_data1] Row {idx+1}: ✗ ERROR: {error_msg}")
                         frappe.log_error(
-                            title="Cutting Report Item Processing",
+                            title="Sub Assembly Report Item Processing",
                             message=error_msg,
                         )
                         continue
                 
                 print(f"\n{'='*60}")
                 print(f"[get_data1] SUMMARY:")
-                print(f"  - Total rows added to cutting_report_ct: {len(self.cutting_report_ct)}")
-                print(f"[get_data1] Final cutting_report_ct data:")
-                for idx, row in enumerate(self.cutting_report_ct):
+                print(f"  - Total rows added to sub_assembly_report_ct: {len(self.sub_assembly_report_ct)}")
+                print(f"[get_data1] Final sub_assembly_report_ct data:")
+                for idx, row in enumerate(self.sub_assembly_report_ct):
                     print(f"  Row {idx+1}:")
                     print(f"    - so_item: {row.so_item}")
                     print(f"    - combo_item: {row.combo_item}")
@@ -391,7 +419,7 @@ class CuttingReport(Document):
                     print(f"    - pcs: {row.pcs}")
                     print(f"    - qty: {row.qty}")
                 print(f"{'='*60}")
-                print(f"[get_data1] Saving Cutting Report...")
+                print(f"[get_data1] Saving Sub Assembly Report...")
                 
                 # Set flag to ignore link validation (allow cancelled Order Sheets)
                 self.flags.ignore_links = True
@@ -412,7 +440,7 @@ class CuttingReport(Document):
                 print(f"[get_data1] Order Sheet is_or = 1, skipping (only process when is_or = 0)")
                 print(f"{'='*60}\n")
         else:
-            print(f"[get_data1] cutting_report_ct already has {existing_rows} rows, skipping fetch")
+            print(f"[get_data1] sub_assembly_report_ct already has {existing_rows} rows, skipping fetch")
             print(f"{'='*60}\n")
 
     def _ensure_style_contractors_loaded(self):
@@ -421,20 +449,15 @@ class CuttingReport(Document):
             _as_style_row,
         )
 
-        for row in self.cutting_report_ct or []:
-            # Desk sends nested styles as plain dicts — normalize for safe updates
-            existing = row.get("style_contractors") or []
-            if existing:
-                row.set("style_contractors", [_as_style_row(sc) for sc in existing])
-                continue
-            if not row.so_item:
+        for row in self.sub_assembly_report_ct or []:
+            if row.get("style_contractors") or not row.so_item:
                 continue
             if row.name:
                 nested = frappe.get_all(
                     "Report Style Contractor",
                     filters={
                         "parent": row.name,
-                        "parenttype": "Cutting Report CT",
+                        "parenttype": "Sub Assembly Report CT",
                         "parentfield": "style_contractors",
                     },
                     fields=["*"],
@@ -446,63 +469,66 @@ class CuttingReport(Document):
             append_style_contractors(
                 row,
                 row.so_item,
-                operation="Cutting",
+                operation="Sub Assembly",
                 combo_item=row.combo_item,
                 article=row.article,
-                work_qty_field="cutting_qty",
+                work_qty_field="sub_assembly_qty",
             )
 
     def validate(self):
         self._ensure_style_contractors_loaded()
-        self.calculate_finished_cutting_qty()
+        self.calculate_finished_sub_assembly_qty()
         self._apply_subassembly_style_qty()
         validate_mandatory_contractors(
-            self.cutting_report_ct,
-            qty_field="cutting_qty",
-            report_label="Cutting Report",
+            self.sub_assembly_report_ct,
+            qty_field="sub_assembly_qty",
+            report_label="Sub Assembly Report",
         )
         # Hard block only on Submit; draft Save shows a warning so work is not lost
         if getattr(self, "_action", None) == "submit":
             validate_subassembly_qty_caps(
-                self, "cutting_report_ct", "cutting_qty", "Cutting Report"
+                self, "sub_assembly_report_ct", "sub_assembly_qty", "Sub Assembly Report"
             )
         else:
             warnings = validate_subassembly_qty_caps(
                 self,
-                "cutting_report_ct",
-                "cutting_qty",
-                "Cutting Report",
+                "sub_assembly_report_ct",
+                "sub_assembly_qty",
+                "Sub Assembly Report",
                 throw=False,
             )
             for msg in warnings:
                 frappe.msgprint(msg, indicator="orange", alert=True)
-        validate_cutting_report_tolerance(self)
         self.total_qty()
         self.total_percentage()
         self.total()
-    
+
     def before_save(self):
         self._ensure_style_contractors_loaded()
-        self.calculate_finished_cutting_qty()
+        self.calculate_finished_sub_assembly_qty()
         self._apply_subassembly_style_qty()
 
-    def calculate_finished_cutting_qty(self):
-        """Calculate and update finished_cutting_qty in the child table based on user-entered cutting_qty values."""
+    def before_submit(self):
+        validate_subassembly_qty_caps(
+            self, "sub_assembly_report_ct", "sub_assembly_qty", "Sub Assembly Report"
+        )
+    def calculate_finished_sub_assembly_qty(self):
+        """Calculate and update finished_sub_assembly_qty in the child table based on user-entered sub_assembly_qty values."""
         try:
-            # Dictionary to store total cutting_qty for each (so_item, combo_item) combination
+            # Dictionary to store total sub_assembly_qty for each (so_item, combo_item) combination
             cutting_totals = {}
 
             # Iterate through child table and fetch totals dynamically
-            for row in self.cutting_report_ct:
+            for row in self.sub_assembly_report_ct:
                 if not row.so_item:
                     continue
 
                 exclude = "AND cr.name != %s" if self.name else ""
                 if row.combo_item:
                     query = f"""
-                        SELECT SUM(crct.cutting_qty) AS total_cutting
-                        FROM `tabCutting Report CT` AS crct
-                        LEFT JOIN `tabCutting Report` AS cr
+                        SELECT SUM(crct.sub_assembly_qty) AS total_cutting
+                        FROM `tabSub Assembly Report CT` AS crct
+                        LEFT JOIN `tabSub Assembly Report` AS cr
                         ON crct.parent = cr.name
                         WHERE cr.order_sheet = %s AND crct.so_item = %s AND crct.combo_item = %s
                           AND cr.docstatus = 1 {exclude}
@@ -515,9 +541,9 @@ class CuttingReport(Document):
                     )
                 else:
                     query = f"""
-                        SELECT SUM(crct.cutting_qty) AS total_cutting
-                        FROM `tabCutting Report CT` AS crct
-                        LEFT JOIN `tabCutting Report` AS cr
+                        SELECT SUM(crct.sub_assembly_qty) AS total_cutting
+                        FROM `tabSub Assembly Report CT` AS crct
+                        LEFT JOIN `tabSub Assembly Report` AS cr
                         ON crct.parent = cr.name
                         WHERE cr.order_sheet = %s AND crct.so_item = %s
                           AND (crct.combo_item IS NULL OR crct.combo_item = '')
@@ -535,20 +561,20 @@ class CuttingReport(Document):
                 # Store the total in the dictionary
                 cutting_totals[(row.so_item, row.combo_item or '')] = order_sheets[0].total_cutting if order_sheets else 0
 
-            # Update finished_cutting_qty in child table
-            for row in self.cutting_report_ct:
-                row.finished_cutting_qty = cutting_totals.get((row.so_item, row.combo_item or ''), 0)
+            # Update finished_sub_assembly_qty in child table
+            for row in self.sub_assembly_report_ct:
+                row.finished_sub_assembly_qty = cutting_totals.get((row.so_item, row.combo_item or ''), 0)
 
         except Exception as e:
-            frappe.log_error(frappe.get_traceback(), "Finished Cutting Quantity Calculation Failed")
-            frappe.throw(f"Error in calculating finished cutting quantity: {str(e)}")
+            frappe.log_error(frappe.get_traceback(), "Finished Sub Assembly Quantity Calculation Failed")
+            frappe.throw(f"Error in calculating finished sub assembly quantity: {str(e)}")
 
     def total_qty(self):
-        for i in self.cutting_report_ct:
-            i.total_copy1 = (i.finished_cutting_qty or 0) + (i.cutting_qty or 0)
+        for i in self.sub_assembly_report_ct:
+            i.total_copy1 = (i.finished_sub_assembly_qty or 0) + (i.sub_assembly_qty or 0)
 
     def total_percentage(self):
-        for i in self.cutting_report_ct:
+        for i in self.sub_assembly_report_ct:
             entry_qty = flt(i.total_copy1)
             pcs = flt(i.pcs) or 1
             base_qty = entry_qty / pcs
@@ -569,10 +595,10 @@ class CuttingReport(Document):
                 crct.article, 
                 crct.ean, 
                 crct.qty,
-                SUM(crct.cutting_qty) AS cutting,
+                SUM(crct.sub_assembly_qty) AS cutting,
                 crct.qty_ctn
-            FROM `tabCutting Report` AS cr
-            LEFT JOIN `tabCutting Report CT` AS crct ON crct.parent = cr.name
+            FROM `tabSub Assembly Report` AS cr
+            LEFT JOIN `tabSub Assembly Report CT` AS crct ON crct.parent = cr.name
             WHERE cr.order_sheet = %s AND cr.docstatus = 1
             GROUP BY crct.customer, crct.design, crct.colour, crct.article, crct.ean, crct.qty, crct.qty_ctn
         """, (self.order_sheet,), as_dict=True)
@@ -588,7 +614,7 @@ class CuttingReport(Document):
         else:
             self.percentage = 0
 	
-        for i in self.cutting_report_ct:
+        for i in self.sub_assembly_report_ct:
             total_qty += i.qty or 0
             self.ordered_qty = total_qty
 
@@ -630,7 +656,7 @@ def _expected_combo_rows_for_order_sheet(order_sheet):
                         )
         except Exception:
             frappe.log_error(
-                title="Cutting Report Expected Combo Rows",
+                title="Sub Assembly Report Expected Combo Rows",
                 message=frappe.get_traceback(),
             )
     return expected
@@ -639,16 +665,16 @@ def _expected_combo_rows_for_order_sheet(order_sheet):
 @frappe.whitelist()
 def repair_missing_combo_rows(docname):
     """Add missing DUVET/PILLOW (combo) rows without removing existing lines."""
-    doc = frappe.get_doc("Cutting Report", docname)
+    doc = frappe.get_doc("Sub Assembly Report", docname)
     if doc.docstatus == 1:
         frappe.throw(
-            _("Cancel and amend this Cutting Report before repairing rows."),
+            _("Cancel and amend this Sub Assembly Report before repairing rows."),
             title=_("Submitted Document"),
         )
     if not doc.order_sheet:
         frappe.throw(_("Please set Order Sheet first."))
 
-    existing = {(r.so_item, r.combo_item or "") for r in doc.cutting_report_ct or []}
+    existing = {(r.so_item, r.combo_item or "") for r in doc.sub_assembly_report_ct or []}
     added = []
 
     for row_data in _expected_combo_rows_for_order_sheet(doc.order_sheet):
@@ -657,7 +683,7 @@ def repair_missing_combo_rows(docname):
             continue
         pcs = row_data["pcs"]
         planned_qty = row_data["planned_qty"]
-        doc._append_cutting_ct_row(
+        doc._append_sub_assembly_ct_row(
             {
                 **row_data,
                 "qty": pcs * planned_qty,

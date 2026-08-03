@@ -170,35 +170,79 @@ def sync_item_subassembly_qty_from_bom(item_code):
 	return {"updated": updated, "count": len(updated)}
 
 
-def apply_subassembly_contractor_qty(ct_row, work_qty_field):
-	"""Set calculated total qty on sub-assembly style contractor rows.
+def finished_work_qty(row, work_qty):
+	"""Convert report line work qty to finished-product pieces.
 
-	Default: BOM zip/button per finished unit × work qty (stitching/cutting/etc).
-	Keeps a manual override unless qty is still the unmultiplied BOM unit qty.
+	Cutting/stitching lines for combo components (e.g. PILLOW pcs=2) store
+	component pieces in cutting_qty; BOM math and order caps use finished pcs.
 	"""
-	work_qty = flt(getattr(ct_row, work_qty_field, None))
+	work_qty = flt(work_qty)
+	pcs = flt(row.get("pcs") if hasattr(row, "get") else getattr(row, "pcs", None)) or 1
+	return work_qty / pcs if pcs else work_qty
+
+
+def set_sc_value(sc, fieldname, value):
+	"""Set a field on a style-contractor row (dict, _dict, or Document)."""
+	if sc is None:
+		return
+	if isinstance(sc, dict):
+		sc[fieldname] = value
+		return
+	try:
+		sc.set(fieldname, value)
+	except Exception:
+		setattr(sc, fieldname, value)
+
+
+def apply_subassembly_contractor_qty(ct_row, work_qty_field):
+	"""Set style qty from finished product qty × BOM zip/button per unit.
+
+	Example: finished products = 12, BOM zip qty = 2 → style qty = 24.
+	Always recalculates so users only enter finished product qty.
+	Work qty on combo lines may be component pieces — convert via pcs.
+	"""
+	raw_work_qty = flt(getattr(ct_row, work_qty_field, None))
+	work_qty = finished_work_qty(ct_row, raw_work_qty)
 	item_code = getattr(ct_row, "so_item", None)
 	if not item_code:
 		return
 
+	by_style = {}
 	for sc in getattr(ct_row, "style_contractors", None) or []:
-		style_name = sc.get("style")
-		is_sub = bool(sc.get("is_subassembly")) or bool(subassembly_material_type(style_name))
-		if not is_sub:
+		style_name = sc.get("style") if hasattr(sc, "get") else getattr(sc, "style", None)
+		if not style_name:
 			continue
-		sc.is_subassembly = 1
-		# Always resolve from BOM so stale unit_qty (e.g. Item Style qty=1) is corrected
-		unit_qty = get_subassembly_unit_qty(item_code, style_name, sc.get("unit_qty") or sc.get("qty"))
-		sc.unit_qty = unit_qty
-		split_work = flt(sc.get("split_qty")) or work_qty
-		if not sc.get("split_qty") and work_qty > 0:
-			sc.split_qty = work_qty
-		expected = split_work * unit_qty if split_work > 0 else unit_qty
-		current = flt(sc.get("qty"))
-		# Apply formula when empty or still stuck at per-unit BOM qty
-		if current <= 0 or (split_work > 0 and abs(current - unit_qty) < 1e-6):
-			sc.qty = expected
-		sc.amount = flt(sc.get("rate")) * flt(sc.qty)
+		by_style.setdefault(style_name, []).append(sc)
+
+	for _style, rows in by_style.items():
+		# Keep split_qty in the same units as the report work field (component pcs).
+		# Convert to finished only when applying BOM unit qty.
+		if len(rows) == 1 and raw_work_qty > 0:
+			set_sc_value(rows[0], "split_qty", raw_work_qty)
+
+		for sc in rows:
+			style_name = sc.get("style") if hasattr(sc, "get") else getattr(sc, "style", None)
+			is_sub = bool(sc.get("is_subassembly") if hasattr(sc, "get") else getattr(sc, "is_subassembly", 0)) or bool(
+				subassembly_material_type(style_name)
+			)
+			if not is_sub:
+				continue
+			set_sc_value(sc, "is_subassembly", 1)
+			unit_qty = get_subassembly_unit_qty(
+				item_code,
+				style_name,
+				(sc.get("unit_qty") if hasattr(sc, "get") else None) or (sc.get("qty") if hasattr(sc, "get") else None),
+			)
+			set_sc_value(sc, "unit_qty", unit_qty)
+			split_raw = flt(sc.get("split_qty") if hasattr(sc, "get") else getattr(sc, "split_qty", 0)) or raw_work_qty
+			if raw_work_qty > 0 and not flt(sc.get("split_qty") if hasattr(sc, "get") else getattr(sc, "split_qty", 0)):
+				set_sc_value(sc, "split_qty", raw_work_qty)
+				split_raw = raw_work_qty
+			split_finished = finished_work_qty(ct_row, split_raw)
+			qty = split_finished * unit_qty if split_finished > 0 else unit_qty
+			set_sc_value(sc, "qty", qty)
+			rate = flt(sc.get("rate") if hasattr(sc, "get") else getattr(sc, "rate", 0))
+			set_sc_value(sc, "amount", rate * flt(qty))
 
 
 def _report_configs():
@@ -207,6 +251,7 @@ def _report_configs():
 		("Stitching Report", "Stitching Report CT", "stitching_qty"),
 		("Packing Report", "Packing Report CT", "packaging_qty"),
 		("Checking Report", "Checking Report CT", "checking_qty"),
+		("Sub Assembly Report", "Sub Assembly Report CT", "sub_assembly_qty"),
 	)
 
 
@@ -220,7 +265,7 @@ def _subassembly_styles_for_item(item_code):
 
 	item = frappe.get_doc("Item", item_code)
 	styles = {}
-	for operation in ("Cutting", "Stitching", "Packing", "Checking"):
+	for operation in ("Cutting", "Stitching", "Packing", "Checking", "Sub Assembly"):
 		for row in _iter_item_style_rows(item, operation):
 			if not row.get("is_subassembly") and not subassembly_material_type(row.style):
 				continue
@@ -245,10 +290,15 @@ def get_subassembly_qty_used(order_sheet, so_item, style, unit_qty, exclude_pare
 		if not reports:
 			continue
 
+		ct_fields = ["name", qty_field]
+		# pcs exists on manufacturing report CT doctypes (combo component lines)
+		if frappe.get_meta(child_doctype).has_field("pcs"):
+			ct_fields.append("pcs")
+
 		ct_rows = frappe.get_all(
 			child_doctype,
 			filters={"parent": ["in", reports], "so_item": so_item},
-			fields=["name", qty_field],
+			fields=ct_fields,
 		)
 		if not ct_rows:
 			continue
@@ -257,7 +307,9 @@ def get_subassembly_qty_used(order_sheet, so_item, style, unit_qty, exclude_pare
 		if not ct_names:
 			continue
 
-		work_by_ct = {r.name: flt(getattr(r, qty_field)) for r in ct_rows}
+		work_by_ct = {
+			r.name: finished_work_qty(r, getattr(r, qty_field)) for r in ct_rows
+		}
 		sc_rows = frappe.get_all(
 			"Report Style Contractor",
 			filters={
@@ -280,19 +332,38 @@ def get_subassembly_qty_used(order_sheet, so_item, style, unit_qty, exclude_pare
 	return total
 
 
-def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report_label):
-	"""Ensure sub-assembly totals do not exceed order qty × BOM unit qty."""
+def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report_label, throw=True):
+	"""Ensure finished qty × BOM does not exceed order qty × BOM unit qty.
+
+	Returns list of warning messages. Throws on first breach when throw=True.
+	"""
 	order_sheet = doc.get("order_sheet")
+	warnings = []
 	if not order_sheet:
-		return
+		return warnings
 
 	for row in doc.get(child_table_field) or []:
-		work_qty = flt(row.get(work_qty_field))
-		if work_qty <= 0 or not row.get("so_item"):
+		raw_work_qty = flt(row.get(work_qty_field))
+		if raw_work_qty <= 0 or not row.get("so_item"):
 			continue
 
+		# Combo component lines (pillow pcs=2 etc.) store component pieces
+		work_qty = finished_work_qty(row, raw_work_qty)
+
 		order_qty = flt(row.get("order_qty"))
-		if order_qty <= 0:
+		planned_qty = flt(row.get("planned_qty"))
+		# Allow cutting up to planned when plan exceeds order (over-plan booking)
+		qty_ceiling = max(order_qty, planned_qty)
+		if qty_ceiling <= 0:
+			continue
+
+		if work_qty > qty_ceiling + 1e-9:
+			msg = _(
+				"Row {0}: Finished Product Qty {1} cannot exceed Order/Plan Qty {2}."
+			).format(row.idx, work_qty, qty_ceiling)
+			if throw:
+				frappe.throw(msg, title=_("{0} — Qty Limit").format(report_label))
+			warnings.append(msg)
 			continue
 
 		style_rows = _subassembly_styles_for_item(row.so_item)
@@ -301,7 +372,7 @@ def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report
 
 		for style_row in style_rows:
 			unit_qty = resolve_subassembly_unit_qty(row.so_item, style_row)
-			max_total = order_qty * unit_qty
+			max_total = qty_ceiling * unit_qty
 			used = get_subassembly_qty_used(
 				order_sheet,
 				row.so_item,
@@ -312,18 +383,22 @@ def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report
 			)
 			current = work_qty * unit_qty
 			if used + current > max_total + 1e-9:
-				frappe.throw(
-					_(
-						"Row {0}: {1} quantity cannot exceed order limit. "
-						"Max {2} ({3} pcs × {4} per pc), already used {5}, this entry adds {6}."
-					).format(
-						row.idx,
-						style_row.style,
-						max_total,
-						order_qty,
-						unit_qty,
-						used,
-						current,
-					),
-					title=_("{0} — Sub-Assembly Limit").format(report_label),
+				msg = _(
+					"Row {0}: {1} style qty cannot exceed order/plan limit. "
+					"Finished Product Qty {2} × BOM {3} = {4}, but max is {5} "
+					"({6} pcs × {3} per pc). Already used {7}."
+				).format(
+					row.idx,
+					style_row.style,
+					work_qty,
+					unit_qty,
+					current,
+					max_total,
+					qty_ceiling,
+					used,
 				)
+				if throw:
+					frappe.throw(msg, title=_("{0} — Sub-Assembly Limit").format(report_label))
+				warnings.append(msg)
+
+	return warnings

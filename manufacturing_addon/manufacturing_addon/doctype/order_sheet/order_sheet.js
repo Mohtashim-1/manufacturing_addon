@@ -63,6 +63,40 @@ frappe.ui.form.on("Order Sheet", {
 					},
 				});
 			}, __("Actions"));
+
+			frm.add_custom_button(__("Update Net, Gross & Carton Weight"), () => {
+				frappe.confirm(
+					__(
+						"Recalculate Net Weight, Gross Weight, and Carton Net/Gross Weight for all rows from Item and Carton Item masters? Manual weight overrides will be cleared."
+					),
+					() => {
+						frappe.call({
+							method:
+								"manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.update_order_sheet_weights",
+							args: { order_sheet: frm.doc.name },
+							freeze: true,
+							freeze_message: __("Updating net, gross and carton weights..."),
+							callback(r) {
+								if (!r.exc) {
+									const msg = r.message || {};
+									frappe.show_alert({
+										message: __(
+											"Updated weights on {0} row(s). Total Net: {1} KG, Total Gross: {2} KG",
+											[
+												msg.updated_rows || 0,
+												msg.total_net_weight || 0,
+												msg.total_gross_weight || 0,
+											]
+										),
+										indicator: "green",
+									}, 6);
+								}
+								frm.reload_doc();
+							},
+						});
+					}
+				);
+			}, __("Actions"));
 		}
 
 		// ── Intercept GridView column saves so doc field stays current without a full save ──
@@ -491,21 +525,42 @@ function update_total_cartoons_for_row(cdt, cdn, { force_weight = false } = {}) 
 	const dimensions = parse_carton_dimensions(row.carton_dimension);
 	const soWeightPerUnit = toFloat(row.so_item_weight_per_unit);
 	const soGrossPerUnit = toFloat(row.so_item_gross_weight_per_unit);
-	const cartonWeightPerUnit = toFloat(row.carton_weight_per_unit);
+	let cartonWeightPerUnit = toFloat(row.carton_weight_per_unit);
+	let cartonGrossPerUnit = toFloat(row.carton_gross_weight_per_unit);
 	const perCartonCbm = dimensions ? (dimensions.length * dimensions.width * dimensions.height) / 1000000 : 0;
 	const orderCbm = perCartonCbm * total;
 	const plannedCbm = perCartonCbm * totalPlanned;
 	const cartonsForWeight = totalPlanned || total;
+
+	// Infer carton weight from SO gross-net delta when carton Item weight is blank
+	if (cartonWeightPerUnit <= 0 && cartonGrossPerUnit <= 0) {
+		const delta = soGrossPerUnit - soWeightPerUnit;
+		if (delta > 0 && qtyCtn > 0) {
+			cartonWeightPerUnit = delta * qtyCtn;
+		}
+	}
+	if (cartonGrossPerUnit <= 0) {
+		cartonGrossPerUnit = cartonWeightPerUnit;
+	}
+
 	const netWeight = qtyForPlanned * soWeightPerUnit;
 	const grossWeight =
 		soGrossPerUnit > 0
 			? qtyForPlanned * soGrossPerUnit
 			: netWeight + cartonsForWeight * cartonWeightPerUnit;
+	// Per carton: pcs net/gross × qty per carton
+	const cartonNetWeight = qtyCtn * soWeightPerUnit;
+	const cartonGrossWeight =
+		soGrossPerUnit > 0 ? qtyCtn * soGrossPerUnit : cartonNetWeight;
 
 	frappe.model.set_value(cdt, cdn, "total_carton", total);
 	frappe.model.set_value(cdt, cdn, "total_planned_ctn", totalPlanned);
 	frappe.model.set_value(cdt, cdn, "order_cbm", orderCbm);
 	frappe.model.set_value(cdt, cdn, "planned_cbm", plannedCbm);
+	frappe.model.set_value(cdt, cdn, "carton_weight_per_unit", cartonWeightPerUnit);
+	frappe.model.set_value(cdt, cdn, "carton_gross_weight_per_unit", cartonGrossPerUnit);
+	frappe.model.set_value(cdt, cdn, "carton_net_weight", cartonNetWeight);
+	frappe.model.set_value(cdt, cdn, "carton_gross_weight", cartonGrossWeight);
 
 	const manual = cint(row.manual_weight);
 	if (force_weight || !manual) {

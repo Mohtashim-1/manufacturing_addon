@@ -46,23 +46,23 @@
   },
   {
    "columns": 1,
-   "description": "Work quantity assigned to this contractor for this style (split across contractors must total line work qty).",
+   "description": "Finished product qty for this contractor (must total line Finished Product Qty when split).",
    "fieldname": "split_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Split Qty",
-   "non_negative": 1
+   "label": "Finished Qty",
+       "non_negative": 1
   },
   {
    "columns": 1,
    "default": "1",
-   "description": "For zip/button sub-assembly: BOM qty per piece × work qty. User can override.",
+   "description": "Auto: Finished Qty \u00d7 BOM zip/button qty per piece. Do not edit for sub-assembly styles.",
    "fieldname": "qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Qty",
+   "label": "Style Qty",
    "non_negative": 1,
-   "read_only": 0
+   "read_only": 1
   },
   {
    "columns": 1,

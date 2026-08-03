@@ -10,7 +10,8 @@
   "cutting",
   "stitching",
   "checking",
-  "packing"
+  "packing",
+  "sub_assembly"
  ],
  "fields": [
   {
@@ -42,12 +43,18 @@
    "fieldname": "packing",
    "fieldtype": "Check",
    "label": "Packing"
+  },
+  {
+   "default": "0",
+   "fieldname": "sub_assembly",
+   "fieldtype": "Check",
+   "label": "Sub Assembly"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-07 00:02:15.712705",
+ "modified": "2026-07-31 07:31:05.059867",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Contractor",

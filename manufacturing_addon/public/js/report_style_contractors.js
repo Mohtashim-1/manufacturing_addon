@@ -148,7 +148,8 @@ function init_report_style_contractors(config) {
         });
 
         for (const rows of Object.values(by_style)) {
-            if (rows.length === 1 && work_qty > 0 && !Number(rows[0].split_qty)) {
+            // One contractor per style → finished qty drives the style row fully
+            if (rows.length === 1 && work_qty > 0) {
                 rows[0].split_qty = work_qty;
             }
             for (const sc of rows) {
@@ -355,13 +356,20 @@ function init_report_style_contractors(config) {
     function setup_style_contractors_panel(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
         sync_style_contractors_from_frm_doc(frm, cdt, cdn);
+        // Prefer styles already on frm.doc (loaded from server).
+        const frm_row = (frm.doc[ct_fieldname] || []).find((r) => r.name === cdn);
+        if (frm_row?.style_contractors?.length && !(row.style_contractors || []).length) {
+            row.style_contractors = frm_row.style_contractors;
+        }
         ensure_style_contractors_in_locals(row);
         if (!row?.so_item) {
             return;
         }
         bind_style_contractor_grid(frm, cdt, cdn);
         if ((row.style_contractors || []).length) {
+            // Nested grid mounts after form_render; refresh once layout is ready.
             refresh_nested_style_contractor_grid(frm, cdn);
+            setTimeout(() => refresh_nested_style_contractor_grid(frm, cdn), 50);
             return;
         }
         ensure_style_contractors_for_row(frm, cdt, cdn);
@@ -396,9 +404,14 @@ function init_report_style_contractors(config) {
             bind_style_contractor_model_sync(frm);
             (frm.doc[ct_fieldname] || []).forEach((ct_row) => {
                 const local_row = locals[ct_doctype]?.[ct_row.name];
-                if (local_row) {
-                    ensure_style_contractors_in_locals(local_row);
+                if (!local_row) {
+                    return;
                 }
+                // Form payload now includes nested styles; keep locals in sync.
+                if (ct_row.style_contractors?.length) {
+                    local_row.style_contractors = ct_row.style_contractors;
+                }
+                ensure_style_contractors_in_locals(local_row);
             });
             if (!frm.is_new()) {
                 frm.add_custom_button(__("Load Style Contractors"), () => {

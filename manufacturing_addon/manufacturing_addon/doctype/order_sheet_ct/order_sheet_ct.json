@@ -34,10 +34,13 @@
   "planned_cbm",
   "net_weight",
   "gross_weight",
+  "carton_net_weight",
+  "carton_gross_weight",
   "manual_weight",
   "so_item_weight_per_unit",
   "so_item_gross_weight_per_unit",
   "carton_weight_per_unit",
+  "carton_gross_weight_per_unit",
   "section_break_wwzm",
   "instructions"
  ],
@@ -177,6 +180,24 @@
    "description": "Auto-calculated from Item Gross Weight × Planned Qty (or Net + carton weight). Editable."
   },
   {
+   "columns": 1,
+   "fieldname": "carton_net_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Carton Net Weight (KG)",
+   "read_only": 1,
+   "description": "Pcs Net Weight × Qty per Carton"
+  },
+  {
+   "columns": 1,
+   "fieldname": "carton_gross_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Carton Gross Weight (KG)",
+   "read_only": 1,
+   "description": "Pcs Gross Weight × Qty per Carton"
+  },
+  {
    "default": "0",
    "fieldname": "manual_weight",
    "fieldtype": "Check",
@@ -201,7 +222,14 @@
    "fieldname": "carton_weight_per_unit",
    "fieldtype": "Float",
    "hidden": 1,
-   "label": "Carton Weight Per Unit",
+   "label": "Carton Net Weight Per Unit",
+   "read_only": 1
+  },
+  {
+   "fieldname": "carton_gross_weight_per_unit",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Carton Gross Weight Per Unit",
    "read_only": 1
   },
   {

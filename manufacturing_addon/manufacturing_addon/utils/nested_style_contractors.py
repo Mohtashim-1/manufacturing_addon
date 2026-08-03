@@ -2,7 +2,44 @@
 # License: MIT
 
 import frappe
+from frappe.model.document import Document
 from frappe.utils import flt
+
+# Frappe 16: child tables cannot host nested child tables via Document.append()
+# (_table_fieldnames is empty for istable docs). Assign lists of _dict instead.
+# as_dict() also skips nested tables on child docs — StyleContractorsChildMixin
+# re-injects them so Desk receives Style Contractors on form load.
+
+
+def _as_style_row(data):
+	row = frappe._dict(data)
+	row.doctype = row.get("doctype") or "Report Style Contractor"
+	return row
+
+
+def _style_row_to_client_dict(row):
+	if isinstance(row, Document):
+		return row.as_dict(convert_dates_to_str=True)
+	out = {}
+	for key, value in dict(row).items():
+		if hasattr(value, "isoformat"):
+			out[key] = str(value)
+		else:
+			out[key] = value
+	out["doctype"] = out.get("doctype") or "Report Style Contractor"
+	return out
+
+
+class StyleContractorsChildMixin:
+	"""Serialize nested style_contractors onto report CT rows for the Desk client."""
+
+	def as_dict(self, *args, **kwargs):
+		doc = super().as_dict(*args, **kwargs)
+		style_rows = self.__dict__.get("style_contractors")
+		if style_rows is None:
+			style_rows = self.get("style_contractors")
+		doc["style_contractors"] = [_style_row_to_client_dict(row) for row in (style_rows or [])]
+		return doc
 
 
 def load_nested_style_contractors(doc, child_table_field, parenttype):
@@ -22,9 +59,7 @@ def load_nested_style_contractors(doc, child_table_field, parenttype):
 			order_by="idx asc",
 		)
 
-		row.set("style_contractors", [])
-		for sc_data in nested_rows:
-			row.append("style_contractors", sc_data)
+		row.set("style_contractors", [_as_style_row(sc) for sc in nested_rows])
 
 
 def save_nested_style_contractors(doc, child_table_field, parenttype):
@@ -77,10 +112,9 @@ def _save_style_contractors_for_ct_row(ct_row, parenttype):
 		}
 
 		if row.get("name") and not row.get("__islocal"):
-			frappe.db.set_value("Report Style Contractor", row.name, values)
+			frappe.db.set_value("Report Style Contractor", row.get("name"), values)
 		else:
 			doc = frappe.get_doc({"doctype": "Report Style Contractor", **values})
 			doc.insert(ignore_permissions=True)
-			row.name = doc.name
-			if hasattr(row, "__islocal"):
-				row.__islocal = 0
+			row["name"] = doc.name
+			row["__islocal"] = 0

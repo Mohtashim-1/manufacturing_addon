@@ -18,7 +18,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Transactions",
-   "link_count": 7,
+   "link_count": 9,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -76,6 +76,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Sub Assembly Report",
+   "link_count": 0,
+   "link_to": "Sub Assembly Report",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Stitching Report",
    "link_count": 0,
    "link_to": "Stitching Report",
@@ -99,6 +109,16 @@
    "label": "Checking Report",
    "link_count": 0,
    "link_to": "Checking Report",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Quality Report",
+   "link_count": 0,
+   "link_to": "Quality Report",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -235,7 +255,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-24 16:28:50.604964",
+ "modified": "2026-07-31 14:38:25.963225",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Addon",

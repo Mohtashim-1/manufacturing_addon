@@ -35,6 +35,10 @@ OPERATION_CONFIG = {
 		"item_style_field": None,
 		"operation": "Checking",
 	},
+	"Sub Assembly": {
+		"item_style_field": None,
+		"operation": "Sub Assembly",
+	},
 	"Quality": {
 		"item_style_field": "custom_stitching_style",
 		"operation": "Quality",
@@ -96,8 +100,8 @@ def _iter_item_style_rows(item, operation):
 	"""Yield style rows for a report operation.
 
 	- Rows from the operation's own style table are always included.
-	- Rows marked Subassembly on any style table are included in every report.
-	- Checking has no own table, so it only receives subassembly rows.
+	- Subassembly rows (checkbox OR zip/button style name) are included in every report.
+	- Checking / Sub Assembly have no own table, so they only receive subassembly rows.
 	"""
 	config = OPERATION_CONFIG.get(operation)
 	if not config:
@@ -115,7 +119,7 @@ def _iter_item_style_rows(item, operation):
 			if row_key in seen:
 				continue
 
-			is_subassembly = bool(row.get("is_subassembly"))
+			is_subassembly = _is_subassembly_style(row)
 			is_own_table = table_field == own_field
 
 			if own_field and is_own_table:
@@ -127,6 +131,10 @@ def _iter_item_style_rows(item, operation):
 
 			seen.add(row_key)
 			yield row
+
+
+def _is_subassembly_style(style_row):
+	return bool(style_row.get("is_subassembly")) or bool(subassembly_material_type(style_row.get("style")))
 
 
 def get_item_styles(item_code, operation="Stitching", combo_item=None, article=None, mandatory_only=False):
@@ -152,10 +160,6 @@ def get_item_stitching_styles(item_code, combo_item=None, article=None, mandator
 	return get_item_styles(
 		item_code, operation="Stitching", combo_item=combo_item, article=article, mandatory_only=mandatory_only
 	)
-
-
-def _is_subassembly_style(style_row):
-	return bool(style_row.get("is_subassembly")) or bool(subassembly_material_type(style_row.get("style")))
 
 
 def build_style_contractor_rows(
@@ -229,13 +233,8 @@ def append_style_contractors(
 	if not rows:
 		return
 
-	try:
-		ct_row.style_contractors = []
-		for row_data in rows:
-			ct_row.append("style_contractors", row_data)
-	except (AttributeError, TypeError):
-		# Unsaved CT rows cannot host nested children yet; load after parent save.
-		return
+	# Frappe 16 blocks Document.append on nested tables of child docs; assign _dicts.
+	ct_row.set("style_contractors", [frappe._dict(row_data) for row_data in rows])
 
 	if work_qty_field:
 		apply_subassembly_contractor_qty(ct_row, work_qty_field)

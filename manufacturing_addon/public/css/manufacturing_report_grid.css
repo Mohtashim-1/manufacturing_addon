@@ -1,0 +1,63 @@
+/* Stitching / Cutting Report CT grids — many columns crush labels & misalign filters */
+
+[data-fieldname="stitching_report_ct"] .form-grid-container,
+[data-fieldname="cutting_report_ct"] .form-grid-container {
+	overflow-x: auto !important;
+	width: 100%;
+}
+
+/* Prefer horizontal scroll layout even if class is late to apply */
+[data-fieldname="stitching_report_ct"] .form-grid,
+[data-fieldname="cutting_report_ct"] .form-grid {
+	min-width: 1200px;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-heading-row .data-row.row,
+[data-fieldname="stitching_report_ct"] .grid-body .rows .grid-row .data-row.row,
+[data-fieldname="cutting_report_ct"] .grid-heading-row .data-row.row,
+[data-fieldname="cutting_report_ct"] .grid-body .rows .grid-row .data-row.row {
+	/* space-between stretches columns unevenly vs filter row */
+	justify-content: flex-start !important;
+	flex-wrap: nowrap !important;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-heading-row .grid-static-col,
+[data-fieldname="cutting_report_ct"] .grid-heading-row .grid-static-col {
+	white-space: normal;
+	line-height: 1.15;
+	min-height: 34px;
+	display: flex;
+	align-items: center;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-heading-row .grid-static-col .static-area,
+[data-fieldname="cutting_report_ct"] .grid-heading-row .grid-static-col .static-area {
+	overflow: visible;
+	text-overflow: unset;
+	white-space: normal;
+	font-size: 11px;
+	font-weight: 600;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-heading-row.filter-row .grid-static-col,
+[data-fieldname="cutting_report_ct"] .grid-heading-row.filter-row .grid-static-col,
+[data-fieldname="stitching_report_ct"] .grid-heading-row .filter-row .grid-static-col,
+[data-fieldname="cutting_report_ct"] .grid-heading-row .filter-row .grid-static-col {
+	align-items: stretch;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-static-col.col-xs-1,
+[data-fieldname="cutting_report_ct"] .grid-static-col.col-xs-1 {
+	flex: 0 0 72px !important;
+	width: 72px !important;
+	max-width: 72px !important;
+	min-width: 72px !important;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-static-col.col-xs-2,
+[data-fieldname="cutting_report_ct"] .grid-static-col.col-xs-2 {
+	flex: 0 0 120px !important;
+	width: 120px !important;
+	max-width: 120px !important;
+	min-width: 120px !important;
+}

@@ -437,6 +437,32 @@ function init_report_style_contractors(config) {
         });
     }
 
+    function hide_style_contractors_ui(frm, cdn) {
+        // Keep nested data/logic; hide Style Contractors table from child row form.
+        try {
+            const df = frappe.meta.get_docfield(ct_doctype, "style_contractors");
+            if (df) df.hidden = 1;
+            const sec = frappe.meta.get_docfield(ct_doctype, "section_break_styles");
+            if (sec) sec.hidden = 1;
+        } catch (e) {
+            /* ignore */
+        }
+
+        const grid = frm.fields_dict[ct_fieldname]?.grid;
+        const grid_row = grid?.grid_rows_by_docname?.[cdn];
+        const form = grid_row?.grid_form;
+        if (!form) {
+            return;
+        }
+        if (typeof form.toggle_display === "function") {
+            form.toggle_display("section_break_styles", false);
+            form.toggle_display("style_contractors", false);
+        }
+        form.fields_dict?.section_break_styles?.$wrapper?.hide();
+        form.fields_dict?.style_contractors?.$wrapper?.hide();
+        form.fields_dict?.style_contractors?.grid?.wrapper?.hide();
+    }
+
     function setup_style_contractors_panel(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
         sync_style_contractors_from_frm_doc(frm, cdt, cdn);
@@ -446,17 +472,16 @@ function init_report_style_contractors(config) {
             row.style_contractors = frm_row.style_contractors;
         }
         ensure_style_contractors_in_locals(row);
+        hide_style_contractors_ui(frm, cdn);
         if (!row?.so_item) {
             return;
         }
-        bind_style_contractor_grid(frm, cdt, cdn);
-        if ((row.style_contractors || []).length) {
-            // Nested grid mounts after form_render; refresh once layout is ready.
-            refresh_nested_style_contractor_grid(frm, cdn);
-            setTimeout(() => refresh_nested_style_contractor_grid(frm, cdn), 50);
-            return;
+        // Still keep data sync / auto-load in background; UI stays hidden.
+        if (!(row.style_contractors || []).length) {
+            ensure_style_contractors_for_row(frm, cdt, cdn);
         }
-        ensure_style_contractors_for_row(frm, cdt, cdn);
+        setTimeout(() => hide_style_contractors_ui(frm, cdn), 50);
+        setTimeout(() => hide_style_contractors_ui(frm, cdn), 200);
     }
 
     function bind_style_contractor_model_sync(frm) {
@@ -486,6 +511,14 @@ function init_report_style_contractors(config) {
         refresh(frm) {
             preload_style_contractor_meta();
             bind_style_contractor_model_sync(frm);
+            try {
+                const df = frappe.meta.get_docfield(ct_doctype, "style_contractors");
+                if (df) df.hidden = 1;
+                const sec = frappe.meta.get_docfield(ct_doctype, "section_break_styles");
+                if (sec) sec.hidden = 1;
+            } catch (e) {
+                /* ignore */
+            }
             (frm.doc[ct_fieldname] || []).forEach((ct_row) => {
                 const local_row = locals[ct_doctype]?.[ct_row.name];
                 if (!local_row) {
@@ -496,24 +529,9 @@ function init_report_style_contractors(config) {
                     local_row.style_contractors = ct_row.style_contractors;
                 }
                 ensure_style_contractors_in_locals(local_row);
+                hide_style_contractors_ui(frm, ct_row.name);
             });
-            if (!frm.is_new()) {
-                frm.add_custom_button(__("Load Style Contractors"), () => {
-                    frm.call({
-                        method: load_method,
-                        doc: frm.doc,
-                        freeze: true,
-                        freeze_message: __("Loading style contractors from Item..."),
-                        callback() {
-                            frm.reload_doc();
-                            frappe.show_alert({
-                                message: __("Style contractors updated from Item master."),
-                                indicator: "green",
-                            });
-                        },
-                    });
-                }, __("Actions"));
-            }
+            // Hide Load Style Contractors button — nested table UI is hidden
         },
         before_save(frm) {
             // Unstick a previous failed save attempt

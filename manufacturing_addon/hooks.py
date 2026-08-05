@@ -66,6 +66,7 @@ doctype_js = {
     }
 app_include_css = [
 	"/assets/manufacturing_addon/css/subcontracting_receipt.css",
+	"/assets/manufacturing_addon/css/manufacturing_report_grid.css",
 ]
 doctype_list_js = {
     "Sales Order": "public/js/sales_order_list.js",

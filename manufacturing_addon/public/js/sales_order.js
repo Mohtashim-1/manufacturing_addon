@@ -220,17 +220,115 @@ frappe.ui.form.on("Sales Order Item", {
     },
 });
 
+function apply_sales_order_uploaded_items(frm, items, missing) {
+	if (!items?.length) {
+		frappe.msgprint(__("No valid items found in the file."));
+		return;
+	}
+
+	frappe.confirm(
+		__(
+			"Import {0} item(s) into this Sales Order? Existing item rows will be cleared first.",
+			[items.length]
+		),
+		async () => {
+			frm.clear_table("items");
+			frm.refresh_field("items");
+
+			frappe.dom.freeze(__("Adding items..."));
+			try {
+				for (const row of items) {
+					const child = frm.add_child("items");
+					await frappe.model.set_value(child.doctype, child.name, "item_code", row.item_code);
+					if (row.qty != null) {
+						await frappe.model.set_value(child.doctype, child.name, "qty", row.qty || 1);
+					}
+					if (row.rate != null && row.rate !== "") {
+						await frappe.model.set_value(child.doctype, child.name, "rate", row.rate);
+					}
+				}
+				frm.refresh_field("items");
+				frm.dirty();
+
+				let msg = __("Imported {0} item(s) from file.", [items.length]);
+				if (missing?.length) {
+					msg +=
+						"<br>" +
+						__("Skipped missing item codes: {0}", [missing.join(", ")]);
+				}
+				frappe.msgprint({
+					title: __("Upload complete"),
+					indicator: missing?.length ? "orange" : "green",
+					message: msg,
+				});
+			} finally {
+				frappe.dom.unfreeze();
+			}
+		}
+	);
+}
+
+function upload_sales_order_items_file(frm) {
+	new frappe.ui.FileUploader({
+		as_dataurl: true,
+		allow_multiple: false,
+		restrictions: {
+			allowed_file_types: [".csv", ".xlsx", ".xls"],
+		},
+		on_success(file) {
+			const filename = file.name || file.file_name || "upload.csv";
+			frappe.call({
+				method:
+					"manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order.parse_sales_order_items_upload",
+				args: {
+					filename,
+					filedata: file.dataurl,
+				},
+				freeze: true,
+				freeze_message: __("Reading Excel / CSV..."),
+				callback(r) {
+					const data = r.message || {};
+					apply_sales_order_uploaded_items(frm, data.items || [], data.missing || []);
+				},
+			});
+		},
+	});
+}
+
+function bind_sales_order_items_excel_upload(frm) {
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid || grid._so_excel_upload_bound) return;
+	grid._so_excel_upload_bound = true;
+
+	// Standard grid Upload button only allows CSV — replace click handler for Excel too
+	const $btn = $(grid.wrapper).find(".grid-upload");
+	if ($btn.length) {
+		$btn.removeClass("hidden").off("click").on("click", () => {
+			upload_sales_order_items_file(frm);
+			return false;
+		});
+	}
+}
+
 // Add custom button on Sales Order
 frappe.ui.form.on("Sales Order", {
     onload(frm) {
         ensure_sales_order_manufacturing_connections(frm);
         bind_sales_order_cost_row_highlight(frm);
+        bind_sales_order_items_excel_upload(frm);
     },
 
     refresh: function(frm) {
         ensure_sales_order_manufacturing_connections(frm);
         bind_sales_order_cost_row_highlight(frm);
+        bind_sales_order_items_excel_upload(frm);
         schedule_cost_row_highlight(frm);
+
+        if (frm.doc.docstatus === 0) {
+            frm.add_custom_button(__("Upload Items (Excel/CSV)"), () => {
+                upload_sales_order_items_file(frm);
+            }, __("Tools"));
+        }
 
         console.log("[Manufacturing Addon][Sales Order] refresh", {
             name: frm.doc.name,

@@ -2,7 +2,7 @@ import frappe
 import json
 from frappe import _
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder as ERPNextSalesOrder
-from frappe.utils import flt
+from frappe.utils import cstr, flt
 from pathlib import Path
 
 
@@ -250,3 +250,172 @@ def sync_sales_order_item_cost_of_product_field():
 	frappe.clear_cache(doctype="Sales Order Item")
 	frappe.db.commit()
 	return {"field_order": field_order}
+
+
+def _decode_upload_content(filedata: str) -> bytes:
+	"""Accept raw base64 or data-URL content from FileUploader."""
+	import base64
+
+	payload = (filedata or "").strip()
+	if "," in payload and payload.lower().startswith("data:"):
+		payload = payload.split(",", 1)[1]
+	return base64.b64decode(payload)
+
+
+def _normalize_so_upload_header(value) -> str:
+	return cstr(value).strip().lower().replace("_", " ").replace("-", " ")
+
+
+def _map_so_upload_headers(headers):
+	"""Map simple Excel headers (Item Code / qty / rate) to Sales Order Item fields."""
+	aliases = {
+		"item code": "item_code",
+		"item": "item_code",
+		"itemcode": "item_code",
+		"item name": "item_code",
+		"qty": "qty",
+		"quantity": "qty",
+		"qty pcs": "qty",
+		"rate": "rate",
+		"price": "rate",
+		"unit rate": "rate",
+		"unit price": "rate",
+	}
+	mapping = {}
+	for idx, header in enumerate(headers or []):
+		key = _normalize_so_upload_header(header)
+		field = aliases.get(key)
+		if field and field not in mapping.values():
+			mapping[idx] = field
+	return mapping
+
+
+def _rows_from_frappe_grid_template(rows):
+	"""Standard Desk grid upload template: fieldnames on row index 2, data from row 7."""
+	if not rows or len(rows) < 8:
+		return []
+	fieldnames = [cstr(v).strip() for v in (rows[2] or [])]
+	if not fieldnames or "item_code" not in fieldnames:
+		return []
+
+	items = []
+	for row in rows[7:]:
+		if not row or not any(cstr(v).strip() for v in row):
+			continue
+		item = {}
+		for idx, fieldname in enumerate(fieldnames):
+			if not fieldname or idx >= len(row):
+				continue
+			item[fieldname] = row[idx]
+		if item.get("item_code"):
+			items.append(item)
+	return items
+
+
+def _rows_from_simple_headers(rows):
+	"""Simple spreadsheet: header row Item Code | qty | rate."""
+	if not rows:
+		return []
+	# find first non-empty header row
+	header_idx = None
+	for i, row in enumerate(rows[:10]):
+		if row and any(cstr(v).strip() for v in row):
+			header_idx = i
+			break
+	if header_idx is None:
+		return []
+
+	mapping = _map_so_upload_headers(rows[header_idx])
+	if "item_code" not in mapping.values():
+		return []
+
+	items = []
+	for row in rows[header_idx + 1 :]:
+		if not row or not any(cstr(v).strip() for v in row if v is not None):
+			continue
+		item = {}
+		for idx, fieldname in mapping.items():
+			if idx < len(row):
+				item[fieldname] = row[idx]
+		item_code = cstr(item.get("item_code")).strip()
+		if not item_code:
+			continue
+		item["item_code"] = item_code
+		if item.get("qty") in (None, ""):
+			item["qty"] = 1
+		items.append(item)
+	return items
+
+
+@frappe.whitelist()
+def parse_sales_order_items_upload(filename: str | None = None, filedata: str | None = None):
+	"""Parse CSV/XLSX/XLS upload for Sales Order items.
+
+	Supports:
+	1. Simple Excel/CSV: columns Item Code, qty, rate
+	2. Standard Frappe child-table upload template
+	"""
+	from frappe.utils.csvutils import read_csv_content
+	from frappe.utils.xlsxutils import read_xls_file_from_attached_file, read_xlsx_file_from_attached_file
+
+	if not filedata:
+		frappe.throw(_("No file content received"))
+
+	fname = cstr(filename or "").lower()
+	content = _decode_upload_content(filedata)
+
+	if fname.endswith(".xlsx"):
+		rows = read_xlsx_file_from_attached_file(fcontent=content) or []
+	elif fname.endswith(".xls"):
+		rows = read_xls_file_from_attached_file(content) or []
+	else:
+		# csv / txt / unknown → try text CSV
+		try:
+			text = content.decode("utf-8-sig")
+		except UnicodeDecodeError:
+			text = content.decode("latin-1")
+		rows = read_csv_content(text) or []
+
+	items = _rows_from_simple_headers(rows)
+	if not items:
+		items = _rows_from_frappe_grid_template(rows)
+
+	if not items:
+		frappe.throw(
+			_(
+				"Could not read items from file. Use columns Item Code, qty, rate "
+				"(Excel/CSV), or the standard grid upload template."
+			)
+		)
+
+	# Keep only usable fields + validate item exists lightly
+	cleaned = []
+	missing = []
+	for row in items:
+		item_code = cstr(row.get("item_code")).strip()
+		if not item_code:
+			continue
+		if not frappe.db.exists("Item", item_code):
+			missing.append(item_code)
+			continue
+		cleaned.append(
+			{
+				"item_code": item_code,
+				"qty": flt(row.get("qty") or 1),
+				"rate": flt(row.get("rate") or 0),
+			}
+		)
+
+	if missing and not cleaned:
+		frappe.throw(
+			_("None of the item codes in the file were found. Example missing: {0}").format(
+				missing[0]
+			)
+		)
+
+	return {
+		"items": cleaned,
+		"missing": missing[:20],
+		"total_rows": len(items),
+		"imported": len(cleaned),
+	}

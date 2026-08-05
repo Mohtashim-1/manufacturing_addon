@@ -99,23 +99,18 @@ frappe.ui.form.on("Stitching Report", {
         });
         render_stitching_article_summary(frm);
         sr_save_log("refresh", sr_save_snapshot(frm, "refresh"));
-        if (!frm.is_new()) {
-            frm.add_custom_button(__("Load Style Contractors"), () => {
-                frm.call({
-                    method: "load_style_contractors",
-                    doc: frm.doc,
-                    freeze: true,
-                    freeze_message: __("Loading style contractors from Item..."),
-                    callback() {
-                        frm.reload_doc();
-                        frappe.show_alert({
-                            message: __("Style contractors updated from Item master."),
-                            indicator: "green",
-                        });
-                    },
-                });
-            }, __("Actions"));
+        try {
+            const df = frappe.meta.get_docfield("Stitching Report CT", "style_contractors");
+            if (df) df.hidden = 1;
+            const sec = frappe.meta.get_docfield("Stitching Report CT", "section_break_styles");
+            if (sec) sec.hidden = 1;
+        } catch (e) {
+            /* ignore */
         }
+        (frm.doc.stitching_report_ct || []).forEach((ct_row) => {
+            hide_style_contractors_ui(frm, ct_row.name);
+        });
+        // Load Style Contractors button hidden — nested table UI is hidden
     },
 
     validate(frm) {
@@ -371,6 +366,32 @@ function sync_style_contractors_from_frm_doc(frm, cdt, cdn) {
     return row.style_contractors.length;
 }
 
+function hide_style_contractors_ui(frm, cdn) {
+    // Keep nested data/logic; hide Style Contractors table from child row form.
+    try {
+        const df = frappe.meta.get_docfield("Stitching Report CT", "style_contractors");
+        if (df) df.hidden = 1;
+        const sec = frappe.meta.get_docfield("Stitching Report CT", "section_break_styles");
+        if (sec) sec.hidden = 1;
+    } catch (e) {
+        /* ignore */
+    }
+
+    const grid = frm.fields_dict.stitching_report_ct?.grid;
+    const grid_row = grid?.grid_rows_by_docname?.[cdn];
+    const form = grid_row?.grid_form;
+    if (!form) {
+        return;
+    }
+    if (typeof form.toggle_display === "function") {
+        form.toggle_display("section_break_styles", false);
+        form.toggle_display("style_contractors", false);
+    }
+    form.fields_dict?.section_break_styles?.$wrapper?.hide();
+    form.fields_dict?.style_contractors?.$wrapper?.hide();
+    form.fields_dict?.style_contractors?.grid?.wrapper?.hide();
+}
+
 function setup_style_contractors_panel(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
     sync_style_contractors_from_frm_doc(frm, cdt, cdn);
@@ -386,20 +407,19 @@ function setup_style_contractors_panel(frm, cdt, cdn) {
         nested_ctx,
     });
 
+    hide_style_contractors_ui(frm, cdn);
+
     if (!row?.so_item) {
         sc_log("skip: no so_item on CT row");
         return;
     }
 
-    bind_style_contractor_grid(frm, cdt, cdn, nested_ctx);
-
-    if ((row.style_contractors || []).length) {
-        sc_log("already has style_contractors, refreshing nested grid only");
-        refresh_nested_style_contractor_grid(frm, cdn, nested_ctx);
-        return;
+    // Keep data auto-load in background; UI stays hidden.
+    if (!(row.style_contractors || []).length) {
+        ensure_style_contractors_for_row(frm, cdt, cdn, nested_ctx);
     }
-
-    ensure_style_contractors_for_row(frm, cdt, cdn, nested_ctx);
+    setTimeout(() => hide_style_contractors_ui(frm, cdn), 50);
+    setTimeout(() => hide_style_contractors_ui(frm, cdn), 200);
 }
 
 function get_nested_style_contractor_context(frm, cdn) {

@@ -35,11 +35,10 @@
  ],
  "fields": [
   {
-   "columns": 1,
    "fieldname": "customer",
    "fieldtype": "Link",
    "in_filter": 1,
-   "in_list_view": 1,
+   "in_list_view": 0,
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Customer",
@@ -58,7 +57,7 @@
    "read_only": 1
   },
   {
-   "columns": 1,
+   "columns": 2,
    "fieldname": "colour",
    "fieldtype": "Data",
    "in_filter": 1,
@@ -75,7 +74,7 @@
    "read_only": 1
   },
   {
-   "columns": 1,
+   "columns": 2,
    "fieldname": "article",
    "fieldtype": "Data",
    "in_filter": 1,
@@ -119,7 +118,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total Cutting Till Now",
+   "label": "Total Cutting",
    "read_only": 1
   },
   {
@@ -151,7 +150,7 @@
    "hidden": 1,
    "in_filter": 1,
    "in_global_search": 1,
-   "in_list_view": 1,
+   "in_list_view": 0,
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Qty",
@@ -165,7 +164,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Planned Qty",
+   "label": "Planned",
    "read_only": 1
   },
   {
@@ -176,7 +175,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "New Cutting Entry",
+   "label": "New Cutting",
    "non_negative": 1
   },
   {
@@ -201,7 +200,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Already Cutted Qty",
+   "label": "Already Cut",
    "non_negative": 1,
    "read_only": 1
   },
@@ -241,7 +240,7 @@
    "fieldtype": "Percent",
    "hidden": 1,
    "in_filter": 1,
-   "in_list_view": 1,
+   "in_list_view": 0,
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Percentage",
@@ -250,11 +249,13 @@
   {
    "fieldname": "section_break_styles",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Style Contractors"
   },
   {
    "fieldname": "style_contractors",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Style Contractors",
    "options": "Report Style Contractor"
   }

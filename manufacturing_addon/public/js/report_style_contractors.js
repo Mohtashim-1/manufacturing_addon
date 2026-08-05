@@ -41,6 +41,60 @@ function init_report_style_contractors(config) {
         with_style_contractor_meta(() => {});
     }
 
+    function sanitize_style_contractor(sc, ct_row) {
+        if (!sc) {
+            return null;
+        }
+        return {
+            name: sc.name,
+            doctype: NESTED_STYLE_DOCTYPE,
+            style: sc.style || "",
+            contractor: sc.contractor || "",
+            split_qty: Number(sc.split_qty || 0) || 0,
+            qty: Number(sc.qty || 0) || 0,
+            unit_qty: Number(sc.unit_qty || 0) || 0,
+            rate: Number(sc.rate || 0) || 0,
+            amount: Number(sc.amount || 0) || 0,
+            is_mandatory: sc.is_mandatory ? 1 : 0,
+            is_subassembly: sc.is_subassembly ? 1 : 0,
+            operation: sc.operation || operation || "",
+            combo_item: sc.combo_item || "",
+            item_style_row: sc.item_style_row || "",
+            idx: sc.idx || 0,
+            parent: sc.parent || ct_row?.name || "",
+            parenttype: sc.parenttype || ct_doctype,
+            parentfield: "style_contractors",
+            __islocal: sc.__islocal ? 1 : 0,
+            __unsaved: sc.__unsaved ? 1 : 0,
+        };
+    }
+
+    function add_nested_style_row(ct_row, data) {
+        // Frappe 16: avoid frappe.model.add_child on nested tables of child docs
+        if (!ct_row.style_contractors) {
+            ct_row.style_contractors = [];
+        }
+        const child = sanitize_style_contractor(
+            Object.assign(
+                {
+                    name: frappe.model.get_new_name(NESTED_STYLE_DOCTYPE),
+                    __islocal: 1,
+                    __unsaved: 1,
+                    idx: ct_row.style_contractors.length + 1,
+                },
+                data || {}
+            ),
+            ct_row
+        );
+        child.__islocal = 1;
+        ct_row.style_contractors.push(child);
+        if (!locals[NESTED_STYLE_DOCTYPE]) {
+            locals[NESTED_STYLE_DOCTYPE] = {};
+        }
+        locals[NESTED_STYLE_DOCTYPE][child.name] = child;
+        return child;
+    }
+
     function ensure_style_contractors_in_locals(ct_row) {
         if (!ct_row?.style_contractors?.length) {
             return;
@@ -48,14 +102,10 @@ function init_report_style_contractors(config) {
         if (!locals[NESTED_STYLE_DOCTYPE]) {
             locals[NESTED_STYLE_DOCTYPE] = {};
         }
+        ct_row.style_contractors = ct_row.style_contractors
+            .map((sc) => sanitize_style_contractor(sc, ct_row))
+            .filter(Boolean);
         ct_row.style_contractors.forEach((sc) => {
-            if (!sc) {
-                return;
-            }
-            sc.doctype = sc.doctype || NESTED_STYLE_DOCTYPE;
-            sc.parent = sc.parent || ct_row.name;
-            sc.parenttype = sc.parenttype || ct_doctype;
-            sc.parentfield = sc.parentfield || "style_contractors";
             if (sc.name) {
                 locals[NESTED_STYLE_DOCTYPE][sc.name] = sc;
             }
@@ -65,7 +115,9 @@ function init_report_style_contractors(config) {
     function sync_style_contractors_to_frm_doc(frm, cdn, row) {
         const frm_row = (frm.doc[ct_fieldname] || []).find((r) => r.name === cdn);
         if (frm_row) {
-            frm_row.style_contractors = row.style_contractors;
+            frm_row.style_contractors = (row.style_contractors || [])
+                .map((sc) => sanitize_style_contractor(sc, row))
+                .filter(Boolean);
         }
     }
 
@@ -95,16 +147,21 @@ function init_report_style_contractors(config) {
         return Boolean(sc?.is_subassembly) || is_subassembly_style_name(sc?.style);
     }
 
-    async function ensure_subassembly_unit_qty(sc, so_item) {
+    async function ensure_subassembly_unit_qty(sc, so_item, combo_item) {
         if (!is_subassembly_row(sc)) {
             return Number(sc.unit_qty || 0) || 1;
         }
-        // Prefer live BOM qty so Item Style qty=1 does not stick as unit_qty
+        // For combo lines (duvet/pillow), API returns component Item Style /
+        // Product Combo qty — not the SET BOM total on every row.
         if (so_item && sc.style) {
             try {
                 const res = await frappe.xcall(
                     "manufacturing_addon.manufacturing_addon.utils.subassembly_bom.get_subassembly_bom_qty",
-                    { item_code: so_item, style_name: sc.style }
+                    {
+                        item_code: so_item,
+                        style_name: sc.style,
+                        combo_item: combo_item || "",
+                    }
                 );
                 const unit = Number(res?.qty_per_unit || 0);
                 if (unit > 0) {
@@ -129,7 +186,7 @@ function init_report_style_contractors(config) {
         frappe.model.set_value(cdt, cdn, "amount", qty * rate);
     }
 
-    async function recalc_style_contractor_splits(frm, cdt, cdn) {
+    async function recalc_style_contractor_splits(frm, cdt, cdn, opts = {}) {
         if (!work_qty_field) {
             return;
         }
@@ -137,6 +194,7 @@ function init_report_style_contractors(config) {
         if (!ct_row?.style_contractors?.length) {
             return;
         }
+        const mark_dirty = opts.mark_dirty !== false;
         const work_qty = Number(ct_row[work_qty_field] || 0) || 0;
         const by_style = {};
         ct_row.style_contractors.forEach((sc) => {
@@ -147,21 +205,37 @@ function init_report_style_contractors(config) {
             by_style[sc.style].push(sc);
         });
 
+        let changed = false;
         for (const rows of Object.values(by_style)) {
             // One contractor per style → finished qty drives the style row fully
-            if (rows.length === 1 && work_qty > 0) {
+            if (rows.length === 1 && work_qty > 0 && Number(rows[0].split_qty || 0) !== work_qty) {
                 rows[0].split_qty = work_qty;
+                changed = true;
             }
             for (const sc of rows) {
                 const split_work = Number(sc.split_qty || 0) || work_qty;
                 if (is_subassembly_row(sc)) {
-                    const unit_qty = await ensure_subassembly_unit_qty(sc, ct_row.so_item);
-                    sc.qty = split_work > 0 ? split_work * unit_qty : unit_qty;
+                    const prev_unit = Number(sc.unit_qty || 0);
+                    const prev_qty = Number(sc.qty || 0);
+                    const unit_qty = await ensure_subassembly_unit_qty(
+                        sc,
+                        ct_row.so_item,
+                        ct_row.combo_item
+                    );
+                    const next_qty = split_work > 0 ? split_work * unit_qty : unit_qty;
+                    sc.qty = next_qty;
                     sc.amount = sc.qty * (Number(sc.rate || 0) || 0);
                     sc.is_subassembly = 1;
                     sc.unit_qty = unit_qty;
+                    if (prev_unit !== unit_qty || prev_qty !== next_qty) {
+                        changed = true;
+                    }
                 } else if (split_work > 0) {
-                    sc.amount = split_work * (Number(sc.rate || 0) || 0);
+                    const next_amount = split_work * (Number(sc.rate || 0) || 0);
+                    if (Number(sc.amount || 0) !== next_amount) {
+                        changed = true;
+                    }
+                    sc.amount = next_amount;
                 }
                 if (sc.name && locals[NESTED_STYLE_DOCTYPE]?.[sc.name]) {
                     Object.assign(locals[NESTED_STYLE_DOCTYPE][sc.name], sc);
@@ -170,7 +244,10 @@ function init_report_style_contractors(config) {
         }
         sync_style_contractors_to_frm_doc(frm, cdn, ct_row);
         refresh_nested_style_contractor_grid(frm, cdn);
-        frm.dirty();
+        // Don't re-dirty after Save/refresh — that looks like the save failed
+        if (mark_dirty && changed) {
+            frm.dirty();
+        }
     }
 
     function recalc_subassembly_style_contractors(frm, cdt, cdn) {
@@ -183,8 +260,7 @@ function init_report_style_contractors(config) {
         if (!ct_row || !source?.style) {
             return;
         }
-        const child = frappe.model.add_child(ct_row, "style_contractors");
-        Object.assign(child, {
+        add_nested_style_row(ct_row, {
             style: source.style,
             rate: source.rate,
             unit_qty: source.unit_qty,
@@ -226,7 +302,9 @@ function init_report_style_contractors(config) {
             const local_row = locals[ct_doctype]?.[ct_row.name];
             const rows = local_row?.style_contractors || ct_row.style_contractors;
             if (rows?.length) {
-                frm._style_contractors_snapshot[ct_row.name] = frappe.utils.deep_clone(rows);
+                frm._style_contractors_snapshot[ct_row.name] = rows
+                    .map((sc) => sanitize_style_contractor(sc, ct_row))
+                    .filter(Boolean);
             }
         });
     }
@@ -234,13 +312,19 @@ function init_report_style_contractors(config) {
     function sync_all_style_contractors_to_frm_doc(frm) {
         (frm.doc[ct_fieldname] || []).forEach((ct_row) => {
             const local_row = locals[ct_doctype]?.[ct_row.name];
-            if (local_row?.style_contractors?.length) {
-                ct_row.style_contractors = frappe.utils.deep_clone(local_row.style_contractors);
-                sc_log("before_save: synced CT row", ct_row.name, {
-                    count: ct_row.style_contractors.length,
-                    qtys: ct_row.style_contractors.map((r) => r.qty),
-                });
+            const source = local_row?.style_contractors?.length
+                ? local_row.style_contractors
+                : ct_row.style_contractors;
+            if (!source?.length) {
+                return;
             }
+            ct_row.style_contractors = source
+                .map((sc) => sanitize_style_contractor(sc, ct_row))
+                .filter(Boolean);
+            sc_log("before_save: synced CT row", ct_row.name, {
+                count: ct_row.style_contractors.length,
+                qtys: ct_row.style_contractors.map((r) => r.qty),
+            });
         });
     }
 
@@ -252,13 +336,14 @@ function init_report_style_contractors(config) {
                 return;
             }
             const rows = snapshot[ct_row.name]?.length
-                ? frappe.utils.deep_clone(snapshot[ct_row.name])
+                ? snapshot[ct_row.name]
                 : ct_row.style_contractors;
             if (!rows?.length) {
                 return;
             }
-            ct_row.style_contractors = rows;
-            local_row.style_contractors = rows;
+            const clean = rows.map((sc) => sanitize_style_contractor(sc, ct_row)).filter(Boolean);
+            ct_row.style_contractors = clean;
+            local_row.style_contractors = clean;
             ensure_style_contractors_in_locals(local_row);
         });
         delete frm._style_contractors_snapshot;
@@ -342,13 +427,12 @@ function init_report_style_contractors(config) {
                     return;
                 }
                 styles.forEach((sc) => {
-                    const child = frappe.model.add_child(row, "style_contractors");
-                    Object.assign(child, sc);
+                    add_nested_style_row(row, sc);
                 });
-                recalc_subassembly_style_contractors(frm, cdt, cdn);
+                recalc_style_contractor_splits(frm, cdt, cdn, { mark_dirty: false });
                 sync_style_contractors_to_frm_doc(frm, cdn, row);
                 refresh_nested_style_contractor_grid(frm, cdn);
-                frm.dirty();
+                // Loaded from Item — do not mark dirty (blocks Save UX)
             },
         });
     }
@@ -432,12 +516,27 @@ function init_report_style_contractors(config) {
             }
         },
         before_save(frm) {
+            // Unstick a previous failed save attempt
+            frappe.ui.form.is_saving = false;
             frappe._from_link = null;
-            snapshot_style_contractors(frm);
-            sync_all_style_contractors_to_frm_doc(frm);
+            try {
+                snapshot_style_contractors(frm);
+                sync_all_style_contractors_to_frm_doc(frm);
+            } catch (e) {
+                console.error(`[style_contractors:${parent_doctype}] before_save failed`, e);
+                // Fall back: drop nested styles so parent save still works.
+                // Server reloads existing nested rows from DB.
+                (frm.doc[ct_fieldname] || []).forEach((ct_row) => {
+                    delete ct_row.style_contractors;
+                });
+            }
         },
         after_save(frm) {
-            restore_style_contractors_after_save(frm);
+            try {
+                restore_style_contractors_after_save(frm);
+            } catch (e) {
+                console.error(`[style_contractors:${parent_doctype}] after_save failed`, e);
+            }
         },
     });
 

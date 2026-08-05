@@ -10,6 +10,44 @@ function sc_log(...args) {
     }
 }
 
+function sr_save_log(...args) {
+    // Filter console by: SR-SAVE
+    console.log("%c[SR-SAVE]", "color:#0b6;font-weight:bold", ...args);
+}
+
+function sr_save_warn(...args) {
+    console.warn("%c[SR-SAVE]", "color:#c60;font-weight:bold", ...args);
+}
+
+function sr_save_error(...args) {
+    console.error("%c[SR-SAVE]", "color:#c00;font-weight:bold", ...args);
+}
+
+function sr_save_snapshot(frm, label) {
+    const rows = frm.doc.stitching_report_ct || [];
+    let style_rows = 0;
+    let blank_contractors = 0;
+    rows.forEach((r) => {
+        const styles = r.style_contractors || locals["Stitching Report CT"]?.[r.name]?.style_contractors || [];
+        style_rows += styles.length;
+        styles.forEach((sc) => {
+            if (!sc?.contractor) blank_contractors += 1;
+        });
+    });
+    return {
+        label,
+        name: frm.doc.name,
+        docstatus: frm.doc.docstatus,
+        is_dirty: frm.is_dirty?.() ?? frm.doc.__unsaved,
+        is_saving: frappe.ui.form.is_saving,
+        ct_rows: rows.length,
+        style_rows,
+        blank_contractors,
+        supplier: frm.doc.supplier,
+        order_sheet: frm.doc.order_sheet,
+    };
+}
+
 function style_contractor_meta_ready() {
     return Boolean(
         frappe.meta.docfield_list[NESTED_STYLE_DOCTYPE]?.length ||
@@ -46,10 +84,13 @@ frappe.ui.form.on("Stitching Report", {
     onload(frm) {
         preload_style_contractor_meta();
         bind_style_contractor_model_sync(frm);
+        bind_sr_save_debug(frm);
+        sr_save_log("onload", sr_save_snapshot(frm, "onload"));
     },
     refresh(frm) {
         preload_style_contractor_meta();
         bind_style_contractor_model_sync(frm);
+        bind_sr_save_debug(frm);
         (frm.doc.stitching_report_ct || []).forEach((ct_row) => {
             const local_row = locals["Stitching Report CT"]?.[ct_row.name];
             if (local_row) {
@@ -57,6 +98,7 @@ frappe.ui.form.on("Stitching Report", {
             }
         });
         render_stitching_article_summary(frm);
+        sr_save_log("refresh", sr_save_snapshot(frm, "refresh"));
         if (!frm.is_new()) {
             frm.add_custom_button(__("Load Style Contractors"), () => {
                 frm.call({
@@ -76,14 +118,50 @@ frappe.ui.form.on("Stitching Report", {
         }
     },
 
+    validate(frm) {
+        sr_save_log("validate (client)", sr_save_snapshot(frm, "validate"));
+    },
+
     before_save(frm) {
+        // Unstick failed previous attempts that left is_saving=true
+        if (frappe.ui.form.is_saving) {
+            sr_save_warn("clearing stuck frappe.ui.form.is_saving=true");
+            frappe.ui.form.is_saving = false;
+        }
         frappe._from_link = null;
-        snapshot_style_contractors(frm);
-        sync_all_style_contractors_to_frm_doc(frm);
+        frm._sr_restoring_styles = false;
+        sr_save_log("before_save START", sr_save_snapshot(frm, "before_save"));
+        try {
+            snapshot_style_contractors(frm);
+            sync_all_style_contractors_to_frm_doc(frm);
+            sr_save_log("before_save synced styles", {
+                snapshot_keys: Object.keys(frm._style_contractors_snapshot || {}).length,
+                ...sr_save_snapshot(frm, "before_save_synced"),
+            });
+        } catch (e) {
+            sr_save_error("before_save failed — dropping nested styles so parent can save", e);
+            (frm.doc.stitching_report_ct || []).forEach((ct_row) => {
+                delete ct_row.style_contractors;
+            });
+        }
     },
 
     after_save(frm) {
-        restore_style_contractors_after_save(frm);
+        sr_save_log("after_save START", sr_save_snapshot(frm, "after_save"));
+        try {
+            frm._sr_restoring_styles = true;
+            restore_style_contractors_after_save(frm);
+        } catch (e) {
+            sr_save_error("after_save restore failed", e);
+        } finally {
+            frm._sr_restoring_styles = false;
+        }
+        // Restore must not leave form looking unsaved
+        if (frm.doc.__unsaved) {
+            sr_save_warn("after_save cleared __unsaved (restore had re-dirtied form)");
+            frm.doc.__unsaved = 0;
+        }
+        sr_save_log("after_save DONE", sr_save_snapshot(frm, "after_save_done"));
     },
 
     stitching_report_ct(frm) {
@@ -130,8 +208,10 @@ frappe.ui.form.on("Stitching Report CT", {
         with_style_contractor_meta(() => {
             setTimeout(() => {
                 setup_style_contractors_panel(frm, cdt, cdn);
-                // Recalc zip/button qty = BOM unit × stitching entry when opening the row.
-                recalc_stitching_subassembly_style_contractors(frm, cdt, cdn);
+                // Recalc for display only — do not mark form dirty on open.
+                recalc_stitching_subassembly_style_contractors(frm, cdt, cdn, {
+                    mark_dirty: false,
+                });
             }, 0);
         });
     },
@@ -142,7 +222,11 @@ frappe.ui.form.on("Report Style Contractor", {
         const row = locals[cdt]?.[cdn];
         const ct_row = locals["Stitching Report CT"]?.[row?.parent];
         if (is_subassembly_row(row)) {
-            const unit_qty = await ensure_subassembly_unit_qty(row, ct_row?.so_item);
+            const unit_qty = await ensure_subassembly_unit_qty(
+                row,
+                ct_row?.so_item,
+                ct_row?.combo_item
+            );
             const split_work = Number(row.split_qty || 0) || Number(ct_row?.stitching_qty || 0) || 0;
             row.qty = split_work > 0 ? split_work * unit_qty : unit_qty;
             row.amount = row.qty * (Number(row.rate || 0) || 0);
@@ -175,6 +259,39 @@ frappe.ui.form.on("Report Style Contractor", {
     },
 });
 
+function bind_sr_save_debug(frm) {
+    if (frm._sr_save_debug_bound) {
+        return;
+    }
+    frm._sr_save_debug_bound = true;
+
+    // Wrap save so click always shows in console (filter: SR-SAVE)
+    if (frm.save && !frm._sr_orig_save) {
+        frm._sr_orig_save = frm.save.bind(frm);
+        frm.save = function (...args) {
+            sr_save_log("frm.save() clicked/called", {
+                args,
+                ...sr_save_snapshot(frm, "frm.save"),
+            });
+            const result = frm._sr_orig_save(...args);
+            if (result && typeof result.then === "function") {
+                return result.then((r) => {
+                    setTimeout(() => {
+                        const snap = sr_save_snapshot(frm, "after_frm_save");
+                        if (snap.is_dirty || frm.doc.__unsaved) {
+                            sr_save_warn("save finished but form still dirty/unsaved", snap);
+                        } else {
+                            sr_save_log("save finished clean", snap);
+                        }
+                    }, 300);
+                    return r;
+                });
+            }
+            return result;
+        };
+    }
+}
+
 function bind_style_contractor_model_sync(frm) {
     if (frm._style_contractor_model_bound) {
         return;
@@ -191,6 +308,14 @@ function bind_style_contractor_model_sync(frm) {
             update_report_style_amount(doc.doctype, doc.name);
         }
         sync_style_contractors_to_frm_doc(frm, doc.parent, ct_row);
+        // Skip dirty during after_save restore — otherwise Save looks failed ("Not Saved")
+        if (frm._sr_restoring_styles || frappe.ui.form.is_saving) {
+            sr_save_log("model sync skipped dirty during save/restore", {
+                fieldname,
+                parent: doc?.parent,
+            });
+            return;
+        }
         frm.dirty();
     });
 }
@@ -347,11 +472,13 @@ function ensure_style_contractors_for_row(frm, cdt, cdn, nested_ctx) {
                 sc_log("ensure: added child", i + 1, child);
             });
 
-            recalc_stitching_subassembly_style_contractors(frm, cdt, cdn);
+            recalc_stitching_subassembly_style_contractors(frm, cdt, cdn, {
+                mark_dirty: false,
+            });
             sync_style_contractors_to_frm_doc(frm, cdn, row);
             sc_log("ensure: row.style_contractors count", row.style_contractors.length);
             refresh_nested_style_contractor_grid(frm, cdn);
-            frm.dirty();
+            // Do not mark dirty — loading styles from Item must not block Save
         },
         error(r) {
             console.error("[style_contractors] ensure: API error", r);
@@ -400,6 +527,9 @@ function sync_style_contractor_to_parent_frm(frm, cdt, cdn) {
         return;
     }
     sync_style_contractors_to_frm_doc(frm, row.parent, ct_row);
+    if (frm._sr_restoring_styles || frappe.ui.form.is_saving) {
+        return;
+    }
     frm.dirty();
 }
 
@@ -534,16 +664,20 @@ function is_subassembly_row(sc) {
     return Boolean(sc?.is_subassembly) || is_subassembly_style_name(sc?.style);
 }
 
-async function ensure_subassembly_unit_qty(sc, so_item) {
+async function ensure_subassembly_unit_qty(sc, so_item, combo_item) {
     if (!is_subassembly_row(sc)) {
         return Number(sc.unit_qty || 0) || 1;
     }
-    // Prefer live BOM qty so Item Style qty=1 does not stick as unit_qty
+    // Combo lines use component Item Style / Product Combo qty, not SET BOM total
     if (so_item && sc.style) {
         try {
             const res = await frappe.xcall(
                 "manufacturing_addon.manufacturing_addon.utils.subassembly_bom.get_subassembly_bom_qty",
-                { item_code: so_item, style_name: sc.style }
+                {
+                    item_code: so_item,
+                    style_name: sc.style,
+                    combo_item: combo_item || "",
+                }
             );
             const unit = Number(res?.qty_per_unit || 0);
             if (unit > 0) {
@@ -558,11 +692,12 @@ async function ensure_subassembly_unit_qty(sc, so_item) {
     return Number(sc.unit_qty || 1) || 1;
 }
 
-async function recalc_stitching_subassembly_style_contractors(frm, cdt, cdn) {
+async function recalc_stitching_subassembly_style_contractors(frm, cdt, cdn, opts = {}) {
     const row = locals[cdt]?.[cdn];
     if (!row?.style_contractors?.length) {
         return;
     }
+    const mark_dirty = opts.mark_dirty !== false;
     const work_qty = Number(row.stitching_qty || 0) || 0;
     const by_style = {};
     row.style_contractors.forEach((sc) => {
@@ -572,30 +707,49 @@ async function recalc_stitching_subassembly_style_contractors(frm, cdt, cdn) {
         (by_style[sc.style] = by_style[sc.style] || []).push(sc);
     });
 
+    let changed = false;
     for (const rows of Object.values(by_style)) {
         if (rows.length === 1 && work_qty > 0 && !Number(rows[0].split_qty)) {
             rows[0].split_qty = work_qty;
+            changed = true;
         }
         for (const sc of rows) {
             const split_work = Number(sc.split_qty || 0) || work_qty;
             if (is_subassembly_row(sc)) {
-                const unit_qty = await ensure_subassembly_unit_qty(sc, row.so_item);
-                // qty = BOM zip/button per piece × stitching entry (user can still edit after)
-                sc.qty = split_work > 0 ? split_work * unit_qty : unit_qty;
+                const prev_unit = Number(sc.unit_qty || 0);
+                const prev_qty = Number(sc.qty || 0);
+                const unit_qty = await ensure_subassembly_unit_qty(
+                    sc,
+                    row.so_item,
+                    row.combo_item
+                );
+                // qty = zip/button per piece × stitching entry (user can still edit after)
+                const next_qty = split_work > 0 ? split_work * unit_qty : unit_qty;
+                sc.qty = next_qty;
                 sc.amount = sc.qty * (Number(sc.rate || 0) || 0);
                 sc.is_subassembly = 1;
                 sc.unit_qty = unit_qty;
+                if (prev_unit !== unit_qty || prev_qty !== next_qty) {
+                    changed = true;
+                }
                 if (sc.name && locals[NESTED_STYLE_DOCTYPE]?.[sc.name]) {
                     Object.assign(locals[NESTED_STYLE_DOCTYPE][sc.name], sc);
                 }
             } else if (split_work > 0) {
-                sc.amount = split_work * (Number(sc.rate || 0) || 0);
+                const next_amount = split_work * (Number(sc.rate || 0) || 0);
+                if (Number(sc.amount || 0) !== next_amount) {
+                    changed = true;
+                }
+                sc.amount = next_amount;
             }
         }
     }
     sync_style_contractors_to_frm_doc(frm, cdn, row);
     refresh_nested_style_contractor_grid(frm, cdn);
-    frm.dirty();
+    // Avoid re-dirtying the form after Save / refresh (looks like save failed)
+    if (mark_dirty && changed) {
+        frm.dirty();
+    }
 }
 
 function render_stitching_article_summary(frm) {

@@ -70,7 +70,11 @@ def _normalize(value):
 
 
 def _style_row_matches_report_line(style_row, so_item, combo_item, article):
-	"""Match Item style row to a report CT line."""
+	"""Match Item style row to a report CT line.
+
+	Unscoped styles (no stitching_component / combo_item) must not fan out onto
+	every duvet/pillow combo line — that duplicated SET BOM zip qty on each row.
+	"""
 	combo_code = _normalize(combo_item)
 	article_text = _normalize(article)
 	style_article = _normalize(style_row.get("combo_item"))
@@ -89,6 +93,12 @@ def _style_row_matches_report_line(style_row, so_item, combo_item, article):
 		item_name = frappe.db.get_value("Item", combo_code, "item_name") or ""
 		if style_article.upper() in (_normalize(item_name).upper(), combo_code.upper()):
 			return True
+
+	# Combo-specific report line: unscoped *product* styles must not fan out.
+	# Unscoped zip/button (sub-assembly) styles still attach — unit_qty is then
+	# taken from Product Combo pcs for that duvet/pillow line, not SET BOM total.
+	if combo_code and not style_article and not component:
+		return _is_subassembly_style(style_row)
 
 	if not style_article and not component:
 		return True
@@ -240,12 +250,27 @@ def append_style_contractors(
 		apply_subassembly_contractor_qty(ct_row, work_qty_field)
 
 
+def _normalize_style_contractors(report_rows):
+	"""Ensure nested style_contractors are frappe._dict (Desk often posts plain dict)."""
+	for row in report_rows or []:
+		styles = row.get("style_contractors")
+		if not styles:
+			continue
+		normalized = [frappe._dict(sc) if isinstance(sc, dict) else sc for sc in styles]
+		# Prefer attribute assign — frappe._dict.__getattr__("set") returns None
+		if isinstance(row, dict):
+			row["style_contractors"] = normalized
+		else:
+			row.style_contractors = normalized
+
+
 def validate_mandatory_contractors(report_rows, qty_field="stitching_qty", report_label="Stitching Report"):
 	"""Ensure mandatory style rows have a contractor when parent qty is entered."""
 	from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
 		validate_style_contractor_splits,
 	)
 
+	_normalize_style_contractors(report_rows)
 	validate_style_contractor_splits(report_rows, qty_field, report_label)
 
 	for row in report_rows or []:

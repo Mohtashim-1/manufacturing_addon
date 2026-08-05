@@ -72,6 +72,13 @@ def save_nested_style_contractors(doc, child_table_field, parenttype):
 
 def _save_style_contractors_for_ct_row(ct_row, parenttype):
 	style_rows = ct_row.get("style_contractors") or []
+	# Desk posts nested rows as plain dict — normalize for consistent .get access.
+	style_rows = [frappe._dict(row) if isinstance(row, dict) else row for row in style_rows]
+	# Prefer attribute assign — frappe._dict.__getattr__("set") returns None
+	if isinstance(ct_row, dict):
+		ct_row["style_contractors"] = style_rows
+	else:
+		ct_row.style_contractors = style_rows
 	parent_filters = {
 		"parent": ct_row.name,
 		"parenttype": parenttype,

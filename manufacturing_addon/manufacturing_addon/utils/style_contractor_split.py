@@ -95,7 +95,7 @@ def apply_split_qty_defaults(ct_row, work_qty_field):
 	for _style, rows in by_style.items():
 		if len(rows) == 1:
 			set_sc_value(rows[0], "split_qty", work_qty)
-			_update_sc_amounts_from_split(ct_row.so_item, rows[0], work_qty)
+			_update_sc_amounts_from_split(ct_row, rows[0], work_qty)
 
 
 def _style_row_for_sc(so_item, sc_row):
@@ -109,7 +109,7 @@ def _style_row_for_sc(so_item, sc_row):
 			row = frappe.db.get_value(
 				child_doctype,
 				item_style_row,
-				["style", "rate", "qty", "amount", "is_subassembly"],
+				["style", "rate", "qty", "amount", "is_subassembly", "stitching_component", "combo_item"],
 				as_dict=True,
 			)
 			if row:
@@ -119,22 +119,32 @@ def _style_row_for_sc(so_item, sc_row):
 		"rate": sc_row.get("rate"),
 		"qty": 1,
 		"is_subassembly": sc_row.get("is_subassembly"),
+		"stitching_component": sc_row.get("combo_item"),
+		"combo_item": sc_row.get("combo_item"),
 	}
 
 
-def _update_sc_amounts_from_split(so_item, sc_row, split_work_qty):
-	"""Refresh qty/amount on a style contractor row from split work qty."""
+def _update_sc_amounts_from_split(ct_row_or_so_item, sc_row, split_work_qty):
+	"""Refresh qty/amount on a style contractor row from split work qty.
+
+	Accepts a CT row (preferred — carries combo_item) or a bare so_item string.
+	"""
 	from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
-		finished_work_qty,
-		get_subassembly_unit_qty,
+		resolve_unit_qty_for_ct_style,
 		subassembly_material_type,
 	)
 
-	# Build a tiny stand-in so finished_work_qty can read pcs from parent CT if passed
+	if isinstance(ct_row_or_so_item, str):
+		ct_row = frappe._dict(so_item=ct_row_or_so_item, combo_item=None, pcs=1)
+		so_item = ct_row_or_so_item
+	else:
+		ct_row = ct_row_or_so_item
+		so_item = getattr(ct_row, "so_item", None) if not hasattr(ct_row, "get") else ct_row.get("so_item")
+
 	style_name = sc_row.get("style")
 	is_sub = bool(sc_row.get("is_subassembly")) or bool(subassembly_material_type(style_name))
 	if is_sub:
-		unit_qty = get_subassembly_unit_qty(so_item, style_name, sc_row.get("unit_qty") or 1)
+		unit_qty = resolve_unit_qty_for_ct_style(ct_row, style_name, sc_row.get("unit_qty") or 1)
 		set_sc_value(sc_row, "is_subassembly", 1)
 		set_sc_value(sc_row, "unit_qty", unit_qty)
 		qty = flt(split_work_qty) * unit_qty
@@ -168,11 +178,11 @@ def apply_all_style_contractor_amounts(ct_row, work_qty_field):
 		for sc in rows:
 			split_wq = flt(sc.get("split_qty") if hasattr(sc, "get") else getattr(sc, "split_qty", 0))
 			if split_wq > 0:
-				_update_sc_amounts_from_split(so_item, sc, split_wq)
+				_update_sc_amounts_from_split(ct_row, sc, split_wq)
 			elif work_qty > 0 and (
 				sc.get("is_subassembly") if hasattr(sc, "get") else getattr(sc, "is_subassembly", 0)
 			):
-				_update_sc_amounts_from_split(so_item, sc, work_qty)
+				_update_sc_amounts_from_split(ct_row, sc, work_qty)
 
 
 def validate_style_contractor_splits(report_rows, qty_field, report_label):
@@ -184,9 +194,11 @@ def validate_style_contractor_splits(report_rows, qty_field, report_label):
 
 		by_style = {}
 		for sc in row.get("style_contractors") or []:
-			if not sc.get("style"):
+			# Desk may send nested rows as plain dict (no attribute access).
+			style_name = sc.get("style") if hasattr(sc, "get") else getattr(sc, "style", None)
+			if not style_name:
 				continue
-			by_style.setdefault(sc.style, []).append(sc)
+			by_style.setdefault(style_name, []).append(sc)
 
 		for style, sc_rows in by_style.items():
 			if len(sc_rows) <= 1:

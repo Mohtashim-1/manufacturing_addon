@@ -65,8 +65,25 @@ class StitchingReport(Document):
             work_qty_field="stitching_qty",
         )
 
+    def _autofill_style_contractors(self, ct_row):
+        """Default blank style contractors to the report supplier."""
+        supplier = self.get("supplier")
+        if not supplier:
+            return
+        for sc in ct_row.get("style_contractors") or []:
+            # Nested rows may be Documents or frappe._dict. Do not call sc.set —
+            # _dict.__getattr__("set") returns None and crashes save.
+            contractor = sc.get("contractor") if hasattr(sc, "get") else getattr(sc, "contractor", None)
+            if contractor:
+                continue
+            if isinstance(sc, dict):
+                sc["contractor"] = supplier
+            else:
+                sc.contractor = supplier
+
     def _apply_subassembly_style_qty(self):
         for row in self.stitching_report_ct or []:
+            self._autofill_style_contractors(row)
             apply_split_qty_defaults(row, "stitching_qty")
             apply_subassembly_contractor_qty(row, "stitching_qty")
             apply_all_style_contractor_amounts(row, "stitching_qty")

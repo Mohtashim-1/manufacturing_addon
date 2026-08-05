@@ -102,11 +102,33 @@ const sales_order_list_dashboard = (() => {
 	const BLOCK_ID = "sales-order-list-dashboard";
 	const STYLE_ID = "sales-order-list-dashboard-style";
 	const FONT_ID = "sales-order-list-dashboard-fonts";
+	const STORAGE_KEY = "sales_order_list_dashboard_collapsed_v2";
 	const BAR_COLORS = ["#2563eb", "#7c3aed", "#0891b2", "#d97706", "#059669", "#dc2626"];
 	let apexPromise = null;
 
 	function can_view() {
 		return (frappe.user_roles || []).includes("System Manager");
+	}
+
+	function is_collapsed() {
+		// Default collapsed when user has no saved preference
+		try {
+			const saved = localStorage.getItem(STORAGE_KEY);
+			if (saved === null || saved === undefined || saved === "") {
+				return true;
+			}
+			return saved === "1";
+		} catch (e) {
+			return true;
+		}
+	}
+
+	function set_collapsed(collapsed) {
+		try {
+			localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0");
+		} catch (e) {
+			/* ignore quota / private mode */
+		}
 	}
 
 	function remove(listview) {
@@ -125,7 +147,7 @@ const sales_order_list_dashboard = (() => {
 		render(listview);
 	}
 
-	function render(listview) {
+	function render(listview, force_reload = false) {
 		if (!can_view()) {
 			remove(listview);
 			return;
@@ -133,15 +155,46 @@ const sales_order_list_dashboard = (() => {
 		if (!listview?.page) return;
 		const host = ensure_host(listview);
 		if (!host) return;
-		host.innerHTML = dashboard_shell();
 
-		host.querySelector('[data-action="refresh"]').addEventListener("click", () => render(listview));
+		const collapsed = is_collapsed();
+		host.classList.toggle("is-collapsed", collapsed);
+		host.innerHTML = dashboard_shell(collapsed);
+		bind_header_actions(listview, host);
+
+		// Collapsed: keep only the header so the list has more space; skip data fetch.
+		if (collapsed && !force_reload) {
+			if (listview.set_result_height) {
+				listview.set_result_height();
+			}
+			return;
+		}
 
 		load_apexcharts()
 			.then(() => load_data(listview, host))
 			.catch(() => {
-				host.querySelector('[data-role="body"]').innerHTML = '<div class="sold-empty">Unable to load chart library.</div>';
+				const body = host.querySelector('[data-role="body"]');
+				if (body) {
+					body.innerHTML = '<div class="sold-empty">Unable to load chart library.</div>';
+				}
 			});
+	}
+
+	function bind_header_actions(listview, host) {
+		host.querySelector('[data-action="refresh"]')?.addEventListener("click", () => {
+			if (is_collapsed()) {
+				set_collapsed(false);
+			}
+			render(listview, true);
+		});
+
+		host.querySelector('[data-action="toggle"]')?.addEventListener("click", () => {
+			const next = !is_collapsed();
+			set_collapsed(next);
+			render(listview, !next);
+			if (listview.set_result_height) {
+				listview.set_result_height();
+			}
+		});
 	}
 
 	function ensure_host(listview) {
@@ -189,16 +242,27 @@ const sales_order_list_dashboard = (() => {
 		};
 	}
 
-	function dashboard_shell() {
+	function dashboard_shell(collapsed = false) {
+		const toggleLabel = collapsed ? __("Expand") : __("Collapse");
+		const toggleIcon = collapsed ? "fa fa-chevron-down" : "fa fa-chevron-up";
+		const meta = collapsed
+			? __("Dashboard hidden — click Expand to show KPIs & charts")
+			: __("Loading submitted Sales Order summary...");
 		return `
 			<div class="sold-head">
 				<div>
 					<h2 class="sold-title">KPIs & Charts</h2>
-					<div class="sold-meta" data-role="meta">Loading submitted Sales Order summary...</div>
+					<div class="sold-meta" data-role="meta">${frappe.utils.escape_html(meta)}</div>
 				</div>
-				<button class="sold-btn" type="button" data-action="refresh">Refresh</button>
+				<div class="sold-head-actions">
+					<button class="sold-btn sold-btn-ghost" type="button" data-action="toggle" title="${frappe.utils.escape_html(toggleLabel)}">
+						<span class="${toggleIcon}" aria-hidden="true"></span>
+						<span data-role="toggle-label">${frappe.utils.escape_html(toggleLabel)}</span>
+					</button>
+					<button class="sold-btn" type="button" data-action="refresh" ${collapsed ? "hidden" : ""}>${__("Refresh")}</button>
+				</div>
 			</div>
-			<div data-role="body"><div class="sold-empty">Loading dashboard...</div></div>
+			<div data-role="body" ${collapsed ? "hidden" : ""}><div class="sold-empty">Loading dashboard...</div></div>
 		`;
 	}
 
@@ -501,9 +565,12 @@ const sales_order_list_dashboard = (() => {
 	}
 
 	function inject_style() {
-		if (document.getElementById(STYLE_ID)) return;
-		const style = document.createElement("style");
-		style.id = STYLE_ID;
+		let style = document.getElementById(STYLE_ID);
+		if (!style) {
+			style = document.createElement("style");
+			style.id = STYLE_ID;
+			document.head.appendChild(style);
+		}
 		style.textContent = `
 			#${BLOCK_ID} {
 				margin: 0 0 18px;
@@ -513,6 +580,19 @@ const sales_order_list_dashboard = (() => {
 				border: 1px solid #e2e8f0;
 				max-height: min(520px, 45vh);
 				overflow: auto;
+				transition: max-height 0.2s ease, padding 0.2s ease;
+			}
+			#${BLOCK_ID}.is-collapsed {
+				max-height: none;
+				padding: 12px 16px;
+				overflow: visible;
+			}
+			#${BLOCK_ID}.is-collapsed .sold-head {
+				margin-bottom: 0;
+			}
+			#${BLOCK_ID}.is-collapsed .sold-title {
+				font-size: 16px;
+				margin: 0;
 			}
 			#${BLOCK_ID} .sold-head {
 				display: flex;
@@ -520,6 +600,12 @@ const sales_order_list_dashboard = (() => {
 				justify-content: space-between;
 				gap: 16px;
 				margin-bottom: 18px;
+			}
+			#${BLOCK_ID} .sold-head-actions {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				flex-shrink: 0;
 			}
 			#${BLOCK_ID} .sold-eyebrow {
 				font-size: 11px;
@@ -549,6 +635,19 @@ const sales_order_list_dashboard = (() => {
 				font-weight: 600;
 				cursor: pointer;
 				box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+			}
+			#${BLOCK_ID} .sold-btn-ghost {
+				background: #fff;
+				color: #334155;
+				border: 1px solid #cbd5e1;
+				box-shadow: none;
+			}
+			#${BLOCK_ID} .sold-btn-ghost:hover {
+				background: #f1f5f9;
+				border-color: #94a3b8;
 			}
 			#${BLOCK_ID} .sold-kpis {
 				display: grid;
@@ -824,7 +923,6 @@ const sales_order_list_dashboard = (() => {
 				}
 			}
 		`;
-		document.head.appendChild(style);
 	}
 
 	return { can_view, remove, boot, render, patch_result_height };

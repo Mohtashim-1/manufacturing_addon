@@ -148,7 +148,10 @@ def validate_cutting_report_tolerance(doc):
 		blocked.add("Under")
 
 	for row in doc.get("cutting_report_ct") or []:
-		planned = flt(row.planned_qty)
+		# Plan Qty on CT is component pieces (finished plan × pcs). Tolerance uses finished units.
+		pcs = flt(getattr(row, "pcs", None)) or 1
+		planned_component = flt(row.planned_qty)
+		planned = planned_component / pcs if pcs else planned_component
 		if planned <= 0:
 			continue
 		if flt(row.cutting_qty) <= 0 and flt(row.finished_cutting_qty) <= 0:

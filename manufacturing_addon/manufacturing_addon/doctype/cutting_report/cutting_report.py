@@ -243,7 +243,7 @@ class CuttingReport(Document):
                                         "order_qty": order_qty,  # Finished-item order qty (not multiplied by PCS)
                                         "pcs": combo_pcs,
                                         "qty": calculated_qty,  # component qty = planned_qty * pcs
-                                        "planned_qty": planned_qty,  # Finished-item planned qty (same for duvet/pillow)
+                                        "planned_qty": calculated_qty,  # Component plan = finished plan × pcs (pillow pcs=2 → double)
                                         "so_item": so_item,
                                         "combo_item": combo_item_code,
                                     })
@@ -345,7 +345,7 @@ class CuttingReport(Document):
                                                     "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                                     "pcs": combo_pcs,
                                                     "qty": calculated_qty,  # planned_qty * pcs
-                                                    "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                                                    "planned_qty": calculated_qty,  # Component plan = finished plan × pcs
                                                     "so_item": so_item,
                                                     "combo_item": combo_item_code,
                                                 })
@@ -454,6 +454,11 @@ class CuttingReport(Document):
 
     def validate(self):
         self._ensure_style_contractors_loaded()
+        from manufacturing_addon.manufacturing_addon.utils.component_plan_qty import (
+            refresh_component_planned_qty,
+        )
+
+        refresh_component_planned_qty(self.cutting_report_ct, self.order_sheet)
         self.calculate_finished_cutting_qty()
         self._apply_subassembly_style_qty()
         validate_mandatory_contractors(
@@ -483,6 +488,11 @@ class CuttingReport(Document):
     
     def before_save(self):
         self._ensure_style_contractors_loaded()
+        from manufacturing_addon.manufacturing_addon.utils.component_plan_qty import (
+            refresh_component_planned_qty,
+        )
+
+        refresh_component_planned_qty(self.cutting_report_ct, self.order_sheet)
         self.calculate_finished_cutting_qty()
         self._apply_subassembly_style_qty()
 
@@ -551,13 +561,12 @@ class CuttingReport(Document):
         for i in self.cutting_report_ct:
             entry_qty = flt(i.total_copy1)
             pcs = flt(i.pcs) or 1
-            base_qty = entry_qty / pcs
+            # planned_qty is component units (finished plan × pcs)
             planned_qty = flt(i.planned_qty)
-            order_qty = flt(i.order_qty)
+            order_component = flt(i.order_qty) * pcs
 
-            i.planned_percentage_copy = (base_qty / planned_qty) * 100 * pcs if planned_qty else 0
-            i.qty_percentage_copy = (base_qty / order_qty) * 100 * pcs if order_qty else 0
-            # Backward-compatible field: keep showing Qty %
+            i.planned_percentage_copy = (entry_qty / planned_qty) * 100 if planned_qty else 0
+            i.qty_percentage_copy = (entry_qty / order_component) * 100 if order_component else 0
             i.percentage_copy = i.qty_percentage_copy
 
     def total(self):
@@ -657,10 +666,12 @@ def repair_missing_combo_rows(docname):
             continue
         pcs = row_data["pcs"]
         planned_qty = row_data["planned_qty"]
+        component_plan = pcs * planned_qty
         doc._append_cutting_ct_row(
             {
                 **row_data,
-                "qty": pcs * planned_qty,
+                "qty": component_plan,
+                "planned_qty": component_plan,
             }
         )
         existing.add(key)

@@ -116,12 +116,13 @@ function render_article_wise_summary(frm) {
 
 	const grouped = {};
 	for (const row of rows) {
-		const article = (row.article || row.combo_item || row.so_item || __("Unspecified")).trim();
+		const article = (row.article || row.so_item || __("Unspecified")).trim();
 		if (!grouped[article]) {
 			grouped[article] = {
 				article,
 				order_qty: 0,
 				planned_qty: 0,
+				total_stitching_qty: 0,
 				finished_sub_assembly_qty: 0,
 				sub_assembly_qty: 0,
 				total_till_now: 0,
@@ -129,6 +130,7 @@ function render_article_wise_summary(frm) {
 		}
 		grouped[article].order_qty += flt_local(row.order_qty);
 		grouped[article].planned_qty += flt_local(row.planned_qty);
+		grouped[article].total_stitching_qty += flt_local(row.total_stitching_qty);
 		grouped[article].finished_sub_assembly_qty += flt_local(row.finished_sub_assembly_qty);
 		grouped[article].sub_assembly_qty += flt_local(row.sub_assembly_qty);
 		grouped[article].total_till_now += flt_local(row.total_copy1);
@@ -139,12 +141,20 @@ function render_article_wise_summary(frm) {
 		(acc, r) => {
 			acc.order_qty += r.order_qty;
 			acc.planned_qty += r.planned_qty;
+			acc.total_stitching_qty += r.total_stitching_qty;
 			acc.finished_sub_assembly_qty += r.finished_sub_assembly_qty;
 			acc.sub_assembly_qty += r.sub_assembly_qty;
 			acc.total_till_now += r.total_till_now;
 			return acc;
 		},
-		{ order_qty: 0, planned_qty: 0, finished_sub_assembly_qty: 0, sub_assembly_qty: 0, total_till_now: 0 }
+		{
+			order_qty: 0,
+			planned_qty: 0,
+			total_stitching_qty: 0,
+			finished_sub_assembly_qty: 0,
+			sub_assembly_qty: 0,
+			total_till_now: 0,
+		}
 	);
 
 	const html = `
@@ -159,7 +169,10 @@ function render_article_wise_summary(frm) {
 							<th>${__("Article")}</th>
 							<th class="text-right">${__("Order Qty")}</th>
 							<th class="text-right">${__("Planned Qty")}</th>
-							<th class="text-right">${__("Total Sub Assembly Till Now")}</th>
+							<th class="text-right">${__("Total Stitching Till Now")}</th>
+							<th class="text-right">${__("Already Sub Assembled Qty")}</th>
+							<th class="text-right">${__("Sub Assembly Entry")}</th>
+							<th class="text-right">${__("Total Sub Assembled Qty")}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -170,6 +183,9 @@ function render_article_wise_summary(frm) {
 								<td>${frappe.utils.escape_html(r.article)}</td>
 								<td class="text-right">${fmt_num(r.order_qty)}</td>
 								<td class="text-right">${fmt_num(r.planned_qty)}</td>
+								<td class="text-right">${fmt_num(r.total_stitching_qty)}</td>
+								<td class="text-right">${fmt_num(r.finished_sub_assembly_qty)}</td>
+								<td class="text-right">${fmt_num(r.sub_assembly_qty)}</td>
 								<td class="text-right"><b>${fmt_num(r.total_till_now)}</b></td>
 							</tr>`
 							)
@@ -178,6 +194,9 @@ function render_article_wise_summary(frm) {
 							<td>${__("Grand Total")}</td>
 							<td class="text-right">${fmt_num(grand.order_qty)}</td>
 							<td class="text-right">${fmt_num(grand.planned_qty)}</td>
+							<td class="text-right">${fmt_num(grand.total_stitching_qty)}</td>
+							<td class="text-right">${fmt_num(grand.finished_sub_assembly_qty)}</td>
+							<td class="text-right">${fmt_num(grand.sub_assembly_qty)}</td>
 							<td class="text-right">${fmt_num(grand.total_till_now)}</td>
 						</tr>
 					</tbody>

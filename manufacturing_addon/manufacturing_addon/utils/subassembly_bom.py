@@ -31,13 +31,19 @@ _ZIP_MAKING_RE = re.compile(
 def subassembly_material_type(style_name):
 	"""Infer button/zip material type for dedicated making styles only.
 
-	Uses Style.is_subassembly when the Style master exists. Falls back to
-	strict name patterns (REBET BUTTON SET, BASIC ZIP CUTTING, etc.).
-	Product styles that only mention zip/button in the name are ignored.
+	Dedicated making-style name patterns (BASIC ZIP CUTTING, REBET BUTTON SET, …)
+	always win — even when Style.is_subassembly is unchecked — so SET zip/button
+	qty is not blindly copied onto every duvet/pillow combo row.
 	"""
 	name = cstr(style_name).strip()
 	if not name:
 		return None
+
+	# Name patterns first (source of truth for making styles)
+	if _BUTTON_MAKING_RE.search(name):
+		return "button"
+	if _ZIP_MAKING_RE.search(name):
+		return "zip"
 
 	is_sub = frappe.db.get_value("Style", name, "is_subassembly")
 	if is_sub is not None:
@@ -50,10 +56,6 @@ def subassembly_material_type(style_name):
 			return "zip"
 		return None
 
-	if _BUTTON_MAKING_RE.search(name):
-		return "button"
-	if _ZIP_MAKING_RE.search(name):
-		return "zip"
 	return None
 
 
@@ -210,10 +212,11 @@ def resolve_unit_qty_for_ct_style(ct_row, style_name, fallback_qty=None):
 			get_bom_qty_per_finished_unit(so_item, material_type) if material_type else 0
 		)
 
-		# Product Combo pcs is the source of truth for duvet/pillow zip qty
-		# (SET BOM total must not be copied onto every combo row).
-		if pcs and material_type:
-			return pcs
+		# Product Combo pcs is the source of truth for duvet/pillow zip/button qty.
+		# SET style qty (e.g. BASIC ZIP CUTTING qty=3) is for the whole set — never
+		# apply it separately on pillow AND duvet (that doubles everything).
+		if material_type:
+			return flt(pcs) or 1
 
 		for style_row in get_item_styles(
 			so_item, operation="Sub Assembly", combo_item=combo_item
@@ -221,19 +224,21 @@ def resolve_unit_qty_for_ct_style(ct_row, style_name, fallback_qty=None):
 			row_style = style_row.get("style") if hasattr(style_row, "get") else style_row.style
 			if row_style != style_name:
 				continue
+			# Component-scoped style row only
+			if not _style_component(style_row):
+				return flt(pcs) or 1
 			style_q = flt(
 				style_row.get("qty") if hasattr(style_row, "get") else getattr(style_row, "qty", 0)
 			)
 			# Ignore stale SET BOM total written onto the style row
 			if style_q > 0 and bom_total > 0 and abs(style_q - bom_total) < 1e-9:
-				continue
+				return flt(pcs) or 1
 			if style_q > 0:
 				return style_q
 			return resolve_subassembly_unit_qty(so_item, style_row)
 
-		if fallback > 0 and not (bom_total > 0 and abs(fallback - bom_total) < 1e-9):
-			return fallback
-		return 1
+		# Unscoped / unknown style on a combo line → component pcs only
+		return flt(pcs) or 1
 
 	return get_subassembly_unit_qty(so_item, style_name, fallback or None)
 

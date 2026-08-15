@@ -48,6 +48,9 @@
   "dashboard",
   "contractor_dashbaord_tab",
   "contractor_dasbhaord",
+  "contractor_settlement_tab",
+  "contractor_settlement_section",
+  "contractor_settlement_html",
   "quality_dashboard_tab",
   "quality_dashboard",
   "daily_checking_tab",
@@ -348,6 +351,21 @@
    "fieldname": "contractor_dasbhaord",
    "fieldtype": "HTML",
    "label": "Contractor Dashboard"
+  },
+  {
+   "fieldname": "contractor_settlement_tab",
+   "fieldtype": "Tab Break",
+   "label": "Contractor Settlement"
+  },
+  {
+   "fieldname": "contractor_settlement_section",
+   "fieldtype": "Section Break",
+   "label": "Settlement by Contractor / Article / Style / Operation"
+  },
+  {
+   "fieldname": "contractor_settlement_html",
+   "fieldtype": "HTML",
+   "label": "Contractor Settlement Detail"
   },
   {
    "fieldname": "quality_dashboard_tab",

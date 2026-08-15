@@ -18,20 +18,10 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Transactions",
-   "link_count": 9,
+   "link_count": 10,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Sales Order",
-   "link_count": 0,
-   "link_to": "Sales Order",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
   },
   {
    "hidden": 0,
@@ -100,6 +90,16 @@
    "link_count": 0,
    "link_to": "Packing Report",
    "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Container Loading",
+   "link_count": 0,
+   "link_to": "container-loading",
+   "link_type": "Page",
    "onboard": 0,
    "type": "Link"
   },
@@ -255,7 +255,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-31 14:38:25.963225",
+ "modified": "2026-08-10 12:20:03.191898",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
  "name": "Manufacturing Addon",

@@ -248,7 +248,7 @@ class StitchingReport(Document):
                                     "order_qty": order_qty,  # Finished-item order qty (not multiplied by PCS)
                                     "pcs": combo_pcs,
                                     "qty": calculated_qty,  # component qty = planned_qty * pcs
-                                    "planned_qty": planned_qty,  # Finished-item planned qty (same for duvet/pillow)
+                                    "planned_qty": calculated_qty,  # Component plan = finished plan × pcs (pillow pcs=2 → double)
                                     "so_item": so_item,
                                     "combo_item": combo_item_code,
                                 })
@@ -334,7 +334,7 @@ class StitchingReport(Document):
                                                 "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                                 "pcs": combo_pcs,
                                                 "qty": calculated_qty,  # component qty = planned_qty * pcs
-                                                "planned_qty": planned_qty,  # Finished-item planned qty (same for duvet/pillow)
+                                                "planned_qty": calculated_qty,  # Component plan = finished plan × pcs (pillow pcs=2 → double)
                                                 "so_item": so_item,
                                                 "combo_item": combo_item_code,
                                             })
@@ -387,6 +387,11 @@ class StitchingReport(Document):
             print(f"{'='*60}\n")
 
     def validate(self):
+        from manufacturing_addon.manufacturing_addon.utils.component_plan_qty import (
+            refresh_component_planned_qty,
+        )
+
+        refresh_component_planned_qty(self.stitching_report_ct, self.order_sheet)
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
         self._apply_subassembly_style_qty()
@@ -404,6 +409,11 @@ class StitchingReport(Document):
         self.total()
 
     def before_save(self):
+        from manufacturing_addon.manufacturing_addon.utils.component_plan_qty import (
+            refresh_component_planned_qty,
+        )
+
+        refresh_component_planned_qty(self.stitching_report_ct, self.order_sheet)
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
         self._apply_subassembly_style_qty()
@@ -566,12 +576,12 @@ class StitchingReport(Document):
     def total_percentage(self):
         for i in self.stitching_report_ct:
             entry_qty = flt(i.total_copy1)
-            planned_qty = flt(i.planned_qty)
-            order_qty = flt(i.order_qty)
+            pcs = flt(i.pcs) or 1
+            planned_qty = flt(i.planned_qty)  # component units
+            order_component = flt(i.order_qty) * pcs
 
             i.planned_percentage_copy = (entry_qty / planned_qty) * 100 if planned_qty else 0
-            i.qty_percentage_copy = (entry_qty / order_qty) * 100 if order_qty else 0
-            # Backward-compatible field: keep showing Qty %
+            i.qty_percentage_copy = (entry_qty / order_component) * 100 if order_component else 0
             i.percentage_copy = i.qty_percentage_copy
 
     def total(self):

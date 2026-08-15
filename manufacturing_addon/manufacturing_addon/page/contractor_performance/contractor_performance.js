@@ -380,7 +380,8 @@
 		}
 
 		function cpDetailItemCell(r) {
-			let html = `<div class="fw-medium">${frappe.utils.escape_html(r.item_label || "")}</div>`;
+			const title = r.article_label || r.item_label || r.so_item_label || "";
+			let html = `<div class="fw-medium">${frappe.utils.escape_html(title)}</div>`;
 			if (r.combo_detail) {
 				html += `<div class="cp-item-sub">${frappe.utils.escape_html(r.combo_detail)}</div>`;
 			}
@@ -392,7 +393,8 @@
 		}
 
 		function cpMatrixItemCell(m) {
-			let html = `<div class="fw-medium">${frappe.utils.escape_html(m.item_label || "")}</div>`;
+			const title = m.article_label || m.item_label || "";
+			let html = `<div class="fw-medium">${frappe.utils.escape_html(title)}</div>`;
 			if (m.combo_detail) {
 				html += `<div class="cp-item-sub">${frappe.utils.escape_html(m.combo_detail)}</div>`;
 			}
@@ -403,10 +405,11 @@
 		}
 
 		function cpMatrixComponentCell(m) {
-			const title = m.component_title || m.item_label || m.item_key || "";
+			const title = m.component_title || m.article_label || m.item_label || m.item_key || "";
 			let html = `<div class="fw-medium">${frappe.utils.escape_html(title)}</div>`;
-			if (m.combo_detail) {
-				html += `<div class="cp-item-sub">${frappe.utils.escape_html(m.combo_detail)}</div>`;
+			const sub = m.component_subtitle || m.combo_detail || "";
+			if (sub) {
+				html += `<div class="cp-item-sub">${frappe.utils.escape_html(sub)}</div>`;
 			}
 			if (m.item_key) {
 				html += `<div class="cp-item-sub text-monospace small">${frappe.utils.escape_html(m.item_key)}</div>`;
@@ -417,11 +420,15 @@
 			return html;
 		}
 
-		/** Grouped matrix: SO line is in card header — keep component column minimal. */
+		/** Grouped matrix: SO line is in card header — show stitching article, not Pillow combo. */
 		function cpMatrixComponentCellGrouped(m) {
-			const title = m.component_title || m.item_label || m.item_key || "";
+			const title = m.component_title || m.article_label || m.item_label || m.item_key || "";
 			let html = `<div class="cp-component-compact">`;
 			html += `<div class="cp-component-name">${frappe.utils.escape_html(title)}</div>`;
+			const sub = m.component_subtitle || m.combo_detail || "";
+			if (sub) {
+				html += `<div class="cp-item-sub">${frappe.utils.escape_html(sub)}</div>`;
+			}
 			if (m.is_combo) {
 				html += `<span class="badge badge-secondary border-0 mt-2" style="font-size:10px;background:#e2e8f0;color:#475569;">${__(
 					"Combo bundle"

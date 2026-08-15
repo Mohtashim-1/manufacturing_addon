@@ -100,7 +100,7 @@ function render_article_wise_summary(frm) {
 
     const grouped = {};
     for (const row of rows) {
-        const article = (row.article || row.combo_item || row.so_item || __("Unspecified")).trim();
+        const article = (row.article || row.so_item || __("Unspecified")).trim();
         if (!grouped[article]) {
             grouped[article] = {
                 article,

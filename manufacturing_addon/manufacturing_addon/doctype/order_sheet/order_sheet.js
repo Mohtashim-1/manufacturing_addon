@@ -183,6 +183,10 @@ frappe.ui.form.on("Order Sheet", {
 			orderSheetContractorDashboard.render(frm);
 			orderSheetContractorDashboard.bind_tab_refresh(frm);
 		}
+		if (frm.fields_dict.contractor_settlement_html) {
+			orderSheetContractorSettlementBoard.render(frm);
+			orderSheetContractorSettlementBoard.bind_tab_refresh(frm);
+		}
 		if (frm.fields_dict.quality_dashboard) {
 			qualityDashboardInForm.render(frm);
 		}
@@ -1292,6 +1296,233 @@ const orderSheetContractorDashboard = {
 			title: __("Contractor performance"),
 			show_filters: false,
 			all_dates: true,
+		});
+	},
+};
+
+const orderSheetContractorSettlementBoard = {
+	bind_tab_refresh(frm) {
+		if (frm._cs_settlement_tab_bound) return;
+		frm._cs_settlement_tab_bound = true;
+		frm.$wrapper.on(
+			"shown.bs.tab",
+			`.nav-link[data-fieldname="contractor_settlement_tab"]`,
+			() => orderSheetContractorSettlementBoard.render(frm)
+		);
+	},
+
+	render(frm) {
+		const $wrapper = frm.fields_dict.contractor_settlement_html?.$wrapper;
+		if (!$wrapper) return;
+
+		if (!frm.doc.name || frm.doc.__islocal) {
+			$wrapper.html(
+				`<div class="text-muted text-center p-4">${__(
+					"Save the Order Sheet to load contractor settlement details."
+				)}</div>`
+			);
+			return;
+		}
+
+		$wrapper.html(
+			`<div class="os-cs-board text-center text-muted p-4">
+				<i class="fa fa-spinner fa-spin"></i> ${__("Loading contractor settlements...")}
+			</div>`
+		);
+
+		frappe.call({
+			method:
+				"contractor_management.contractor_management.utils.order_sheet_settlement.get_order_sheet_settlement_board",
+			args: { order_sheet: frm.doc.name },
+			callback: (r) => {
+				orderSheetContractorSettlementBoard.paint($wrapper, r.message || {});
+			},
+			error: () => {
+				$wrapper.html(
+					`<div class="alert alert-danger">${__("Failed to load contractor settlement details.")}</div>`
+				);
+			},
+		});
+	},
+
+	paint($wrapper, data) {
+		const totals = data.totals || {};
+		const blocks = data.by_contractor || [];
+		const settlements = data.settlements || [];
+
+		const settlementLinks = settlements
+			.map(
+				(name) =>
+					`<a href="/desk/contractor-settlement/${encodeURIComponent(
+						name
+					)}" target="_blank">${frappe.utils.escape_html(name)}</a>`
+			)
+			.join(", ");
+
+		const summaryTable = (title, rows, keyField, keyLabel) => {
+			if (!(rows || []).length) return "";
+			const body = rows
+				.map(
+					(r) => `
+				<tr>
+					<td>${frappe.utils.escape_html(r[keyField] || "—")}</td>
+					<td class="text-right">${frappe.format(r.qty || 0, { fieldtype: "Float" })}</td>
+					<td class="text-right"><b>${frappe.utils.escape_html(r.amount_fmt || "")}</b></td>
+				</tr>`
+				)
+				.join("");
+			return `
+				<div class="os-cs-mini">
+					<div class="os-cs-mini-title">${frappe.utils.escape_html(title)}</div>
+					<table class="table table-bordered table-sm os-cs-table">
+						<thead><tr>
+							<th>${frappe.utils.escape_html(keyLabel)}</th>
+							<th class="text-right">${__("Qty")}</th>
+							<th class="text-right">${__("Amount")}</th>
+						</tr></thead>
+						<tbody>${body}</tbody>
+					</table>
+				</div>`;
+		};
+
+		const treeHtml = (tree) => {
+			if (!(tree || []).length) return "";
+			return (tree || [])
+				.map((op) => {
+					const styles = (op.styles || [])
+						.map((st) => {
+							const articles = (st.articles || [])
+								.map(
+									(art) => `
+								<tr>
+									<td class="os-cs-indent-2">${frappe.utils.escape_html(art.article_key)}</td>
+									<td class="text-right">${frappe.format(art.qty || 0, {
+										fieldtype: "Float",
+									})}</td>
+									<td class="text-right">${frappe.utils.escape_html(art.amount_fmt || "")}</td>
+								</tr>`
+								)
+								.join("");
+							return `
+							<tr class="os-cs-style-row">
+								<td class="os-cs-indent-1"><b>${__("Style")}:</b> ${frappe.utils.escape_html(
+									st.style
+								)}</td>
+								<td class="text-right"><b>${frappe.format(st.qty || 0, {
+									fieldtype: "Float",
+								})}</b></td>
+								<td class="text-right"><b>${frappe.utils.escape_html(st.amount_fmt || "")}</b></td>
+							</tr>
+							${articles}`;
+						})
+						.join("");
+					return `
+					<div class="os-cs-tree-block">
+						<div class="os-cs-tree-op">
+							<span>${__("Operation")}: <b>${frappe.utils.escape_html(op.operation)}</b></span>
+							<span>${frappe.format(op.qty || 0, { fieldtype: "Float" })} | <b>${frappe.utils.escape_html(
+						op.amount_fmt || ""
+					)}</b></span>
+						</div>
+						<table class="table table-bordered table-sm os-cs-table">
+							<thead><tr>
+								<th>${__("Style / Article")}</th>
+								<th class="text-right">${__("Qty")}</th>
+								<th class="text-right">${__("Amount")}</th>
+							</tr></thead>
+							<tbody>${styles}</tbody>
+						</table>
+					</div>`;
+				})
+				.join("");
+		};
+
+		let body = "";
+		if (!blocks.length) {
+			body = `<div class="alert alert-warning m-0">${frappe.utils.escape_html(
+				data.message || __("No settlement data.")
+			)}</div>`;
+		} else {
+			body = blocks
+				.map((block) => {
+					return `
+					<div class="os-cs-contractor-card">
+						<div class="os-cs-contractor-head">
+							<div class="os-cs-contractor-name">${frappe.utils.escape_html(block.contractor)}</div>
+							<div class="os-cs-contractor-total">${frappe.utils.escape_html(block.amount_fmt)}</div>
+						</div>
+						<div class="os-cs-mini-grid">
+							${summaryTable(__("Operation wise"), block.by_operation, "operation", __("Operation"))}
+							${summaryTable(__("Article wise"), block.by_article, "article_key", __("Article"))}
+							${summaryTable(__("Style wise"), block.by_style, "style", __("Style"))}
+						</div>
+						<div class="os-cs-tree-wrap">
+							<div class="os-cs-mini-title">${__("Operation → Style → Article")}</div>
+							${treeHtml(block.tree)}
+						</div>
+					</div>`;
+				})
+				.join("");
+		}
+
+		$wrapper.html(`
+			<style>
+				.os-cs-board { padding: 4px 2px 16px; }
+				.os-cs-summary { display:grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:14px; }
+				.os-cs-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; }
+				.os-cs-card .label { color:#6b7280; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+				.os-cs-card .value { font-size:18px; font-weight:700; margin-top:4px; color:#111827; }
+				.os-cs-meta { color:#6b7280; font-size:12px; margin-bottom:12px; }
+				.os-cs-contractor-card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; margin-bottom:16px; overflow:hidden; }
+				.os-cs-contractor-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px 14px; background:linear-gradient(180deg,#f8fafc,#fff); border-bottom:1px solid #eef2f7; }
+				.os-cs-contractor-name { font-weight:700; font-size:14px; color:#0f172a; }
+				.os-cs-contractor-total { font-weight:800; font-size:16px; color:#0f766e; white-space:nowrap; }
+				.os-cs-mini-grid { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; padding:12px; }
+				@media (max-width: 1100px) { .os-cs-mini-grid { grid-template-columns: 1fr; } }
+				.os-cs-mini { border:1px solid #eef2f7; border-radius:10px; overflow:hidden; background:#fff; }
+				.os-cs-mini-title { font-size:12px; font-weight:700; color:#334155; padding:8px 10px; background:#f8fafc; border-bottom:1px solid #eef2f7; }
+				.os-cs-tree-wrap { padding:0 12px 12px; }
+				.os-cs-tree-block { border:1px solid #e5e7eb; border-radius:10px; margin-top:10px; overflow:hidden; }
+				.os-cs-tree-op { display:flex; justify-content:space-between; gap:10px; padding:8px 10px; background:#ecfeff; color:#0e7490; font-size:12px; border-bottom:1px solid #a5f3fc; }
+				.os-cs-style-row td { background:#f8fafc; }
+				.os-cs-indent-1 { padding-left:12px !important; }
+				.os-cs-indent-2 { padding-left:28px !important; color:#475569; }
+				.os-cs-table { margin:0; }
+				.os-cs-table thead th { background:#f8fafc; font-size:12px; white-space:nowrap; }
+				.os-cs-table td { font-size:12px; vertical-align:middle; }
+			</style>
+			<div class="os-cs-board">
+				<div class="os-cs-summary">
+					<div class="os-cs-card"><div class="label">${__("Contractors")}</div><div class="value">${
+						totals.contractors || 0
+					}</div></div>
+					<div class="os-cs-card"><div class="label">${__("Settlements")}</div><div class="value">${
+						totals.settlements || 0
+					}</div></div>
+					<div class="os-cs-card"><div class="label">${__("Lines")}</div><div class="value">${
+						totals.lines || 0
+					}</div></div>
+					<div class="os-cs-card"><div class="label">${__("Total Amount")}</div><div class="value">${frappe.utils.escape_html(
+						totals.amount_fmt || String(totals.amount || 0)
+					)}</div></div>
+				</div>
+				<div class="os-cs-meta">
+					${__("Sales Order")}: <b>${frappe.utils.escape_html(data.sales_order || "—")}</b>
+					&nbsp;|&nbsp; ${__("Delivery Notes")}: <b>${(data.delivery_notes || []).length || 0}</b>
+					${
+						settlementLinks
+							? `&nbsp;|&nbsp; ${__("Open")}: ${settlementLinks}`
+							: ""
+					}
+					<button class="btn btn-xs btn-default pull-right os-cs-refresh">${__("Refresh")}</button>
+				</div>
+				${body}
+			</div>
+		`);
+
+		$wrapper.find(".os-cs-refresh").on("click", () => {
+			const frm = cur_frm;
+			if (frm) orderSheetContractorSettlementBoard.render(frm);
 		});
 	},
 };

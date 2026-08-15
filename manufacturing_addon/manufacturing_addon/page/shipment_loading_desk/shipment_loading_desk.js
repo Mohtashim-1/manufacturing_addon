@@ -1,7 +1,7 @@
 frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __("Shipment Loading"),
+		title: __("Container Loading"),
 		single_column: true,
 	});
 
@@ -82,9 +82,9 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 	const $root = $(`
 		<div class="sl-page" style="padding:16px;">
 			<div class="sl-hero" style="background:linear-gradient(135deg,#0f4c81,#1b6ca8);color:#fff;padding:20px;border-radius:10px;margin-bottom:16px;">
-				<h3 style="margin:0;font-weight:700;"><i class="fa fa-truck"></i> ${__("Shipment Loading")}</h3>
+				<h3 style="margin:0;font-weight:700;"><i class="fa fa-cubes"></i> ${__("Container Loading")}</h3>
 				<p style="margin:6px 0 0;opacity:.9;">${__(
-					"Load cartons order-sheet wise from submitted Packing Reports. Tag how each carton was added."
+					"Pick an Order Sheet — cartons come from submitted Packing Reports. Select cartons and load them into the container."
 				)}</p>
 			</div>
 			<div class="row" id="sl-summary-cards" style="margin-bottom:16px;"></div>
@@ -1107,6 +1107,41 @@ frappe.pages["shipment-loading-desk"].on_page_load = function (wrapper) {
 		});
 	});
 
+	function apply_route_options() {
+		const opts = frappe.route_options || {};
+		const order_sheet = (opts.order_sheet || "").trim();
+		const packing_report = (opts.packing_report || "").trim();
+		frappe.route_options = null;
+		if (!order_sheet && !packing_report) {
+			return;
+		}
+		if (order_sheet) {
+			filters.order_sheet.set_value(order_sheet);
+		}
+		frappe.call({
+			method: `${API}.get_shipment_loading_board`,
+			args: { filters: get_filters() },
+			callback(r) {
+				state.rows = (r.message && r.message.rows) || [];
+				render_summary();
+				render_order_list();
+				const target =
+					order_sheet ||
+					(state.rows.find((row) => row.order_sheet) || {}).order_sheet;
+				if (target) {
+					load_cartons(target, { sync: true });
+					if (packing_report) {
+						frappe.show_alert({
+							message: __("Opened from Packing Report {0}", [packing_report]),
+							indicator: "blue",
+						});
+					}
+				}
+			},
+		});
+	}
+
 	load_board();
+	apply_route_options();
 	frappe.require("/assets/manufacturing_addon/js/shipment_container_3d.js");
 };

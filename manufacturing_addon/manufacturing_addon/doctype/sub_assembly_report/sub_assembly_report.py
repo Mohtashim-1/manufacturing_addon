@@ -271,7 +271,8 @@ class SubAssemblyReport(Document):
                                         "order_qty": order_qty,  # Finished-item order qty (not multiplied by PCS)
                                         "pcs": combo_pcs,
                                         "qty": calculated_qty,  # component qty = planned_qty * pcs
-                                        "planned_qty": planned_qty,  # Finished-item planned qty (same for duvet/pillow)
+                                        # Component plan: twin-pillow sizes (pcs=2) show double plan
+                                        "planned_qty": calculated_qty,
                                         "so_item": so_item,
                                         "combo_item": combo_item_code,
                                     })
@@ -373,7 +374,8 @@ class SubAssemblyReport(Document):
                                                     "order_qty": order_qty,  # Original order_qty from Order Sheet CT (NOT multiplied by PCS)
                                                     "pcs": combo_pcs,
                                                     "qty": calculated_qty,  # planned_qty * pcs
-                                                    "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
+                                                    # Component plan: twin-pillow sizes (pcs=2) show double plan
+                                                    "planned_qty": calculated_qty,
                                                     "so_item": so_item,
                                                     "combo_item": combo_item_code,
                                                 })
@@ -477,7 +479,9 @@ class SubAssemblyReport(Document):
 
     def validate(self):
         self._ensure_style_contractors_loaded()
+        self._refresh_component_planned_qty()
         self.calculate_finished_sub_assembly_qty()
+        self.calculate_total_stitching_qty()
         self._apply_subassembly_style_qty()
         validate_mandatory_contractors(
             self.sub_assembly_report_ct,
@@ -505,20 +509,29 @@ class SubAssemblyReport(Document):
 
     def before_save(self):
         self._ensure_style_contractors_loaded()
+        self._refresh_component_planned_qty()
         self.calculate_finished_sub_assembly_qty()
+        self.calculate_total_stitching_qty()
         self._apply_subassembly_style_qty()
 
     def before_submit(self):
         validate_subassembly_qty_caps(
             self, "sub_assembly_report_ct", "sub_assembly_qty", "Sub Assembly Report"
         )
+
+    def _refresh_component_planned_qty(self):
+        """Plan Qty on each combo line = Order Sheet plan × Pcs (pillow pcs=2 → double)."""
+        from manufacturing_addon.manufacturing_addon.utils.component_plan_qty import (
+            refresh_component_planned_qty,
+        )
+
+        refresh_component_planned_qty(self.sub_assembly_report_ct, self.order_sheet)
+
     def calculate_finished_sub_assembly_qty(self):
-        """Calculate and update finished_sub_assembly_qty in the child table based on user-entered sub_assembly_qty values."""
+        """Already Sub Assembled Qty = submitted sub-assembly entry qty for this line."""
         try:
-            # Dictionary to store total sub_assembly_qty for each (so_item, combo_item) combination
             cutting_totals = {}
 
-            # Iterate through child table and fetch totals dynamically
             for row in self.sub_assembly_report_ct:
                 if not row.so_item:
                     continue
@@ -557,17 +570,50 @@ class SubAssemblyReport(Document):
                     )
 
                 order_sheets = frappe.db.sql(query, params, as_dict=True)
-
-                # Store the total in the dictionary
                 cutting_totals[(row.so_item, row.combo_item or '')] = order_sheets[0].total_cutting if order_sheets else 0
 
-            # Update finished_sub_assembly_qty in child table
             for row in self.sub_assembly_report_ct:
                 row.finished_sub_assembly_qty = cutting_totals.get((row.so_item, row.combo_item or ''), 0)
 
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Finished Sub Assembly Quantity Calculation Failed")
             frappe.throw(f"Error in calculating finished sub assembly quantity: {str(e)}")
+
+    def calculate_total_stitching_qty(self):
+        """Total Stitching Till Now from submitted Stitching Reports for this line."""
+        if not self.order_sheet:
+            for row in self.sub_assembly_report_ct or []:
+                row.total_stitching_qty = 0
+            return
+
+        for row in self.sub_assembly_report_ct or []:
+            if not row.so_item:
+                row.total_stitching_qty = 0
+                continue
+            if row.combo_item:
+                total = frappe.db.sql(
+                    """
+                    SELECT SUM(srct.stitching_qty)
+                    FROM `tabStitching Report CT` srct
+                    INNER JOIN `tabStitching Report` sr ON sr.name = srct.parent
+                    WHERE sr.order_sheet = %s AND sr.docstatus = 1
+                      AND srct.so_item = %s AND srct.combo_item = %s
+                    """,
+                    (self.order_sheet, row.so_item, row.combo_item),
+                )
+            else:
+                total = frappe.db.sql(
+                    """
+                    SELECT SUM(srct.stitching_qty)
+                    FROM `tabStitching Report CT` srct
+                    INNER JOIN `tabStitching Report` sr ON sr.name = srct.parent
+                    WHERE sr.order_sheet = %s AND sr.docstatus = 1
+                      AND srct.so_item = %s
+                      AND (srct.combo_item IS NULL OR srct.combo_item = '')
+                    """,
+                    (self.order_sheet, row.so_item),
+                )
+            row.total_stitching_qty = flt(total[0][0] if total else 0)
 
     def total_qty(self):
         for i in self.sub_assembly_report_ct:
@@ -577,13 +623,13 @@ class SubAssemblyReport(Document):
         for i in self.sub_assembly_report_ct:
             entry_qty = flt(i.total_copy1)
             pcs = flt(i.pcs) or 1
-            base_qty = entry_qty / pcs
+            # planned_qty is already component units (finished plan × pcs)
             planned_qty = flt(i.planned_qty)
             order_qty = flt(i.order_qty)
+            order_component = order_qty * pcs
 
-            i.planned_percentage_copy = (base_qty / planned_qty) * 100 * pcs if planned_qty else 0
-            i.qty_percentage_copy = (base_qty / order_qty) * 100 * pcs if order_qty else 0
-            # Backward-compatible field: keep showing Qty %
+            i.planned_percentage_copy = (entry_qty / planned_qty) * 100 if planned_qty else 0
+            i.qty_percentage_copy = (entry_qty / order_component) * 100 if order_component else 0
             i.percentage_copy = i.qty_percentage_copy
 
     def total(self):
@@ -683,10 +729,12 @@ def repair_missing_combo_rows(docname):
             continue
         pcs = row_data["pcs"]
         planned_qty = row_data["planned_qty"]
+        component_plan = pcs * planned_qty
         doc._append_sub_assembly_ct_row(
             {
                 **row_data,
-                "qty": pcs * planned_qty,
+                "qty": component_plan,
+                "planned_qty": component_plan,
             }
         )
         existing.add(key)

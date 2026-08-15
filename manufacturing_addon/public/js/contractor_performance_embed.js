@@ -59,15 +59,18 @@ frappe.provide("manufacturing_addon.contractor_performance");
 	}
 
 	function cpDetailItemCell(r) {
-		let html = `<div class="fw-medium">${frappe.utils.escape_html(r.item_label || "")}</div>`;
+		const title = r.article_label || r.item_label || r.so_item_label || "";
+		let html = `<div class="fw-medium">${frappe.utils.escape_html(title)}</div>`;
 		if (r.combo_detail) html += `<div class="cp-item-sub">${frappe.utils.escape_html(r.combo_detail)}</div>`;
 		if (r.is_combo) html += `<span class="badge badge-light border mt-1" style="font-size:10px">${__("Combo")}</span>`;
 		return html;
 	}
 
 	function cpMatrixComponentCellGrouped(m) {
-		const title = m.component_title || m.item_label || m.item_key || "";
+		const title = m.component_title || m.article_label || m.item_label || m.item_key || "";
 		let html = `<div class="fw-medium">${frappe.utils.escape_html(title)}</div>`;
+		const sub = m.component_subtitle || m.combo_detail || "";
+		if (sub) html += `<div class="cp-item-sub">${frappe.utils.escape_html(sub)}</div>`;
 		if (m.is_combo) {
 			html += `<span class="badge badge-secondary border-0 mt-1" style="font-size:10px;background:#e2e8f0;color:#475569;">${__("Combo bundle")}</span>`;
 		}
@@ -75,12 +78,21 @@ frappe.provide("manufacturing_addon.contractor_performance");
 	}
 
 	function articleLabel(row) {
+		if (row.article_label && String(row.article_label).trim()) {
+			return String(row.article_label).trim();
+		}
 		const parts = [row.article, row.design, row.colour].filter((v) => v && String(v).trim());
 		return parts.length ? parts.join(" / ") : __("No article");
 	}
 
 	function itemDisplayLabel(row) {
-		return row.item_label || row.combo_item_label || row.so_item_label || row.item_key || __("Unknown item");
+		// Prefer stitching article, then SO item — never lead with combo component (Pillow/Duvet)
+		if (row.article_label && String(row.article_label).trim()) {
+			return String(row.article_label).trim();
+		}
+		const parts = [row.article, row.design, row.colour].filter((v) => v && String(v).trim());
+		if (parts.length) return parts.join(" / ");
+		return row.so_item_label || row.item_label || row.combo_item_label || row.item_key || __("Unknown item");
 	}
 
 	function fmtContractors(list) {
@@ -132,11 +144,15 @@ frappe.provide("manufacturing_addon.contractor_performance");
 		}
 		const state = { contractor: null, operation: null, item: null };
 
+		function itemGroupKey(row) {
+			return row.so_item || row.item_key || "";
+		}
+
 		function currentRows() {
 			return rows.filter((row) => {
 				if (state.contractor && row.contractor !== state.contractor) return false;
 				if (state.operation && row.stage !== state.operation) return false;
-				if (state.item && row.item_key !== state.item) return false;
+				if (state.item && itemGroupKey(row) !== state.item) return false;
 				return true;
 			});
 		}
@@ -187,23 +203,33 @@ frappe.provide("manufacturing_addon.contractor_performance");
 				cards = groupAndSort(currentRows(), (r) => r.stage, (r) => r.stage, (r) => cpFlt(r.qty), null);
 				level = "operation";
 			} else if (!state.item) {
-				heading = __("Click an item to see article-wise totals.");
+				heading = __("Click an SO item / article group to see article-wise totals.");
 				cards = groupAndSort(
 					currentRows(),
-					(r) => r.item_key,
-					(r) => itemDisplayLabel(r),
+					(r) => itemGroupKey(r),
+					(r) => r.so_item_label || itemDisplayLabel(r),
 					(r) => cpFlt(r.qty),
-					(r) => r.combo_detail || articleLabel(r)
+					(r) => {
+						const art = articleLabel(r);
+						const comp = r.combo_item_label || r.combo_item;
+						const bits = [];
+						if (art && art !== __("No article")) bits.push(art);
+						if (comp) bits.push(`${__("Component")}: ${comp}`);
+						return bits.join(" · ") || r.combo_detail || "";
+					}
 				);
 				level = "item";
 			} else {
-				heading = __("Article-wise breakdown for the selected item.");
+				heading = __("Article-wise breakdown (stitching article / design / colour).");
 				cards = groupAndSort(
 					currentRows(),
 					(r) => [r.article || "", r.design || "", r.colour || ""].join("|"),
 					(r) => articleLabel(r),
 					(r) => cpFlt(r.qty),
-					null
+					(r) => {
+						const comp = r.combo_item_label || r.combo_item;
+						return comp ? `${__("Component")}: ${comp}` : "";
+					}
 				);
 				level = "article";
 			}

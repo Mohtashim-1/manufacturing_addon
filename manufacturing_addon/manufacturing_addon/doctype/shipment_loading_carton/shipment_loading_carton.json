@@ -20,6 +20,7 @@
   "carton_no",
   "carton_label",
   "carton_count",
+  "load_cartons",
   "qty_in_carton",
   "partial_qty",
   "total_pieces",
@@ -128,6 +129,13 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "fieldname": "load_cartons",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Loading Carton Qty"
+  },
+  {
    "fieldname": "qty_in_carton",
    "fieldtype": "Float",
    "label": "Qty Per Carton",
@@ -181,7 +189,7 @@
    "fieldname": "is_loaded",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Loaded"
+   "label": "Loaded Entry"
   },
   {
    "fieldname": "loaded_by",
@@ -199,7 +207,8 @@
   {
    "fieldname": "container_no",
    "fieldtype": "Data",
-   "label": "Container / Truck No"
+   "in_list_view": 1,
+   "label": "Container No"
   },
   {
    "fieldname": "column_break_position",

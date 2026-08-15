@@ -22,6 +22,7 @@
   "qty",
   "qty_ctn",
   "column_break_kihr",
+  "total_stitching_qty",
   "finished_sub_assembly_qty",
   "column_break_gxpx",
   "sub_assembly_qty",
@@ -119,7 +120,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Total Sub Assembly Till Now",
+   "label": "Total Sub Assembled Qty",
    "read_only": 1
   },
   {
@@ -135,13 +136,15 @@
   },
   {
    "columns": 1,
+   "description": "Pieces per finished set (e.g. 2 for twin pillows). Used to build component Plan Qty; hidden from grid.",
    "fieldname": "pcs",
    "fieldtype": "Float",
+   "hidden": 1,
    "in_filter": 1,
-   "in_list_view": 1,
-   "in_preview": 1,
+   "in_list_view": 0,
+   "in_preview": 0,
    "in_standard_filter": 1,
-   "label": "PCS",
+   "label": "Pcs per Set",
    "read_only": 1
   },
   {
@@ -159,6 +162,7 @@
   },
   {
    "columns": 1,
+   "description": "Component plan = Order Sheet plan \u00d7 Pcs per Set (e.g. pillow plan is double when pcs=2).",
    "fieldname": "planned_qty",
    "fieldtype": "Float",
    "in_filter": 1,
@@ -170,14 +174,14 @@
   },
   {
    "columns": 1,
-   "description": "Finished products made this entry. Style qty auto-calculates as Finished Qty \u00d7 BOM zip/button qty.",
+   "description": "New sub-assembly qty entered on this report (component pieces).",
    "fieldname": "sub_assembly_qty",
    "fieldtype": "Float",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Finished Product Qty",
+   "label": "Sub Assembly Entry",
    "non_negative": 1
   },
   {
@@ -196,13 +200,26 @@
   },
   {
    "columns": 1,
+   "description": "Submitted stitching qty for this SO item / combo line (till now).",
+   "fieldname": "total_stitching_qty",
+   "fieldtype": "Float",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Total Stitching Till Now",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "columns": 1,
    "fieldname": "finished_sub_assembly_qty",
    "fieldtype": "Float",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Already Done Qty",
+   "label": "Already Sub Assembled Qty",
    "non_negative": 1,
    "read_only": 1
   },

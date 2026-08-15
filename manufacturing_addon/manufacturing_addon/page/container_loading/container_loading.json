@@ -1,15 +1,15 @@
 {
  "content": null,
- "creation": "2026-07-09 00:00:00",
+ "creation": "2026-08-10 12:20:03.060333",
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-08-10 11:59:55.670077",
+ "modified": "2026-08-10 12:20:03.117130",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
- "name": "shipment-loading-desk",
+ "name": "container-loading",
  "owner": "Administrator",
- "page_name": "shipment-loading-desk",
+ "page_name": "container-loading",
  "roles": [
   {
    "role": "System Manager"

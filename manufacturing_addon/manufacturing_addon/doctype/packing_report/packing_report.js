@@ -106,8 +106,12 @@ frappe.ui.form.on("Packing Report", {
         render_packing_article_summary(frm);
 
         if (frm.doc.order_sheet && frm.doc.docstatus === 1) {
-            frm.add_custom_button(__("Shipment Loading"), () => {
-                frappe.set_route("page", "shipment-loading-desk");
+            frm.add_custom_button(__("Container Loading"), () => {
+                frappe.route_options = {
+                    order_sheet: frm.doc.order_sheet,
+                    packing_report: frm.doc.name,
+                };
+                frappe.set_route("container-loading");
             }, __("View"));
         }
         
@@ -297,7 +301,7 @@ function render_packing_article_summary(frm) {
 
     const grouped = {};
     for (const row of rows) {
-        const article = (row.article || row.combo_item || row.so_item || __("Unspecified")).trim();
+        const article = (row.article || row.so_item || __("Unspecified")).trim();
         if (!grouped[article]) {
             grouped[article] = {
                 article,

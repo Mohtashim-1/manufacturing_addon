@@ -24,11 +24,24 @@ class ShipmentLoading(Document):
 
 	def update_totals(self):
 		total = sum(cint(row.carton_count) or 1 for row in self.cartons or [])
-		loaded = sum(cint(row.carton_count) or 1 for row in self.cartons or [] if row.is_loaded)
-		pending = total - loaded
-		total_cbm = sum(flt(row.cbm) for row in self.cartons or [])
-		loaded_cbm = sum(flt(row.cbm) for row in self.cartons or [] if row.is_loaded)
+		loaded = 0
+		loaded_cbm = 0.0
+		total_cbm = 0.0
+		for row in self.cartons or []:
+			ready = cint(row.carton_count) or 1
+			per_cbm = flt(row.per_carton_cbm)
+			if not per_cbm and ready:
+				per_cbm = flt(row.cbm) / ready
+			total_cbm += per_cbm * ready
+			if cint(row.is_loaded):
+				load_qty = cint(row.load_cartons)
+				if load_qty <= 0:
+					load_qty = ready
+				load_qty = min(load_qty, ready)
+				loaded += load_qty
+				loaded_cbm += per_cbm * load_qty
 
+		pending = max(total - loaded, 0)
 		self.total_cartons = total
 		self.loaded_cartons = loaded
 		self.pending_cartons = pending
@@ -58,13 +71,15 @@ def parse_carton_dimension(dimension_text):
 
 
 def _carton_dimension_map(order_sheet):
+	"""Carton dimension + qty/ctn from Order Sheet, with Item.custom_cartons_dimension fallback."""
 	rows = frappe.get_all(
 		"Order Sheet CT",
 		filters={"parent": order_sheet},
-		fields=["so_item", "combo_item", "carton_dimension", "qty_ctn"],
+		fields=["so_item", "combo_item", "carton_dimension", "qty_ctn", "order_cbm", "planned_cbm"],
 	)
 	dimensions = {}
 	qty_ctn_map = {}
+	item_codes = set()
 	for row in rows:
 		key = (row.so_item, row.combo_item or "")
 		dimensions[key] = row.carton_dimension
@@ -72,7 +87,69 @@ def _carton_dimension_map(order_sheet):
 		if row.so_item and (row.so_item, "") not in dimensions:
 			dimensions[(row.so_item, "")] = row.carton_dimension
 			qty_ctn_map[(row.so_item, "")] = flt(row.qty_ctn)
+		if row.so_item:
+			item_codes.add(row.so_item)
+		if row.combo_item:
+			item_codes.add(row.combo_item)
+
+	item_dims = {}
+	if item_codes and frappe.db.has_column("Item", "custom_cartons_dimension"):
+		for item in frappe.get_all(
+			"Item",
+			filters={"name": ["in", list(item_codes)]},
+			fields=["name", "custom_cartons_dimension"],
+		):
+			if item.custom_cartons_dimension:
+				item_dims[item.name] = item.custom_cartons_dimension
+
+	# Prefer Item carton dimension when Order Sheet line has none
+	for key in list(dimensions.keys()):
+		if dimensions.get(key):
+			continue
+		so_item, combo = key
+		dimensions[key] = item_dims.get(combo) or item_dims.get(so_item)
+
 	return dimensions, qty_ctn_map
+
+
+def _per_carton_cbm_from_sources(
+	carton_dimension=None,
+	item_code=None,
+	combo_item=None,
+	order_cbm=None,
+	carton_count=None,
+	ready_cbm=None,
+):
+	"""Resolve CBM per carton: Item dim → OS dim → order/ready CBM / cartons."""
+	dim = carton_dimension
+	item_dim_fields = []
+	if frappe.db.has_column("Item", "custom_cartons_dimension"):
+		item_dim_fields.append("custom_cartons_dimension")
+	if frappe.db.has_column("Item", "custom_item_dimensions"):
+		item_dim_fields.append("custom_item_dimensions")
+
+	if not dim and item_dim_fields:
+		for code in (combo_item, item_code):
+			if not code:
+				continue
+			vals = frappe.db.get_value("Item", code, item_dim_fields, as_dict=True) or {}
+			for field in item_dim_fields:
+				if vals.get(field):
+					dim = vals.get(field)
+					break
+			if dim:
+				break
+
+	length_cm, width_cm, height_cm = parse_carton_dimension(dim)
+	if length_cm and width_cm and height_cm:
+		return (length_cm * width_cm * height_cm) / 1000000.0, dim
+
+	count = cint(carton_count) or 0
+	if flt(ready_cbm) and count > 0:
+		return flt(ready_cbm) / count, dim
+	if flt(order_cbm) and count > 0:
+		return flt(order_cbm) / count, dim
+	return 0.0, dim
 
 
 def _compute_ready_cartons(total_packed_qty, qty_ctn):
@@ -130,9 +207,11 @@ def compute_packing_readiness(order_sheet):
 		carton_dimension = dimensions.get((row.so_item, row.combo_item or "")) or dimensions.get(
 			(row.so_item, "")
 		)
-		length_cm, width_cm, height_cm = parse_carton_dimension(carton_dimension)
-		per_carton_cbm = (
-			(length_cm * width_cm * height_cm) / 1000000.0 if (length_cm and width_cm and height_cm) else 0
+		per_carton_cbm, _ = _per_carton_cbm_from_sources(
+			carton_dimension=carton_dimension,
+			item_code=row.so_item,
+			combo_item=row.combo_item,
+			carton_count=len(carton_qtys),
 		)
 		ready_cbm += per_carton_cbm * len(carton_qtys)
 
@@ -258,6 +337,7 @@ def sync_shipment_loading_for_order_sheet(order_sheet, packing_report=None):
 				"qty_ctn",
 				"packaging_qty",
 				"finished_packaging_qty",
+				"ready_cbm_copy",
 			],
 		)
 		for row in ct_rows:
@@ -274,9 +354,12 @@ def sync_shipment_loading_for_order_sheet(order_sheet, packing_report=None):
 			carton_dimension = dimensions.get((row.so_item, row.combo_item or "")) or dimensions.get(
 				(row.so_item, "")
 			)
-			length_cm, width_cm, height_cm = parse_carton_dimension(carton_dimension)
-			per_carton_cbm = (
-				(length_cm * width_cm * height_cm) / 1000000.0 if (length_cm and width_cm and height_cm) else 0
+			per_carton_cbm, carton_dimension = _per_carton_cbm_from_sources(
+				carton_dimension=carton_dimension,
+				item_code=row.so_item,
+				combo_item=row.combo_item,
+				carton_count=carton_count,
+				ready_cbm=flt(getattr(row, "ready_cbm_copy", None)),
 			)
 			total_cbm = per_carton_cbm * carton_count
 			key = (pr.name, row.name)
@@ -493,12 +576,13 @@ def get_order_sheet_cartons(order_sheet, packing_report=None, loaded_only=None, 
 			"carton_no",
 			"carton_label",
 			"carton_count",
+			"load_cartons",
 			"qty_in_carton",
 			"partial_qty",
 			"total_pieces",
-				"carton_dimension",
-				"per_carton_cbm",
-				"cbm",
+			"carton_dimension",
+			"per_carton_cbm",
+			"cbm",
 			"loading_tag",
 			"is_loaded",
 			"loaded_by",

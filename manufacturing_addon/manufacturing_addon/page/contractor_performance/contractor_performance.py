@@ -3,7 +3,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, nowdate
+from frappe.utils import cstr, flt, getdate, nowdate
 
 
 def _date_range(from_date=None, to_date=None):
@@ -32,13 +32,21 @@ def _contractor_display_name(mc_name: str | None) -> str:
 	return mc_name
 
 
+def _article_display(article, design, colour) -> str:
+	parts = [cstr(p).strip() for p in (article, design, colour) if cstr(p).strip()]
+	return " / ".join(parts)
+
+
 def _item_label(so_item, combo_item, article, design, colour) -> str:
+	# Prefer stitching article over combo component (Pillow/Duvet).
+	article_label = _article_display(article, design, colour)
+	if article_label:
+		return article_label
 	code = so_item or combo_item
 	if code:
 		name = frappe.db.get_value("Item", code, "item_name")
 		return name or code
-	parts = [p for p in (article, design, colour) if p]
-	return " / ".join(parts) if parts else _("Unknown item")
+	return _("Unknown item")
 
 
 def _collect_item_codes(*row_lists):
@@ -60,32 +68,41 @@ def _item_name_map(codes):
 
 
 def _rich_item_fields(row, item_names: dict) -> dict:
-	"""Labels for product-combo rows: show combo component vs SO parent clearly."""
+	"""
+	Labels for contractor reporting.
+
+	Article = stitching article (Fitted Sheet, PAIR PILLOW, …).
+	Combo component (PILLOW / DUVET) is secondary — never the primary “article”.
+	"""
 	so_item = (row.get("so_item") or "").strip()
 	combo_item = (row.get("combo_item") or "").strip()
-	article = row.get("article")
-	design = row.get("design")
-	colour = row.get("colour")
+	article = cstr(row.get("article") or "").strip()
+	design = cstr(row.get("design") or "").strip()
+	colour = cstr(row.get("colour") or "").strip()
 
 	so_label = item_names.get(so_item, so_item) if so_item else ""
 	co_label = item_names.get(combo_item, combo_item) if combo_item else ""
+	article_label = _article_display(article, design, colour)
 
-	if combo_item and so_item:
-		primary = co_label or combo_item
-		detail = _("SO item: {0}").format(so_label or so_item)
-	elif combo_item:
-		primary = co_label or combo_item
-		detail = ""
+	detail_parts = []
+	if so_item:
+		detail_parts.append(_("SO item: {0}").format(so_label or so_item))
+	if combo_item:
+		detail_parts.append(_("Component: {0}").format(co_label or combo_item))
+
+	if article_label:
+		primary = article_label
 	elif so_item:
 		primary = so_label or so_item
-		detail = ""
+	elif combo_item:
+		primary = co_label or combo_item
 	else:
-		primary = _item_label(None, None, article, design, colour)
-		detail = ""
+		primary = _("Unknown item")
 
 	return {
 		"item_label": primary,
-		"combo_detail": detail,
+		"combo_detail": " · ".join(detail_parts),
+		"article_label": article_label,
 		"so_item": so_item or None,
 		"combo_item": combo_item or None,
 		"so_item_label": so_label,
@@ -315,6 +332,7 @@ def _rows_for_stage(raw_rows, stage_label: str, item_names: dict):
 				"item_key": row.get("item_key"),
 				"item_label": rich["item_label"],
 				"combo_detail": rich["combo_detail"],
+				"article_label": rich.get("article_label") or "",
 				"so_item": rich["so_item"],
 				"combo_item": rich["combo_item"],
 				"so_item_label": rich["so_item_label"],
@@ -355,6 +373,7 @@ def _matrix_meta_for_key(item_key, cutting_rows, stitching_rows, packing_rows, i
 	return {
 		"item_label": item_key,
 		"combo_detail": "",
+		"article_label": "",
 		"so_item": None,
 		"combo_item": None,
 		"so_item_label": "",
@@ -387,6 +406,7 @@ def _build_matrix(cutting_rows, stitching_rows, packing_rows, item_names: dict):
 			"item_key": ik,
 			"item_label": meta["item_label"],
 			"combo_detail": meta["combo_detail"],
+			"article_label": meta.get("article_label") or "",
 			"so_item": meta["so_item"],
 			"combo_item": meta["combo_item"],
 			"so_item_label": meta["so_item_label"],
@@ -431,10 +451,19 @@ def _group_matrix_by_so_item(matrix_flat: list, item_names: dict) -> list:
 		lines = []
 		for e in lines_raw:
 			row = dict(e)
+			# Title = stitching article; keep combo name only as component subtitle
+			row["component_title"] = (
+				row.get("article_label")
+				or row.get("item_label")
+				or row.get("so_item_label")
+				or row.get("item_key")
+			)
 			if row.get("combo_item"):
-				row["component_title"] = row.get("combo_item_label") or row.get("combo_item")
+				row["component_subtitle"] = _("Component: {0}").format(
+					row.get("combo_item_label") or row.get("combo_item")
+				)
 			else:
-				row["component_title"] = row.get("item_label") or row.get("item_key")
+				row["component_subtitle"] = row.get("combo_detail") or ""
 			lines.append(row)
 
 		groups.append(
@@ -449,7 +478,15 @@ def _group_matrix_by_so_item(matrix_flat: list, item_names: dict) -> list:
 		u_lines = []
 		for e in sorted(unassigned, key=lambda x: (x.get("item_label") or "").lower()):
 			row = dict(e)
-			row["component_title"] = row.get("item_label") or row.get("item_key")
+			row["component_title"] = (
+				row.get("article_label") or row.get("item_label") or row.get("item_key")
+			)
+			if row.get("combo_item"):
+				row["component_subtitle"] = _("Component: {0}").format(
+					row.get("combo_item_label") or row.get("combo_item")
+				)
+			else:
+				row["component_subtitle"] = row.get("combo_detail") or ""
 			u_lines.append(row)
 		groups.append(
 			{

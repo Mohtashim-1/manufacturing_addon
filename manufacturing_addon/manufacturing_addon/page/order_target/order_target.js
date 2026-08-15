@@ -26,10 +26,16 @@ frappe.pages["order-target"].on_page_load = function (wrapper) {
 	if (opts.order_sheet) {
 		state.mode = "planner";
 		state.planner.order_sheet = opts.order_sheet;
-		if (state.controls.order_sheet) {
-			state.controls.order_sheet.set_value(opts.order_sheet);
-		}
-		setTimeout(() => load_assumption_board(state), 200);
+		set_mode(state, "planner");
+		setTimeout(() => {
+			if (state.controls.order_sheet_picker) {
+				state.controls.order_sheet_picker.set_value(opts.order_sheet);
+			}
+			if (state.controls.order_sheet) {
+				state.controls.order_sheet.set_value(opts.order_sheet);
+			}
+			load_assumption_board(state);
+		}, 250);
 	} else {
 		set_mode(state, "planner");
 	}
@@ -75,10 +81,31 @@ function render_layout(wrapper, state) {
 				#otd-root .badge-bad { background:#fee2e2; color:#991b1b; }
 				#otd-root .badge-warn { background:#ffedd5; color:#9a3412; }
 				#otd-root .badge-muted { background:#f3f4f6; color:#374151; }
+				#otd-root tr.ot-hit { background:#dbeafe !important; }
 			</style>
 			<div class="ot-tabs">
 				<button type="button" class="ot-tab" data-mode="planner">${__("Assumption Planner")}</button>
 				<button type="button" class="ot-tab" data-mode="dashboard">${__("Live Dashboard")}</button>
+			</div>
+			<div class="ot-select-bar" id="ot-select-bar" style="
+				display:flex; flex-wrap:wrap; gap:12px; align-items:end;
+				background:#fff3cd; border:2px solid #ffc107; border-radius:8px;
+				padding:14px; margin-bottom:14px;">
+				<div style="flex:1; min-width:280px;">
+					<label style="font-size:12px;font-weight:700;color:#856404;display:block;margin-bottom:4px;">
+						<i class="fa fa-search"></i> ${__("Select Order Sheet")} *
+					</label>
+					<div id="ot-os-link-wrap"></div>
+				</div>
+				<div style="min-width:160px;">
+					<label style="font-size:12px;font-weight:700;color:#856404;display:block;margin-bottom:4px;">
+						${__("As Of Date")}
+					</label>
+					<div id="ot-asof-wrap"></div>
+				</div>
+				<button type="button" class="btn btn-primary btn-sm" id="ot-load-btn" style="height:30px;">
+					<i class="fa fa-download"></i> ${__("Load Items")}
+				</button>
 			</div>
 			<div id="otd-planner"></div>
 			<div id="otd-dashboard" style="display:none;">
@@ -96,6 +123,62 @@ function render_layout(wrapper, state) {
 
 	$body.on("click", ".ot-tab", function () {
 		set_mode(state, $(this).data("mode"));
+	});
+
+	// Visible Order Sheet picker (page toolbar filters are easy to miss)
+	const os_control = frappe.ui.form.make_control({
+		parent: $body.find("#ot-os-link-wrap"),
+		df: {
+			fieldtype: "Link",
+			fieldname: "order_sheet_picker",
+			options: "Order Sheet",
+			placeholder: __("Search / select Order Sheet"),
+			only_select: 1,
+		},
+		render_input: true,
+	});
+	os_control.refresh();
+	state.controls.order_sheet_picker = os_control;
+	os_control.$input.on("change awesomplete-selectcomplete", () => {
+		const val = os_control.get_value();
+		state.planner.order_sheet = val || "";
+		if (state.controls.order_sheet) {
+			state.controls.order_sheet.set_value(val || "");
+		}
+		if (val) load_assumption_board(state);
+	});
+
+	const asof_control = frappe.ui.form.make_control({
+		parent: $body.find("#ot-asof-wrap"),
+		df: {
+			fieldtype: "Date",
+			fieldname: "as_of_picker",
+			default: frappe.datetime.get_today(),
+		},
+		render_input: true,
+	});
+	asof_control.refresh();
+	state.controls.as_of_picker = asof_control;
+	asof_control.$input.on("change", () => {
+		if (state.controls.report_date) {
+			state.controls.report_date.set_value(asof_control.get_value());
+		}
+		if (state.mode === "planner" && state.planner.items.length) {
+			recalculate_planner(state);
+		}
+	});
+
+	$body.find("#ot-load-btn").on("click", () => {
+		const val = os_control.get_value() || state.planner.order_sheet;
+		if (!val) {
+			frappe.show_alert({
+				message: __("Type/search Order Sheet in the yellow box, then click Load Items"),
+				indicator: "orange",
+			});
+			return;
+		}
+		state.planner.order_sheet = val;
+		load_assumption_board(state);
 	});
 }
 
@@ -212,13 +295,20 @@ function save_assumptions(state) {
 
 function load_assumption_board(state) {
 	const order_sheet =
+		(state.controls.order_sheet_picker && state.controls.order_sheet_picker.get_value()) ||
 		(state.controls.order_sheet && state.controls.order_sheet.get_value()) ||
 		state.planner.order_sheet;
 	if (!order_sheet) {
-		frappe.show_alert({ message: __("Select Order Sheet first"), indicator: "orange" });
+		frappe.show_alert({
+			message: __("Select Order Sheet in the yellow box first"),
+			indicator: "orange",
+		});
 		return;
 	}
 	state.planner.order_sheet = order_sheet;
+	if (state.controls.order_sheet_picker && !state.controls.order_sheet_picker.get_value()) {
+		state.controls.order_sheet_picker.set_value(order_sheet);
+	}
 	state.$planner.html(
 		`<div style="padding:40px;text-align:center;color:#64748b;"><i class="fa fa-spinner fa-spin fa-2x"></i></div>`
 	);
@@ -235,7 +325,9 @@ function load_assumption_board(state) {
 				return {
 					...row,
 					selected: s.selected != null ? cint(s.selected) : 1,
-					assumption_delivery_date: s.assumption_delivery_date || "",
+					// Browser save wins if set; else OS shipment / SO delivery default
+					assumption_delivery_date:
+						s.assumption_delivery_date || row.assumption_delivery_date || "",
 					assumed_daily_rate:
 						s.assumed_daily_rate !== undefined && s.assumed_daily_rate !== ""
 							? s.assumed_daily_rate
@@ -258,6 +350,7 @@ function load_assumption_board(state) {
 
 function recalculate_planner(state) {
 	const as_of =
+		(state.controls.as_of_picker && state.controls.as_of_picker.get_value()) ||
 		(state.controls.report_date && state.controls.report_date.get_value()) ||
 		frappe.datetime.get_today();
 	const rows = state.planner.items.map((row) => ({
@@ -326,13 +419,12 @@ function render_planner(state) {
 	const os = state.planner.order_sheet;
 	if (!os) {
 		state.$planner.html(`
-			<div class="ot-banner">
-				<b>${__("Assumption Planner")}</b> —
-				${__("Select an Order Sheet above. Delivery dates here are manual assumptions only and are never written to Sales Order or Order Sheet.")}
-			</div>
-			<div style="padding:48px;text-align:center;color:#94a3b8;">
-				<i class="fa fa-calendar fa-3x" style="opacity:.4;"></i>
-				<p style="margin-top:12px;">${__("Choose Order Sheet to start planning.")}</p>
+			<div style="padding:36px;text-align:center;color:#94a3b8;">
+				<i class="fa fa-hand-pointer-o fa-3x" style="opacity:.45;"></i>
+				<p style="margin-top:12px;font-size:14px;">
+					${__("Use the yellow box above — search Order Sheet, then click")}
+					<b>${__("Load Items")}</b>.
+				</p>
 			</div>
 		`);
 		return;
@@ -340,7 +432,24 @@ function render_planner(state) {
 
 	const meta = state.planner.meta || {};
 	const sum = state.planner.summary || {};
+	const q = (state.planner.search || "").trim().toLowerCase();
 	const items = state.planner.items || [];
+	const visible = items
+		.map((row, idx) => ({ row, idx }))
+		.filter(({ row }) => {
+			if (!q) return true;
+			const blob = [
+				row.so_item,
+				row.combo_item,
+				row.article,
+				row.colour,
+				row.size,
+				row.ean,
+			]
+				.map((x) => cstr(x).toLowerCase())
+				.join(" ");
+			return blob.includes(q);
+		});
 
 	const cards = `
 		<div class="ot-cards">
@@ -365,15 +474,24 @@ function render_planner(state) {
 		</div>
 	`;
 
-	const rows_html = items
-		.map((row, idx) => {
+	const rows_html = visible
+		.map(({ row, idx }) => {
+			const ean = row.ean || "";
 			return `
-			<tr data-idx="${idx}">
+			<tr data-idx="${idx}" class="${q && ean && q === ean ? "ot-hit" : ""}">
 				<td style="text-align:center;"><input type="checkbox" class="ot-sel" data-idx="${idx}" ${
 				cint(row.selected) ? "checked" : ""
 			}></td>
 				<td style="text-align:center;font-weight:600;">${idx + 1}</td>
-				<td title="${esc(row.so_item)}">${esc(short(row.so_item, 36))}</td>
+				<td title="${esc(row.so_item)}" style="max-width:280px;">
+					<div style="font-weight:600;">${esc(short(row.so_item, 48))}</div>
+					${
+						ean
+							? `<div style="font-size:11px;color:#2563eb;font-weight:700;">EAN: ${esc(ean)}</div>`
+							: ""
+					}
+					<span style="display:none">${esc(row.so_item)} ${esc(ean)}</span>
+				</td>
 				<td>${esc(row.article)}</td>
 				<td>${esc(row.colour)}</td>
 				<td>${esc(row.size)}</td>
@@ -411,17 +529,27 @@ function render_planner(state) {
 					)
 			)}
 			${
-				meta.order_sheet_shipment_date
+				meta.default_delivery_date
 					? " · " +
-					  __("OS shipment (reference only)") +
+					  __("Default delivery") +
 					  ": <b>" +
-					  esc(meta.order_sheet_shipment_date) +
-					  "</b>"
+					  esc(meta.default_delivery_date) +
+					  "</b> (" +
+					  __("from OS/SO — editable") +
+					  ")"
 					: ""
 			}
 		</div>
 		${cards}
 		<div class="ot-toolbar">
+			<div style="flex:1;min-width:240px;">
+				<label style="font-size:11px;color:#64748b;display:block;">${__(
+					"Search item / EAN / colour"
+				)}</label>
+				<input type="text" class="form-control input-sm" id="ot-row-search"
+					value="${esc(state.planner.search || "")}"
+					placeholder="${__("e.g. 8052784019930")}">
+			</div>
 			<div>
 				<label style="font-size:11px;color:#64748b;display:block;">${__("Apply delivery date to selected")}</label>
 				<input type="date" class="form-control input-sm" id="ot-bulk-date" style="width:160px;">
@@ -440,13 +568,17 @@ function render_planner(state) {
 			<button type="button" class="btn btn-default btn-sm" id="ot-select-all">${__("Select All")}</button>
 			<button type="button" class="btn btn-default btn-sm" id="ot-select-none">${__("Clear Selection")}</button>
 		</div>
-		<div style="overflow:auto;border:1px solid #e5e7eb;border-radius:8px;">
+		<div class="text-muted small" style="margin:0 0 8px;">
+			${__("Showing")} ${visible.length} / ${items.length} ${__("rows")}
+			${q ? " · " + __("filtered by") + ": <b>" + esc(q) + "</b>" : ""}
+		</div>
+		<div style="overflow:auto;border:1px solid #e5e7eb;border-radius:8px;max-height:60vh;">
 			<table class="ot-table">
 				<thead>
 					<tr>
 						<th></th>
 						<th>${__("S.No")}</th>
-						<th>${__("Item")}</th>
+						<th>${__("Item / EAN")}</th>
 						<th>${__("Article")}</th>
 						<th>${__("Colour")}</th>
 						<th>${__("Size")}</th>
@@ -463,14 +595,26 @@ function render_planner(state) {
 				</thead>
 				<tbody>${
 					rows_html ||
-					`<tr><td colspan="15" style="padding:24px;text-align:center;color:#94a3b8;">${__(
-						"No items on this Order Sheet"
-					)}</td></tr>`
+					`<tr><td colspan="15" style="padding:24px;text-align:center;color:#94a3b8;">${
+						q
+							? __("No rows match this search. Clear the search box.")
+							: __("No items on this Order Sheet")
+					}</td></tr>`
 				}</tbody>
 			</table>
 		</div>
 	`);
 
+	state.$planner.find("#ot-row-search").on("input", function () {
+		state.planner.search = $(this).val() || "";
+		render_planner(state);
+		state.$planner.find("#ot-row-search").focus();
+		const el = state.$planner.find("#ot-row-search")[0];
+		if (el) {
+			const len = el.value.length;
+			el.setSelectionRange(len, len);
+		}
+	});
 	state.$planner.find("#ot-apply-bulk").on("click", () => {
 		const d = state.$planner.find("#ot-bulk-date").val();
 		const rate = state.$planner.find("#ot-bulk-rate").val();
@@ -491,12 +635,12 @@ function render_planner(state) {
 		state.planner.items.forEach((r) => (r.selected = 0));
 		recalculate_planner(state);
 	});
-	state.$planner.on("change", ".ot-sel", function () {
+	state.$planner.off("change", ".ot-sel").on("change", ".ot-sel", function () {
 		const idx = cint($(this).data("idx"));
 		if (state.planner.items[idx]) state.planner.items[idx].selected = $(this).is(":checked") ? 1 : 0;
 		recalculate_planner(state);
 	});
-	state.$planner.on("change", ".ot-del", function () {
+	state.$planner.off("change", ".ot-del").on("change", ".ot-del", function () {
 		const idx = cint($(this).data("idx"));
 		if (state.planner.items[idx]) {
 			state.planner.items[idx].assumption_delivery_date = $(this).val() || "";
@@ -504,7 +648,7 @@ function render_planner(state) {
 		}
 		recalculate_planner(state);
 	});
-	state.$planner.on("change", ".ot-rate", function () {
+	state.$planner.off("change", ".ot-rate").on("change", ".ot-rate", function () {
 		const idx = cint($(this).data("idx"));
 		if (state.planner.items[idx]) {
 			state.planner.items[idx].assumed_daily_rate = $(this).val() || "";

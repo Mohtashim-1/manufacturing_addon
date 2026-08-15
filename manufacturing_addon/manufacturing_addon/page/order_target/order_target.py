@@ -4,121 +4,22 @@
 """Order Target page APIs — including assumption planner (does not write SO/OS)."""
 
 import math
-
+import re
 import frappe
 from frappe import _
 from frappe.utils import cint, date_diff, flt, getdate, today
 
 
-@frappe.whitelist()
-def get_order_drill_down(order_sheet):
-	"""Return item/combo-level production breakdown for one Order Sheet."""
-
-	def get_production_by_combo(report_dt, ct_dt, qty_col):
-		rows = frappe.db.sql(
-			f"""
-			SELECT
-				IFNULL(crct.combo_item, '')     AS combo_item,
-				IFNULL(crct.colour, '')          AS colour,
-				IFNULL(crct.article, '')         AS article,
-				IFNULL(SUM(crct.{qty_col}), 0)  AS qty,
-				COUNT(DISTINCT cr.date)          AS active_days
-			FROM `tab{report_dt}` cr
-			JOIN `tab{ct_dt}` crct ON crct.parent = cr.name
-			WHERE cr.docstatus = 1
-			  AND cr.order_sheet = %s
-			GROUP BY crct.combo_item, crct.colour, crct.article
-			ORDER BY crct.combo_item, crct.colour
-			""",
-			(order_sheet,),
-			as_dict=True,
-		)
-		return {
-			(r.combo_item, r.colour): {
-				"qty": flt(r.qty),
-				"days": max(int(r.active_days or 1), 1),
-				"article": r.article,
-			}
-			for r in rows
-		}, set(rows and [(r.combo_item, r.colour) for r in rows] or [])
-
-	cut_map, cut_keys = get_production_by_combo("Cutting Report", "Cutting Report CT", "cutting_qty")
-	stitch_map, stitch_keys = get_production_by_combo(
-		"Stitching Report", "Stitching Report CT", "stitching_qty"
-	)
-	check_map, check_keys = get_production_by_combo(
-		"Checking Report", "Checking Report CT", "checking_qty"
-	)
-	pack_map, pack_keys = get_production_by_combo("Packing Report", "Packing Report CT", "packaging_qty")
-
-	all_keys = cut_keys | stitch_keys | check_keys | pack_keys
-
-	os_items = frappe.db.sql(
-		"""
-		SELECT
-			IFNULL(osct.combo_item, '')     AS combo_item,
-			IFNULL(osct.colour, '')         AS colour,
-			IFNULL(SUM(osct.order_qty), 0)  AS order_qty
-		FROM `tabOrder Sheet CT` osct
-		WHERE osct.parent = %s
-		GROUP BY osct.combo_item, osct.colour
-		""",
-		(order_sheet,),
-		as_dict=True,
-	)
-	order_map = {(r.combo_item, r.colour): flt(r.order_qty) for r in os_items}
-	all_keys |= set(order_map.keys())
-
-	def pct(done, total):
-		return round(done / total * 100, 1) if total > 0 else 0
-
-	result = []
-	for key in sorted(all_keys):
-		combo_item, colour = key
-		oq = order_map.get(key, 0)
-
-		cut_d = cut_map.get(key, {"qty": 0, "days": 1, "article": ""})
-		stitch_d = stitch_map.get(key, {"qty": 0, "days": 1, "article": ""})
-		check_d = check_map.get(key, {"qty": 0, "days": 1, "article": ""})
-		pack_d = pack_map.get(key, {"qty": 0, "days": 1, "article": ""})
-
-		article = cut_d["article"] or stitch_d["article"] or check_d["article"] or pack_d["article"]
-
-		tc = cut_d["qty"]
-		ts = stitch_d["qty"]
-		tch = check_d["qty"]
-		tp = pack_d["qty"]
-		ref_qty = oq if oq > 0 else max(tc, ts, tch, tp)
-
-		result.append(
-			{
-				"combo_item": combo_item or "—",
-				"colour": colour or "—",
-				"article": article,
-				"order_qty": oq,
-				"cut_done": tc,
-				"cut_pending": max(ref_qty - tc, 0) if ref_qty > 0 else 0,
-				"cut_pct": pct(tc, ref_qty),
-				"cut_avg_d": round(tc / cut_d["days"], 1) if tc > 0 else 0,
-				"stitch_done": ts,
-				"stitch_pending": max(ref_qty - ts, 0) if ref_qty > 0 else 0,
-				"stitch_pct": pct(ts, ref_qty),
-				"stitch_avg_d": round(ts / stitch_d["days"], 1) if ts > 0 else 0,
-				"check_done": tch,
-				"check_pending": max(ref_qty - tch, 0) if ref_qty > 0 else 0,
-				"check_pct": pct(tch, ref_qty),
-				"check_avg_d": round(tch / check_d["days"], 1) if tch > 0 else 0,
-				"pack_done": tp,
-				"pack_pending": max(ref_qty - tp, 0) if ref_qty > 0 else 0,
-				"pack_pct": pct(tp, ref_qty),
-				"pack_avg_d": round(tp / pack_d["days"], 1) if tp > 0 else 0,
-			}
-		)
-
-	return {"items": result}
+def _extract_ean(item_code):
+	"""Pull trailing barcode/EAN from item code when present."""
+	if not item_code:
+		return ""
+	match = re.search(r"(\d{8,14})$", str(item_code).strip())
+	return match.group(1) if match else ""
 
 
 def _stage_map(order_sheet, report_dt, ct_dt, qty_col):
+	"""Sum stage qty per item. For packing use packaging_qty only (finished_* is cumulative)."""
 	rows = frappe.db.sql(
 		f"""
 		SELECT
@@ -144,10 +45,11 @@ def _stage_map(order_sheet, report_dt, ct_dt, qty_col):
 
 @frappe.whitelist()
 def get_assumption_board(order_sheet):
-	"""Item board for manual delivery-date assumptions.
+	"""Item board for delivery-date assumptions.
 
-	Never reads Sales Order delivery date into assumption fields.
-	Does not write Order Sheet / Sales Order.
+	Defaults assumption delivery from Order Sheet shipment_date, else Sales Order
+	delivery_date. User may change dates; nothing is written back to OS/SO.
+	Packed qty = SUM(packaging_qty) only (matches packing report).
 	"""
 	if not order_sheet:
 		frappe.throw(_("Select Order Sheet first."))
@@ -161,6 +63,12 @@ def get_assumption_board(order_sheet):
 		["name", "customer", "sales_order", "shipment_date", "docstatus"],
 		as_dict=True,
 	)
+
+	# Default assumption delivery: Order Sheet shipment → Sales Order delivery (editable later)
+	default_delivery = os_meta.shipment_date
+	if not default_delivery and os_meta.sales_order:
+		default_delivery = frappe.db.get_value("Sales Order", os_meta.sales_order, "delivery_date")
+	default_delivery = str(default_delivery) if default_delivery else ""
 
 	os_rows = frappe.db.sql(
 		"""
@@ -199,6 +107,7 @@ def get_assumption_board(order_sheet):
 		pending = max(oq - pack_done, 0)
 		# Suggested daily rate from historical packing avg (assumption default only)
 		suggested_daily = round(pack_done / pack["days"], 1) if pack_done > 0 else 0
+		ean = _extract_ean(row.so_item) or _extract_ean(row.combo_item)
 
 		items.append(
 			{
@@ -209,6 +118,7 @@ def get_assumption_board(order_sheet):
 				"colour": row.colour,
 				"article": row.article,
 				"size": row.size,
+				"ean": ean,
 				"order_qty": oq,
 				"pack_done": pack_done,
 				"pending_qty": pending,
@@ -216,8 +126,8 @@ def get_assumption_board(order_sheet):
 				"stitch_done": flt(stitch["qty"]),
 				"check_done": flt(check["qty"]),
 				"suggested_daily": suggested_daily,
-				# Blank on purpose — user fills assumption delivery date (not from SO)
-				"assumption_delivery_date": "",
+				# Default from OS/SO — user may change; not written back to documents
+				"assumption_delivery_date": default_delivery,
 				"assumed_daily_rate": suggested_daily or "",
 			}
 		)
@@ -226,8 +136,8 @@ def get_assumption_board(order_sheet):
 		"order_sheet": os_meta.name,
 		"customer": os_meta.customer,
 		"sales_order": os_meta.sales_order,
-		# Reference only — not used as assumption default
 		"order_sheet_shipment_date": os_meta.shipment_date,
+		"default_delivery_date": default_delivery,
 		"as_of": today(),
 		"items": items,
 		"note": _(

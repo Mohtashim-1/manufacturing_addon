@@ -140,6 +140,18 @@ frappe.ui.form.on("Order Sheet", {
 			);
 		}
 
+		// Assumption planner — available once items exist (does not change SO/OS dates)
+		if (frm.doc.order_sheet_ct && frm.doc.order_sheet_ct.length > 0) {
+			frm.add_custom_button(
+				__("Order Target (Assumption)"),
+				function () {
+					frappe.route_options = { order_sheet: frm.doc.name };
+					frappe.set_route("order-target");
+				},
+				__("Make")
+			);
+		}
+
 		// Production Plan — create or open linked plan(s)
 		if (frm.doc.docstatus === 1 && frm.doc.order_sheet_ct && frm.doc.order_sheet_ct.length > 0) {
 			frm.add_custom_button(

@@ -10,6 +10,8 @@ frappe.pages["bom-bulk-edit"].on_page_load = function (wrapper) {
 	const state = {
 		page,
 		sales_order: "",
+		item_template: "",
+		variants_only: 1,
 		meta: {},
 		rows: [],
 		rm_columns: [],
@@ -33,10 +35,16 @@ function render_shell(page, state) {
 			<style>
 				.bbe-portal .bbe-hero {
 					background: linear-gradient(135deg, #1e3a5f, #2f6fed);
-					color:#fff; border-radius:10px; padding:16px 18px; margin-bottom:14px;
+					color:#fff !important; border-radius:10px; padding:16px 18px; margin-bottom:14px;
 				}
-				.bbe-portal .bbe-hero h3 { margin:0; font-weight:700; }
-				.bbe-portal .bbe-hero p { margin:6px 0 0; opacity:.92; font-size:13px; }
+				.bbe-portal .bbe-hero h3,
+				.bbe-portal .bbe-hero h3 *,
+				.bbe-portal .bbe-hero .fa {
+					margin:0; font-weight:700; color:#ffffff !important;
+				}
+				.bbe-portal .bbe-hero p {
+					margin:6px 0 0; opacity:.92; font-size:13px; color:#ffffff !important;
+				}
 				.bbe-portal .bbe-filters {
 					display:flex; flex-wrap:wrap; gap:12px; align-items:end;
 					background:#fff3cd; border:2px solid #ffc107; border-radius:8px;
@@ -120,7 +128,7 @@ function render_shell(page, state) {
 			<div class="bbe-hero">
 				<h3><i class="fa fa-th"></i> ${__("Bulk Edit BOM Versions")}</h3>
 				<p>${__(
-					"1) Select Sales Order → 2) edit raw material qty in the matrix (same RM = same column) → 3) fill-down / apply to rest / replace RM / add material → 4) Save creates new default BOM versions."
+					"Loads Item Template → Variant items from the Sales Order. Same RM = same column. Edit / fill-down / replace / add material, then Save new default BOM versions."
 				)}</p>
 			</div>
 			<div class="bbe-filters">
@@ -128,12 +136,25 @@ function render_shell(page, state) {
 					<label>${__("Sales Order")}</label>
 					<div id="bbe-so-wrap"></div>
 				</div>
+				<div style="flex:1;min-width:200px;">
+					<label>${__("Item Template (optional)")}</label>
+					<div id="bbe-template-wrap"></div>
+				</div>
+				<div style="min-width:140px;">
+					<label>&nbsp;</label>
+					<label style="font-weight:500;color:#856404;display:flex;gap:6px;align-items:center;">
+						<input type="checkbox" id="bbe-variants-only" checked>
+						${__("Variants only")}
+					</label>
+				</div>
 				<button type="button" class="btn btn-primary btn-sm" id="bbe-load" style="height:30px;">
-					<i class="fa fa-download"></i> ${__("Load BOMs")}
+					<i class="fa fa-download"></i> ${__("Load Variant BOMs")}
 				</button>
 			</div>
 			<div id="bbe-body">
-				<div class="bbe-empty">${__("Select a Sales Order and click Load BOMs")}</div>
+				<div class="bbe-empty">${__(
+					"Select a Sales Order — loads its Item Template variant items and default BOMs"
+				)}</div>
 			</div>
 		</div>
 	`);
@@ -153,14 +174,39 @@ function render_shell(page, state) {
 		render_input: true,
 	});
 	so_control.refresh();
-	state.controls = { sales_order: so_control };
+
+	const template_control = frappe.ui.form.make_control({
+		parent: $(page.body).find("#bbe-template-wrap"),
+		df: {
+			fieldtype: "Link",
+			fieldname: "item_template",
+			options: "Item",
+			placeholder: __("Filter by Item Template"),
+			only_select: 1,
+			get_query() {
+				return { filters: { has_variants: 1 } };
+			},
+		},
+		render_input: true,
+	});
+	template_control.refresh();
+
+	state.controls = { sales_order: so_control, item_template: template_control };
 	so_control.$input.on("change awesomplete-selectcomplete", () => {
 		state.sales_order = so_control.get_value() || "";
 		if (state.sales_order) load_matrix(state);
 	});
+	template_control.$input.on("change awesomplete-selectcomplete", () => {
+		state.item_template = template_control.get_value() || "";
+	});
+	$(page.body).find("#bbe-variants-only").on("change", function () {
+		state.variants_only = $(this).is(":checked") ? 1 : 0;
+	});
 
 	$(page.body).find("#bbe-load").on("click", () => {
 		state.sales_order = so_control.get_value() || state.sales_order;
+		state.item_template = template_control.get_value() || "";
+		state.variants_only = $(page.body).find("#bbe-variants-only").is(":checked") ? 1 : 0;
 		if (!state.sales_order) {
 			frappe.show_alert({ message: __("Select Sales Order first"), indicator: "orange" });
 			return;
@@ -193,22 +239,31 @@ function load_matrix(state) {
 		return;
 	}
 	state.sales_order = so;
+	state.item_template =
+		(state.controls.item_template && state.controls.item_template.get_value()) ||
+		state.item_template ||
+		"";
+	state.variants_only = $("#bbe-variants-only").is(":checked") ? 1 : 0;
+
 	$("#bbe-body").html(
 		`<div class="bbe-empty"><i class="fa fa-spinner fa-spin fa-2x"></i><div style="margin-top:12px;">${__(
-			"Loading BOMs…"
+			"Loading variant items & BOMs…"
 		)}</div></div>`
 	);
 
 	frappe.call({
 		method: `${API}.get_bom_matrix`,
-		args: { sales_order: so },
+		args: {
+			sales_order: so,
+			item_template: state.item_template || null,
+			variants_only: state.variants_only,
+		},
 		callback(r) {
 			const msg = r.message || {};
 			state.meta = msg;
 			state.rows = (msg.rows || []).map((row) => ({ ...row, dirty: 0, _checked: 1 }));
 			state.rm_columns = (msg.rm_columns || []).map((c) => ({ ...c }));
 			state.cells = { ...(msg.cells || {}) };
-			// normalize qty display
 			Object.keys(state.cells).forEach((k) => {
 				const c = state.cells[k];
 				if (c && c.qty !== undefined && c.qty !== null && c.qty !== "") {
@@ -216,6 +271,7 @@ function load_matrix(state) {
 				}
 			});
 			state.dirty = false;
+			// If templates returned and filter empty, keep link options aware
 			render_matrix(state);
 		},
 		error() {
@@ -233,12 +289,15 @@ function render_matrix(state) {
 
 	if (!rows.length) {
 		$("#bbe-body").html(
-			`<div class="bbe-empty">${__("No items with BOMs found on this Sales Order")}</div>`
+			`<div class="bbe-empty">${__(
+				"No Item Template variant items found on this Sales Order. Uncheck “Variants only” to include all items, or pick another SO."
+			)}</div>`
 		);
 		return;
 	}
 
 	const dirty_n = rows.filter((r) => cint(r.dirty)).length;
+	const templates = meta.templates || [];
 	const cards = `
 		<div class="bbe-cards">
 			<div class="bbe-card"><div class="lbl">${__("Sales Order")}</div><div class="val" style="font-size:13px;">
@@ -249,7 +308,12 @@ function render_matrix(state) {
 			<div class="bbe-card"><div class="lbl">${__("Customer")}</div><div class="val" style="font-size:13px;">${frappe.utils.escape_html(
 				meta.customer || "—"
 			)}</div></div>
-			<div class="bbe-card"><div class="lbl">${__("FG Items")}</div><div class="val">${rows.length}</div></div>
+			<div class="bbe-card"><div class="lbl">${__("Item Templates")}</div><div class="val" style="font-size:13px;">${
+				templates.length
+					? frappe.utils.escape_html(templates.join(", "))
+					: "—"
+			}</div></div>
+			<div class="bbe-card"><div class="lbl">${__("Variant Items")}</div><div class="val">${rows.length}</div></div>
 			<div class="bbe-card"><div class="lbl">${__("Raw Materials")}</div><div class="val">${cols.length}</div></div>
 			<div class="bbe-card"><div class="lbl">${__("Changed")}</div><div class="val" style="color:#d97706;">${dirty_n}</div></div>
 		</div>
@@ -290,14 +354,32 @@ function render_matrix(state) {
 				<td style="text-align:center;width:36px;">
 					<input type="checkbox" class="bbe-sel" data-row="${ri}" ${cint(row._checked) ? "checked" : ""}>
 				</td>
+				<td style="white-space:nowrap;font-weight:700;color:#1e40af;">
+					${
+						row.item_template
+							? `<a href="/app/item/${encodeURIComponent(row.item_template)}">${frappe.utils.escape_html(
+									row.item_template
+							  )}</a>`
+							: `<span class="text-muted">—</span>`
+					}
+				</td>
 				<td class="sticky-l" title="${frappe.utils.escape_html(row.item_code)}">
 					<div>${frappe.utils.escape_html(row.item_code)}</div>
 					<div style="font-size:10px;color:#64748b;font-weight:400;">${frappe.utils.escape_html(
 						row.item_name || ""
 					)}</div>
 					${
+						row.attributes_label
+							? `<div style="font-size:10px;color:#0f766e;">${frappe.utils.escape_html(
+									row.attributes_label
+							  )}</div>`
+							: ""
+					}
+					${
 						cint(row.dirty)
 							? `<span class="badge badge-dirty">${__("edited")}</span>`
+							: cint(row.is_variant)
+							? `<span class="badge" style="background:#6366f1;">${__("variant")}</span>`
 							: ""
 					}
 				</td>
@@ -339,7 +421,8 @@ function render_matrix(state) {
 				<thead>
 					<tr>
 						<th style="width:36px;"></th>
-						<th class="sticky-l">${__("FG Item")}</th>
+						<th>${__("Item Template")}</th>
+						<th class="sticky-l">${__("Variant Item")}</th>
 						<th>${__("Current BOM")}</th>
 						<th>${__("SO Qty")}</th>
 						${head_rm}

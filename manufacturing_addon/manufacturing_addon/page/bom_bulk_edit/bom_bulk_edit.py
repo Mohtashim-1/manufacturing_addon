@@ -21,8 +21,13 @@ def _parse(data):
 
 
 @frappe.whitelist()
-def get_bom_matrix(sales_order):
-	"""Load FG rows + raw-material columns for all default active BOMs on the SO."""
+def get_bom_matrix(sales_order, item_template=None, variants_only=1):
+	"""Load FG variant items from Sales Order + their default active BOM RM matrix.
+
+	- Rows = unique SO variant items (Item.variant_of = Item Template)
+	- Optional item_template filter limits to that template's variants on the SO
+	- Same raw material shares one column across variants
+	"""
 	if not sales_order:
 		frappe.throw(_("Select Sales Order first."))
 
@@ -36,6 +41,9 @@ def get_bom_matrix(sales_order):
 		as_dict=True,
 	)
 
+	template_filter = (item_template or "").strip() or None
+	only_variants = cint(variants_only)
+
 	so_items = frappe.db.sql(
 		"""
 		SELECT
@@ -45,27 +53,56 @@ def get_bom_matrix(sales_order):
 			soi.item_name,
 			IFNULL(soi.qty, 0) AS so_qty,
 			IFNULL(soi.bom_no, '') AS so_bom_no,
-			IFNULL(soi.uom, '') AS uom
+			IFNULL(soi.uom, '') AS uom,
+			IFNULL(i.variant_of, '') AS item_template,
+			IFNULL(i.has_variants, 0) AS has_variants,
+			IFNULL(i.item_group, '') AS item_group
 		FROM `tabSales Order Item` soi
+		INNER JOIN `tabItem` i ON i.name = soi.item_code
 		WHERE soi.parent = %s
-		ORDER BY soi.idx
+		ORDER BY IFNULL(i.variant_of, ''), soi.idx
 		""",
 		(sales_order,),
 		as_dict=True,
 	)
 
-	# One matrix row per unique FG item (first SO line wins for labels)
-	seen = set()
+	# Templates present on this SO (for UI filter)
+	templates_on_so = []
+	seen_templates = set()
+	for line in so_items:
+		t = (line.item_template or "").strip()
+		if t and t not in seen_templates:
+			seen_templates.add(t)
+			templates_on_so.append(t)
+
+	# One matrix row per unique variant/FG item; sum SO qty if repeated
+	seen = {}
 	rows = []
-	rm_order = []  # preserve first-seen column order
+	rm_order = []
 	rm_set = set()
-	cells = {}  # key: f"{item_code}::{rm}" → {qty, uom, bom_item_name}
+	cells = {}
 
 	for line in so_items:
 		item_code = line.item_code
-		if not item_code or item_code in seen:
+		if not item_code:
 			continue
-		seen.add(item_code)
+
+		template = (line.item_template or "").strip()
+		is_template_item = cint(line.has_variants) == 1
+		is_variant = bool(template) and not is_template_item
+
+		# Default: only Item Template → Variant items (skip plain items & templates)
+		if only_variants and not is_variant:
+			continue
+
+		if template_filter and template != template_filter:
+			continue
+
+		if item_code in seen:
+			# Aggregate qty onto existing row
+			idx = seen[item_code]
+			rows[idx]["so_qty"] = flt(rows[idx]["so_qty"]) + flt(line.so_qty)
+			continue
 
 		bom_no = get_default_active_bom(item_code) or line.so_bom_no or ""
 		bom_meta = None
@@ -95,9 +132,15 @@ def get_bom_matrix(sales_order):
 				as_dict=True,
 			)
 
+		attrs = _variant_attributes(item_code) if is_variant else {}
+
 		row = {
 			"item_code": item_code,
 			"item_name": line.item_name,
+			"item_template": template,
+			"is_variant": 1 if is_variant else 0,
+			"attributes": attrs,
+			"attributes_label": ", ".join(f"{k}: {v}" for k, v in attrs.items()) if attrs else "",
 			"so_detail": line.so_detail,
 			"so_qty": flt(line.so_qty),
 			"bom_no": bom_no or "",
@@ -108,6 +151,7 @@ def get_bom_matrix(sales_order):
 			"has_bom": 1 if bom_meta else 0,
 			"dirty": 0,
 		}
+		seen[item_code] = len(rows)
 		rows.append(row)
 
 		for m in materials:
@@ -134,14 +178,33 @@ def get_bom_matrix(sales_order):
 		"customer": so.customer,
 		"company": so.company,
 		"transaction_date": so.transaction_date,
+		"item_template": template_filter,
+		"templates": templates_on_so,
+		"variants_only": only_variants,
 		"rows": rows,
 		"rm_columns": rm_order,
 		"cells": cells,
 		"note": _(
-			"Same raw material shares one column. Edit qty, replace RM, fill-down like Excel, "
-			"then Save to create new default BOM versions (does not edit submitted BOMs in place)."
+			"Loads Item Template variant items from the Sales Order. "
+			"Same raw material shares one column. Edit qty, replace RM, fill-down, "
+			"then Save to create new default BOM versions."
 		),
 	}
+
+
+def _variant_attributes(item_code):
+	"""Return ordered {attribute: value} for a variant item."""
+	rows = frappe.db.sql(
+		"""
+		SELECT attribute, attribute_value
+		FROM `tabItem Variant Attribute`
+		WHERE parent = %s
+		ORDER BY idx
+		""",
+		(item_code,),
+		as_dict=True,
+	)
+	return {r.attribute: r.attribute_value for r in rows if r.attribute}
 
 
 @frappe.whitelist()

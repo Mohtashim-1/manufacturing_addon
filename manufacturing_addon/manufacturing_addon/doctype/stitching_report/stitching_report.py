@@ -8,11 +8,11 @@ from frappe.utils import flt
 
 from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
     append_style_contractors,
+    strip_subassembly_style_contractors,
     validate_mandatory_contractors,
 )
 from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
     apply_subassembly_contractor_qty,
-    validate_subassembly_qty_caps,
 )
 from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
     apply_all_style_contractor_amounts,
@@ -394,15 +394,13 @@ class StitchingReport(Document):
         refresh_component_planned_qty(self.stitching_report_ct, self.order_sheet)
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
+        strip_subassembly_style_contractors(self.stitching_report_ct)
         self._apply_subassembly_style_qty()
         self.stitching_condition()
         validate_mandatory_contractors(
             self.stitching_report_ct,
             qty_field="stitching_qty",
             report_label="Stitching Report",
-        )
-        validate_subassembly_qty_caps(
-            self, "stitching_report_ct", "stitching_qty", "Stitching Report"
         )
         self.total_qty()
         self.total_percentage()
@@ -416,6 +414,7 @@ class StitchingReport(Document):
         refresh_component_planned_qty(self.stitching_report_ct, self.order_sheet)
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
+        strip_subassembly_style_contractors(self.stitching_report_ct)
         self._apply_subassembly_style_qty()
 
     def calculate_finished_cutting_qty(self):

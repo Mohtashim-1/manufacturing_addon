@@ -13,7 +13,6 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
 )
 from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
     apply_subassembly_contractor_qty,
-    validate_subassembly_qty_caps,
 )
 from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
     apply_all_style_contractor_amounts,
@@ -573,9 +572,7 @@ class PackingReport(Document):
             qty_field="packaging_qty",
             report_label="Packing Report",
         )
-        validate_subassembly_qty_caps(
-            self, "packing_report_ct", "packaging_qty", "Packing Report"
-        )
+        # Zip/button caps are enforced on Sub Assembly Report only
         self.total_qty()
         self.total_percentage()
         self.total()
@@ -810,39 +807,64 @@ class PackingReport(Document):
             frappe.throw(f"Error in calculating finished packaging quantity: {str(e)}")
 
     def packing_condition(self):
-        """Validate that total packaging qty (finished_packaging_qty + packaging_qty) doesn't exceed stitching qty"""
+        """Total packing cannot exceed Cutting/Stitching/Checking flow qty."""
         if not self.packing_report_ct:
             return
 
-        # First ensure finished_stitching_qty and finished_packaging_qty are calculated
+        self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
+        self.calculate_finished_quality_qty()
         self.calculate_finished_packaging_qty()
 
         for i in self.packing_report_ct:
-            current_packaging_qty = i.packaging_qty or 0
-            finished_packaging_qty = i.finished_packaging_qty or 0
-            stitching_qty = i.finished_stitching_qty or 0
-            
-            # Total packaging = already packaged (from other documents) + current packaging qty
+            current_packaging_qty = flt(i.packaging_qty)
+            if current_packaging_qty <= 0:
+                continue
+
+            finished_packaging_qty = flt(i.finished_packaging_qty)
             total_packaging = finished_packaging_qty + current_packaging_qty
 
-            # Only block rows that are trying to add new packing in this document.
-            # This keeps get_data1()/zero-qty saves usable even when historical data
-            # is already out of balance and needs manual reconciliation.
-            if current_packaging_qty > 0 and stitching_qty > 0:
-                # Check if total packaging (already packaged + current) exceeds stitching qty
-                if total_packaging > stitching_qty:
-                    frappe.throw(
-                        _("Total Packing Qty ({0} = Finished Packing Qty {1} + Current Packing Qty {2}) cannot be greater than Finished Stitching Qty ({3}) for row {4} (Item: {5}, Combo Item: {6}). Please reduce the Packing Qty.").format(
-                            total_packaging,
-                            finished_packaging_qty,
-                            current_packaging_qty,
-                            stitching_qty,
-                            i.idx,
-                            i.so_item or "N/A",
-                            i.combo_item or "N/A"
-                        ),
-                        title=_("Validation Error")
+            positives = []
+            for q in (
+                flt(i.finished_cutting_qty),
+                flt(i.finished_stitching_qty),
+                flt(i.finished_quality_qty),
+            ):
+                if q > 0:
+                    positives.append(q)
+            ceiling = min(positives) if positives else 0
+
+            if ceiling <= 0:
+                frappe.throw(
+                    _(
+                        "Cannot enter Packing Qty ({0}) for row {1} because "
+                        "Cutting/Stitching/Checking qty is 0. Submit upstream reports first "
+                        "(Item: {2}, Combo Item: {3})."
+                    ).format(
+                        current_packaging_qty,
+                        i.idx,
+                        i.so_item or "N/A",
+                        i.combo_item or "N/A",
+                    ),
+                    title=_("Validation Error"),
+                )
+
+            if total_packaging > ceiling + 1e-9:
+                frappe.throw(
+                    _(
+                        "Total Packing Qty ({0} = Finished Packing Qty {1} + Current Packing Qty {2}) "
+                        "cannot exceed Cutting/Stitching/Checking Qty ({3}) for row {4} "
+                        "(Item: {5}, Combo Item: {6}). Please reduce the Packing Qty."
+                    ).format(
+                        total_packaging,
+                        finished_packaging_qty,
+                        current_packaging_qty,
+                        ceiling,
+                        i.idx,
+                        i.so_item or "N/A",
+                        i.combo_item or "N/A",
+                    ),
+                    title=_("Validation Error"),
                 )
 
     def total_qty(self):

@@ -8,11 +8,11 @@ from frappe.utils import flt
 
 from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
     append_style_contractors,
+    strip_subassembly_style_contractors,
     validate_mandatory_contractors,
 )
 from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
     apply_subassembly_contractor_qty,
-    validate_subassembly_qty_caps,
 )
 from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
     apply_all_style_contractor_amounts,
@@ -454,6 +454,8 @@ class CuttingReport(Document):
 
     def validate(self):
         self._ensure_style_contractors_loaded()
+        # Zip/button caps belong on Sub Assembly Report only
+        strip_subassembly_style_contractors(self.cutting_report_ct)
         from manufacturing_addon.manufacturing_addon.utils.component_plan_qty import (
             refresh_component_planned_qty,
         )
@@ -466,21 +468,6 @@ class CuttingReport(Document):
             qty_field="cutting_qty",
             report_label="Cutting Report",
         )
-        # Hard block only on Submit; draft Save shows a warning so work is not lost
-        if getattr(self, "_action", None) == "submit":
-            validate_subassembly_qty_caps(
-                self, "cutting_report_ct", "cutting_qty", "Cutting Report"
-            )
-        else:
-            warnings = validate_subassembly_qty_caps(
-                self,
-                "cutting_report_ct",
-                "cutting_qty",
-                "Cutting Report",
-                throw=False,
-            )
-            for msg in warnings:
-                frappe.msgprint(msg, indicator="orange", alert=True)
         validate_cutting_report_tolerance(self)
         self.total_qty()
         self.total_percentage()
@@ -488,6 +475,7 @@ class CuttingReport(Document):
     
     def before_save(self):
         self._ensure_style_contractors_loaded()
+        strip_subassembly_style_contractors(self.cutting_report_ct)
         from manufacturing_addon.manufacturing_addon.utils.component_plan_qty import (
             refresh_component_planned_qty,
         )

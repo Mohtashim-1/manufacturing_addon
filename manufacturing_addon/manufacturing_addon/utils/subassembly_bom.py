@@ -397,12 +397,15 @@ def apply_subassembly_contractor_qty(ct_row, work_qty_field):
 
 
 def _report_configs():
+	"""Reports that book/count sub-assembly (zip/button) qty against plan.
+
+	Cutting and Stitching are excluded — those reports no longer load or validate
+	sub-assembly styles; caps are enforced on Sub Assembly Report only.
+	"""
 	return (
-		("Cutting Report", "Cutting Report CT", "cutting_qty"),
-		("Stitching Report", "Stitching Report CT", "stitching_qty"),
+		("Sub Assembly Report", "Sub Assembly Report CT", "sub_assembly_qty"),
 		("Packing Report", "Packing Report CT", "packaging_qty"),
 		("Checking Report", "Checking Report CT", "checking_qty"),
-		("Sub Assembly Report", "Sub Assembly Report CT", "sub_assembly_qty"),
 	)
 
 
@@ -426,11 +429,24 @@ def _subassembly_styles_for_item(item_code):
 	return list(styles.values())
 
 
-def get_subassembly_qty_used(order_sheet, so_item, style, unit_qty, exclude_parent=None, exclude_parenttype=None):
-	"""Sum calculated sub-assembly qty already entered on submitted reports."""
+def get_subassembly_qty_used(
+	order_sheet,
+	so_item,
+	style,
+	unit_qty,
+	exclude_parent=None,
+	exclude_parenttype=None,
+	combo_item=None,
+):
+	"""Sum sub-assembly style qty already booked on submitted reports.
+
+	When combo_item is set, only count that component line (DUVET/PILLOW) so
+	zip booked on both combos is not double-charged against one row.
+	"""
 	if not order_sheet or not so_item or not style or unit_qty <= 0:
 		return 0
 
+	combo = cstr(combo_item or "").strip()
 	total = 0
 	for parent_doctype, child_doctype, qty_field in _report_configs():
 		parent_filters = {"order_sheet": order_sheet, "docstatus": 1}
@@ -441,18 +457,31 @@ def get_subassembly_qty_used(order_sheet, so_item, style, unit_qty, exclude_pare
 		if not reports:
 			continue
 
-		ct_fields = ["name", qty_field]
-		# pcs exists on manufacturing report CT doctypes (combo component lines)
+		ct_fields = ["name", qty_field, "combo_item"]
 		if frappe.get_meta(child_doctype).has_field("pcs"):
 			ct_fields.append("pcs")
 
+		ct_filters = {"parent": ["in", reports], "so_item": so_item}
+		if combo:
+			ct_filters["combo_item"] = combo
+
 		ct_rows = frappe.get_all(
 			child_doctype,
-			filters={"parent": ["in", reports], "so_item": so_item},
+			filters=ct_filters,
 			fields=ct_fields,
 		)
 		if not ct_rows:
 			continue
+
+		# SET-level (no combo filter): include all component lines for this so_item
+		if not combo:
+			pass
+		else:
+			ct_rows = [
+				r
+				for r in ct_rows
+				if cstr(getattr(r, "combo_item", None) or "").strip() == combo
+			]
 
 		ct_names = [r.name for r in ct_rows if flt(getattr(r, qty_field)) > 0]
 		if not ct_names:
@@ -471,21 +500,164 @@ def get_subassembly_qty_used(order_sheet, so_item, style, unit_qty, exclude_pare
 			fields=["parent", "qty", "unit_qty", "is_subassembly"],
 		)
 		for sc in sc_rows:
+			# Prefer stored style qty (what was actually booked)
+			booked = flt(sc.qty)
+			if booked > 0:
+				total += booked
+				continue
 			work_qty = work_by_ct.get(sc.parent, 0)
 			if work_qty <= 0:
 				continue
 			unit = flt(sc.unit_qty) or unit_qty
-			if sc.is_subassembly:
-				total += work_qty * unit
-			else:
-				total += flt(sc.qty)
+			total += work_qty * unit
 
 	return total
 
 
-def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report_label, throw=True):
-	"""Ensure finished qty × BOM does not exceed order qty × BOM unit qty.
+def get_production_flow_component_qty(order_sheet, so_item, combo_item=None):
+	"""Upstream production qty for one SO item / combo line.
 
+	Sub Assembly / Packing follow Cutting → Stitching → Checking: ceiling is the
+	minimum of those stages that already have qty (empty stage ignored).
+
+	When combo_item is blank (SET / packing finished line), returns finished-set
+	equivalent = min(component_qty / pcs) across Product Combo components.
+	"""
+	if not order_sheet or not so_item:
+		return 0.0
+
+	combo = cstr(combo_item or "").strip()
+	stages = (
+		("Cutting Report", "Cutting Report CT", "cutting_qty"),
+		("Stitching Report", "Stitching Report CT", "stitching_qty"),
+		("Checking Report", "Checking Report CT", "checking_qty"),
+	)
+
+	if combo:
+		positive = []
+		for parent_dt, child_dt, qty_field in stages:
+			row = frappe.db.sql(
+				f"""
+				SELECT SUM(ct.`{qty_field}`)
+				FROM `tab{child_dt}` ct
+				INNER JOIN `tab{parent_dt}` p ON p.name = ct.parent
+				WHERE p.order_sheet = %s AND p.docstatus = 1
+				  AND ct.so_item = %s AND ct.combo_item = %s
+				""",
+				(order_sheet, so_item, combo),
+			)
+			qty = flt(row[0][0] if row else 0)
+			if qty > 0:
+				positive.append(qty)
+		return min(positive) if positive else 0.0
+
+	# Finished / SET line — convert combo-component totals to set equivalents
+	bundle_rows = frappe.get_all(
+		"Product Combo Item",
+		filters={"parent": so_item},
+		fields=["item", "pcs"],
+	)
+	if not bundle_rows:
+		# No combo map: sum lines with empty combo_item only
+		positive = []
+		for parent_dt, child_dt, qty_field in stages:
+			row = frappe.db.sql(
+				f"""
+				SELECT SUM(ct.`{qty_field}`)
+				FROM `tab{child_dt}` ct
+				INNER JOIN `tab{parent_dt}` p ON p.name = ct.parent
+				WHERE p.order_sheet = %s AND p.docstatus = 1
+				  AND ct.so_item = %s
+				  AND (ct.combo_item IS NULL OR ct.combo_item = '')
+				""",
+				(order_sheet, so_item),
+			)
+			qty = flt(row[0][0] if row else 0)
+			if qty > 0:
+				positive.append(qty)
+		return min(positive) if positive else 0.0
+
+	positive = []
+	for parent_dt, child_dt, qty_field in stages:
+		rows = frappe.db.sql(
+			f"""
+			SELECT ct.combo_item, SUM(ct.`{qty_field}`) AS total_qty
+			FROM `tab{child_dt}` ct
+			INNER JOIN `tab{parent_dt}` p ON p.name = ct.parent
+			WHERE p.order_sheet = %s AND p.docstatus = 1
+			  AND ct.so_item = %s
+			  AND IFNULL(ct.combo_item, '') != ''
+			GROUP BY ct.combo_item
+			""",
+			(order_sheet, so_item),
+			as_dict=True,
+		)
+		total_map = {cstr(r.combo_item): flt(r.total_qty) for r in rows}
+		normalized = []
+		for b in bundle_rows:
+			pcs = flt(b.pcs) or 1
+			normalized.append(flt(total_map.get(cstr(b.item), 0)) / pcs)
+		stage_qty = min(normalized) if normalized else 0
+		if stage_qty > 0:
+			positive.append(stage_qty)
+
+	return min(positive) if positive else 0.0
+
+
+def _subassembly_row_ceiling(doc, row, report_label):
+	"""Finished-piece ceiling for product + style caps.
+
+	Sub Assembly / Packing / Checking: Cutting→Stitching→Checking flow
+	(may exceed order/plan when production over-cut).
+	Other reports: max(order, plan) in finished pieces.
+	"""
+	order_qty = flt(row.get("order_qty"))
+	planned_qty = flt(row.get("planned_qty"))
+	pcs = flt(row.get("pcs") if hasattr(row, "get") else getattr(row, "pcs", None)) or 1
+	# planned_qty on combo CT is usually component pieces
+	plan_finished = planned_qty / pcs if pcs else planned_qty
+	order_plan = max(order_qty, plan_finished)
+
+	doctype = cstr(getattr(doc, "doctype", None) or "")
+	label = cstr(report_label or "")
+	flow_doctypes = {
+		"Sub Assembly Report",
+		"Packing Report",
+		"Checking Report",
+	}
+	if doctype not in flow_doctypes and label not in flow_doctypes:
+		return order_plan, "Order/Plan", order_plan
+
+	# Prefer already-calculated upstream fields on Packing CT (SET-equivalent)
+	if doctype == "Packing Report" or label == "Packing Report":
+		positives = []
+		for field in (
+			"finished_cutting_qty",
+			"finished_stitching_qty",
+			"finished_quality_qty",
+		):
+			q = flt(row.get(field) if hasattr(row, "get") else getattr(row, field, 0))
+			if q > 0:
+				positives.append(q)
+		if positives:
+			flow_finished = min(positives)
+			return flow_finished, "Cutting/Stitching/Checking", flow_finished * pcs
+
+	combo_item = cstr(getattr(row, "combo_item", None) or "").strip()
+	flow_component = get_production_flow_component_qty(
+		doc.get("order_sheet"), row.get("so_item"), combo_item
+	)
+	flow_finished = flow_component / pcs if pcs else flow_component
+	if flow_finished > 0:
+		return flow_finished, "Cutting/Stitching/Checking", flow_component
+	# No upstream yet — fall back to order/plan so empty lines still validate
+	return order_plan, "Order/Plan", order_plan * pcs
+
+
+def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report_label, throw=True):
+	"""Ensure finished qty × BOM does not exceed the allowed ceiling × BOM unit qty.
+
+	Sub Assembly Report ceiling = Cutting/Stitching/Checking flow (not order/plan).
 	Returns list of warning messages. Throws on first breach when throw=True.
 	"""
 	order_sheet = doc.get("order_sheet")
@@ -501,20 +673,24 @@ def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report
 		# Combo component lines (pillow pcs=2 etc.) store component pieces
 		work_qty = finished_work_qty(row, raw_work_qty)
 
-		order_qty = flt(row.get("order_qty"))
-		planned_qty = flt(row.get("planned_qty"))
-		# Allow cutting up to planned when plan exceeds order (over-plan booking)
-		qty_ceiling = max(order_qty, planned_qty)
+		qty_ceiling, ceiling_label, _flow_component = _subassembly_row_ceiling(
+			doc, row, report_label
+		)
 		if qty_ceiling <= 0:
 			continue
 
 		if work_qty > qty_ceiling + 1e-9:
 			msg = _(
-				"Row {0}: Finished Product Qty {1} cannot exceed Order/Plan Qty {2}."
-			).format(row.idx, work_qty, qty_ceiling)
+				"Row {0}: Finished Product Qty {1} cannot exceed {2} Qty {3}."
+			).format(row.idx, work_qty, ceiling_label, qty_ceiling)
 			if throw:
 				frappe.throw(msg, title=_("{0} — Qty Limit").format(report_label))
 			warnings.append(msg)
+			continue
+
+		# Zip/button style caps belong only on Sub Assembly Report
+		doctype = cstr(getattr(doc, "doctype", None) or "")
+		if doctype != "Sub Assembly Report" and cstr(report_label) != "Sub Assembly Report":
 			continue
 
 		combo_item = cstr(getattr(row, "combo_item", None) or "").strip()
@@ -533,6 +709,11 @@ def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report
 				if combo_item
 				else resolve_subassembly_unit_qty(row.so_item, style_row)
 			)
+			# Unscoped SET zip (qty=2) booked on both DUVET+PILLOW at unit 1 each:
+			# per combo line, treat unit as 1 and scope "used" to that combo.
+			if combo_item and not component and flt(unit_qty) > 1:
+				unit_qty = 1.0
+
 			max_total = qty_ceiling * unit_qty
 			used = get_subassembly_qty_used(
 				order_sheet,
@@ -541,13 +722,15 @@ def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report
 				unit_qty,
 				exclude_parent=doc.name if doc.name else None,
 				exclude_parenttype=doc.doctype,
+				combo_item=combo_item or None,
 			)
 			current = work_qty * unit_qty
 			if used + current > max_total + 1e-9:
+				remaining = max(max_total - used, 0)
 				msg = _(
-					"Row {0}: {1} style qty cannot exceed order/plan limit. "
+					"Row {0}: {1} style qty cannot exceed {8} limit. "
 					"Finished Product Qty {2} × BOM {3} = {4}, but max is {5} "
-					"({6} pcs × {3} per pc). Already used {7}."
+					"({6} pcs × {3} per pc). Already used {7}. Remaining {9}."
 				).format(
 					row.idx,
 					style_row.style,
@@ -557,6 +740,8 @@ def validate_subassembly_qty_caps(doc, child_table_field, work_qty_field, report
 					max_total,
 					qty_ceiling,
 					used,
+					ceiling_label,
+					remaining,
 				)
 				if throw:
 					frappe.throw(msg, title=_("{0} — Sub-Assembly Limit").format(report_label))

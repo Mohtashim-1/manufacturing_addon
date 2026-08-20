@@ -95,8 +95,8 @@ def _style_row_matches_report_line(style_row, so_item, combo_item, article):
 			return True
 
 	# Combo-specific report line: unscoped *product* styles must not fan out.
-	# Unscoped zip/button (sub-assembly) styles still attach — unit_qty is then
-	# taken from Product Combo pcs for that duvet/pillow line, not SET BOM total.
+	# Unscoped zip/button still attach on Sub Assembly / Checking (Cutting/Stitching
+	# never receive those styles from _iter_item_style_rows anymore).
 	if combo_code and not style_article and not component:
 		return _is_subassembly_style(style_row)
 
@@ -106,12 +106,17 @@ def _style_row_matches_report_line(style_row, so_item, combo_item, article):
 	return False
 
 
+# Product reports: fabric/product styles only. Zip/button live on Sub Assembly Report.
+_PRODUCT_OPERATIONS = frozenset({"Cutting", "Stitching", "Packing", "Quality"})
+_SUBASSEMBLY_OPERATIONS = frozenset({"Sub Assembly", "Checking"})
+
+
 def _iter_item_style_rows(item, operation):
 	"""Yield style rows for a report operation.
 
-	- Rows from the operation's own style table are always included.
-	- Subassembly rows (checkbox OR zip/button style name) are included in every report.
-	- Checking / Sub Assembly have no own table, so they only receive subassembly rows.
+	- Cutting / Stitching / Packing: only that operation's own style table, and
+	  never zip/button sub-assembly styles (those are Sub Assembly Report only).
+	- Sub Assembly / Checking: only sub-assembly styles (checkbox or zip/button name).
 	"""
 	config = OPERATION_CONFIG.get(operation)
 	if not config:
@@ -130,17 +135,48 @@ def _iter_item_style_rows(item, operation):
 				continue
 
 			is_subassembly = _is_subassembly_style(row)
-			is_own_table = table_field == own_field
+			is_own_table = bool(own_field) and table_field == own_field
 
-			if own_field and is_own_table:
-				pass
-			elif is_subassembly:
-				pass
+			if operation in _PRODUCT_OPERATIONS:
+				if not is_own_table or is_subassembly:
+					continue
+			elif operation in _SUBASSEMBLY_OPERATIONS:
+				if not is_subassembly:
+					continue
 			else:
-				continue
+				# Unknown operation: keep previous own-table OR subassembly rule
+				if is_own_table:
+					pass
+				elif is_subassembly:
+					pass
+				else:
+					continue
 
 			seen.add(row_key)
 			yield row
+
+
+def strip_subassembly_style_contractors(report_rows):
+	"""Drop zip/button sub-assembly style lines from Cutting/Stitching CT rows."""
+	for row in report_rows or []:
+		styles = row.get("style_contractors") or []
+		if not styles:
+			continue
+		kept = []
+		for sc in styles:
+			sc = frappe._dict(sc) if isinstance(sc, dict) else sc
+			style_name = sc.get("style") if hasattr(sc, "get") else getattr(sc, "style", None)
+			is_sub = bool(
+				(sc.get("is_subassembly") if hasattr(sc, "get") else getattr(sc, "is_subassembly", 0))
+				or subassembly_material_type(style_name)
+			)
+			if is_sub:
+				continue
+			kept.append(sc)
+		if isinstance(row, dict):
+			row["style_contractors"] = kept
+		else:
+			row.style_contractors = kept
 
 
 def _is_subassembly_style(style_row):

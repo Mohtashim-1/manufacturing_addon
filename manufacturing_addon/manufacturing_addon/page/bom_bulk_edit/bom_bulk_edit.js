@@ -1,12 +1,16 @@
 // Copyright (c) 2026, Manufacturing Addon and contributors
+// Must be module-scope — load/save helpers below are outside on_page_load.
+const BBE_API =
+	"manufacturing_addon.manufacturing_addon.page.bom_bulk_edit.bom_bulk_edit";
+
 frappe.pages["bom-bulk-edit"].on_page_load = function (wrapper) {
+	console.info("[BOM Bulk Edit] page script loaded", { api: BBE_API });
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Bulk Edit BOM"),
 		single_column: true,
 	});
 
-	const API = "manufacturing_addon.manufacturing_addon.page.bom_bulk_edit.bom_bulk_edit";
 	const state = {
 		page,
 		sales_order: "",
@@ -431,66 +435,61 @@ function load_matrix_by_item(state) {
 		if (elapsed_timer) clearInterval(elapsed_timer);
 	};
 
-	const ping_method = `${API}.bom_bulk_edit_ping`;
-	const load_method = `${API}.get_bom_matrix_for_item`;
+	const load_method = `${BBE_API}.get_bom_matrix_for_item`;
 
-	bbe_api_fetch(ping_method, {}, 10000)
-		.then((ping_msg) => {
-			mark("ping OK", ping_msg);
-			$("#bbe-load-status").text(__("Ping OK — loading BOM…"));
-			return bbe_api_fetch(
-				load_method,
-				{
-					item_query: q,
-					include_siblings: include_siblings ? 1 : 0,
-					limit: include_siblings ? 40 : 1,
-				},
-				30000
-			);
-		})
-		.then((msg) => {
-			finish();
-			msg = msg || {};
-			mark("BOM response", {
-				server_timing: msg._timing,
-				rows: (msg.rows || []).length,
-				rm: (msg.rm_columns || []).length,
-				resolved: msg.resolved_item,
-			});
-			if (cint(msg.needs_pick) && (msg.matches || []).length) {
-				show_item_pick_dialog(state, msg.matches);
-				return;
-			}
-			if (!(msg.rows || []).length) {
+	try {
+		bbe_api_fetch(
+			load_method,
+			{
+				item_query: q,
+				include_siblings: include_siblings ? 1 : 0,
+				limit: include_siblings ? 40 : 1,
+			},
+			30000
+		)
+			.then((msg) => {
+				finish();
+				msg = msg || {};
+				mark("BOM response", {
+					server_timing: msg._timing,
+					rows: (msg.rows || []).length,
+					rm: (msg.rm_columns || []).length,
+					resolved: msg.resolved_item,
+				});
+				if (cint(msg.needs_pick) && (msg.matches || []).length) {
+					show_item_pick_dialog(state, msg.matches);
+					return;
+				}
+				if (!(msg.rows || []).length) {
+					$("#bbe-body").html(
+						`<div class="bbe-empty">${__(
+							"No BOM found for this item. Check it has an active default BOM."
+						)}</div>`
+					);
+					return;
+				}
+				const t1 = performance.now();
+				apply_loaded_payload(state, msg);
+				const render_ms = Math.round(performance.now() - t1);
+				const total_ms = Math.round(performance.now() - t0);
+				console.log("[BOM Bulk Edit] DONE", { total_ms, render_ms, timing: msg._timing });
+				frappe.show_alert({
+					message: __("Loaded {0} item · {1} RM · total {2}ms · server {3}s · render {4}ms", [
+						msg.rows.length,
+						(msg.rm_columns || []).length,
+						total_ms,
+						(msg._timing && msg._timing.total_sec) || "?",
+						render_ms,
+					]),
+					indicator: "green",
+				});
+			})
+			.catch((err) => {
+				finish();
+				const aborted = err && err.name === "AbortError";
+				console.error("[BOM Bulk Edit] FAILED", aborted ? "TIMEOUT" : err);
 				$("#bbe-body").html(
-					`<div class="bbe-empty">${__(
-						"No BOM found for this item. Check it has an active default BOM."
-					)}</div>`
-				);
-				return;
-			}
-			const t1 = performance.now();
-			apply_loaded_payload(state, msg);
-			const render_ms = Math.round(performance.now() - t1);
-			const total_ms = Math.round(performance.now() - t0);
-			console.log("[BOM Bulk Edit] DONE", { total_ms, render_ms, timing: msg._timing });
-			frappe.show_alert({
-				message: __("Loaded {0} item · {1} RM · total {2}ms · server {3}s · render {4}ms", [
-					msg.rows.length,
-					(msg.rm_columns || []).length,
-					total_ms,
-					(msg._timing && msg._timing.total_sec) || "?",
-					render_ms,
-				]),
-				indicator: "green",
-			});
-		})
-		.catch((err) => {
-			finish();
-			const aborted = err && err.name === "AbortError";
-			console.error("[BOM Bulk Edit] FAILED", aborted ? "TIMEOUT" : err);
-			$("#bbe-body").html(
-				`<div class="bbe-empty text-danger">
+					`<div class="bbe-empty text-danger">
 					${
 						aborted
 							? __("Timed out waiting for server. Check Console + Network tab.")
@@ -500,8 +499,16 @@ function load_matrix_by_item(state) {
 						cstr(err && err.message)
 					)}</div>
 				</div>`
-			);
-		});
+				);
+			});
+	} catch (err) {
+		finish();
+		console.error("[BOM Bulk Edit] sync error before fetch", err);
+		$("#bbe-body").html(
+			`<div class="bbe-empty text-danger">${__("Load failed — see Console (F12).")}
+			<div style="margin-top:8px;font-size:12px;">${frappe.utils.escape_html(cstr(err && err.message))}</div></div>`
+		);
+	}
 }
 
 function show_item_pick_dialog(state, matches) {
@@ -559,7 +566,7 @@ function load_matrix(state) {
 	);
 
 	frappe.call({
-		method: `${API}.get_bom_matrix`,
+		method: `${BBE_API}.get_bom_matrix`,
 		args: {
 			sales_order: so,
 			item_template: state.item_template || null,
@@ -1055,7 +1062,7 @@ function do_replace_rm(state, values) {
 	if (!old_rm || !new_rm || old_rm === new_rm) return;
 
 	frappe.call({
-		method: `${API}.get_item_uom`,
+		method: `${BBE_API}.get_item_uom`,
 		args: { item_code: new_rm },
 		callback(r) {
 			const new_uom = r.message || "";
@@ -1158,7 +1165,7 @@ function do_add_material(state, values) {
 		return;
 	}
 	frappe.call({
-		method: `${API}.get_item_uom`,
+		method: `${BBE_API}.get_item_uom`,
 		args: { item_code: rm },
 		callback(r) {
 			const uom = r.message || "";
@@ -1221,7 +1228,7 @@ function _do_save(state, save_all) {
 	});
 
 	frappe.call({
-		method: `${API}.save_bom_matrix`,
+		method: `${BBE_API}.save_bom_matrix`,
 		args: {
 			sales_order: state.sales_order,
 			rows: rows_payload,

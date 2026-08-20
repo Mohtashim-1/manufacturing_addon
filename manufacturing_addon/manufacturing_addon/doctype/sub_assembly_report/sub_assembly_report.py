@@ -488,6 +488,7 @@ class SubAssemblyReport(Document):
             qty_field="sub_assembly_qty",
             report_label="Sub Assembly Report",
         )
+        self.sub_assembly_condition()
         # Hard block only on Submit; draft Save shows a warning so work is not lost
         if getattr(self, "_action", None) == "submit":
             validate_subassembly_qty_caps(
@@ -515,6 +516,7 @@ class SubAssemblyReport(Document):
         self._apply_subassembly_style_qty()
 
     def before_submit(self):
+        self.sub_assembly_condition()
         validate_subassembly_qty_caps(
             self, "sub_assembly_report_ct", "sub_assembly_qty", "Sub Assembly Report"
         )
@@ -526,6 +528,66 @@ class SubAssemblyReport(Document):
         )
 
         refresh_component_planned_qty(self.sub_assembly_report_ct, self.order_sheet)
+
+    def sub_assembly_condition(self):
+        """Total Sub Assembly cannot exceed Cutting/Stitching/Checking flow qty.
+
+        Same fellow rule as Stitching↔Cutting and Checking↔Stitching: if you cut 1100
+        on a 1000 plan, sub-assembly may go up to 1100 — not stuck at plan 1000.
+        """
+        from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
+            get_production_flow_component_qty,
+        )
+
+        if not self.sub_assembly_report_ct:
+            return
+
+        self.calculate_finished_sub_assembly_qty()
+        self.calculate_total_stitching_qty()
+
+        for row in self.sub_assembly_report_ct:
+            current_qty = flt(row.sub_assembly_qty)
+            if current_qty <= 0:
+                continue
+
+            already = flt(row.finished_sub_assembly_qty)
+            total = already + current_qty
+            ceiling = get_production_flow_component_qty(
+                self.order_sheet, row.so_item, row.combo_item
+            )
+
+            if ceiling <= 0:
+                frappe.throw(
+                    _(
+                        "Cannot enter Sub Assembly Qty ({0}) for row {1} because "
+                        "Cutting/Stitching/Checking qty is 0. Submit upstream reports first "
+                        "(Item: {2}, Combo Item: {3})."
+                    ).format(
+                        current_qty,
+                        row.idx,
+                        row.so_item or "N/A",
+                        row.combo_item or "N/A",
+                    ),
+                    title=_("Validation Error"),
+                )
+
+            if total > ceiling + 1e-9:
+                frappe.throw(
+                    _(
+                        "Total Sub Assembly Qty ({0} = Already {1} + New {2}) cannot exceed "
+                        "Cutting/Stitching/Checking Qty ({3}) for row {4} "
+                        "(Item: {5}, Combo Item: {6}). Reduce New Sub Assembly Qty."
+                    ).format(
+                        total,
+                        already,
+                        current_qty,
+                        ceiling,
+                        row.idx,
+                        row.so_item or "N/A",
+                        row.combo_item or "N/A",
+                    ),
+                    title=_("Validation Error"),
+                )
 
     def calculate_finished_sub_assembly_qty(self):
         """Already Sub Assembled Qty = submitted sub-assembly entry qty for this line."""

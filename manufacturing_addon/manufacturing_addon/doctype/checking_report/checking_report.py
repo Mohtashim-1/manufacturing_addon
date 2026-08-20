@@ -12,7 +12,6 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
 )
 from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
     apply_subassembly_contractor_qty,
-    validate_subassembly_qty_caps,
 )
 from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
     apply_all_style_contractor_amounts,
@@ -384,9 +383,7 @@ class CheckingReport(Document):
             qty_field="checking_qty",
             report_label="Checking Report",
         )
-        validate_subassembly_qty_caps(
-            self, "checking_report_ct", "checking_qty", "Checking Report"
-        )
+        # Zip/button caps are enforced on Sub Assembly Report only
         self.checking_condition()
         self.total_qty()
         self.total_percentage()

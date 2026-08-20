@@ -158,6 +158,7 @@ function render_layout(wrapper, state) {
 		render_input: true,
 	});
 	asof_control.refresh();
+	asof_control.set_value(frappe.datetime.get_today());
 	state.controls.as_of_picker = asof_control;
 	asof_control.$input.on("change", () => {
 		if (state.controls.report_date) {
@@ -322,16 +323,21 @@ function load_assumption_board(state) {
 			state.planner.meta = msg;
 			state.planner.items = (msg.items || []).map((row) => {
 				const s = saved[row.row_name] || {};
+				const pending = num(row.pending_qty);
+				let rate = "";
+				if (pending > 0) {
+					rate =
+						s.assumed_daily_rate !== undefined && s.assumed_daily_rate !== ""
+							? s.assumed_daily_rate
+							: row.suggested_daily || "";
+				}
 				return {
 					...row,
 					selected: s.selected != null ? cint(s.selected) : 1,
 					// Browser save wins if set; else OS shipment / SO delivery default
 					assumption_delivery_date:
 						s.assumption_delivery_date || row.assumption_delivery_date || "",
-					assumed_daily_rate:
-						s.assumed_daily_rate !== undefined && s.assumed_daily_rate !== ""
-							? s.assumed_daily_rate
-							: row.suggested_daily || "",
+					assumed_daily_rate: rate,
 					days_needed: null,
 					days_available: null,
 					buffer_days: null,
@@ -496,6 +502,10 @@ function render_planner(state) {
 				<td>${esc(row.colour)}</td>
 				<td>${esc(row.size)}</td>
 				<td style="text-align:right;">${fmtNum(row.order_qty)}</td>
+				<td style="text-align:right;font-weight:700;color:#1d4ed8;">${fmtNum(row.planned_qty)}</td>
+				<td style="text-align:right;">${fmtNum(row.cut_done)}</td>
+				<td style="text-align:right;">${fmtNum(row.stitch_done)}</td>
+				<td style="text-align:right;">${fmtNum(row.check_done)}</td>
 				<td style="text-align:right;">${fmtNum(row.pack_done)}</td>
 				<td style="text-align:right;font-weight:700;color:#c2410c;">${fmtNum(row.pending_qty)}</td>
 				<td>
@@ -539,6 +549,9 @@ function render_planner(state) {
 					  ")"
 					: ""
 			}
+			 · ${__("Pending & days use Planned Qty")}
+			 · ${__("Days Needed")} = Pending ÷ Pcs/Day
+			 · ${__("Buffer")} = Days Available − Days Needed
 		</div>
 		${cards}
 		<div class="ot-toolbar">
@@ -583,8 +596,12 @@ function render_planner(state) {
 						<th>${__("Colour")}</th>
 						<th>${__("Size")}</th>
 						<th>${__("Order Qty")}</th>
-						<th>${__("Packed")}</th>
-						<th>${__("Pending")}</th>
+						<th>${__("Planned Qty")}</th>
+						<th>${__("Cutting")}</th>
+						<th>${__("Stitching")}</th>
+						<th>${__("Quality")}</th>
+						<th>${__("Packing")}</th>
+						<th title="${__("Pending vs Planned (packing)")}">${__("Pending")}</th>
 						<th>${__("Assumption Delivery")}</th>
 						<th>${__("Assumed Pcs/Day")}</th>
 						<th>${__("Days Needed")}</th>
@@ -595,7 +612,7 @@ function render_planner(state) {
 				</thead>
 				<tbody>${
 					rows_html ||
-					`<tr><td colspan="15" style="padding:24px;text-align:center;color:#94a3b8;">${
+					`<tr><td colspan="19" style="padding:24px;text-align:center;color:#94a3b8;">${
 						q
 							? __("No rows match this search. Clear the search box.")
 							: __("No items on this Order Sheet")

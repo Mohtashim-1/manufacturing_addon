@@ -50,10 +50,18 @@ function render_shell(page, state) {
 				.bbe-portal .bbe-filters {
 					display:flex; flex-wrap:wrap; gap:12px; align-items:end;
 					background:#fff3cd; border:2px solid #ffc107; border-radius:8px;
-					padding:14px; margin-bottom:14px;
+					padding:14px; margin-bottom:10px;
 				}
 				.bbe-portal .bbe-filters label {
 					font-size:12px; font-weight:700; color:#856404; display:block; margin-bottom:4px;
+				}
+				.bbe-portal .bbe-search-bar {
+					display:flex; flex-wrap:wrap; gap:10px; align-items:end;
+					background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px;
+					padding:12px; margin-bottom:12px;
+				}
+				.bbe-portal .bbe-search-bar label {
+					font-size:11px; font-weight:700; color:#475569; display:block; margin-bottom:2px;
 				}
 				.bbe-portal .bbe-cards { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
 				.bbe-portal .bbe-card {
@@ -101,15 +109,13 @@ function render_shell(page, state) {
 				.bbe-portal table.bbe-table tr.dirty td.sticky-l { background:#fff8e1; }
 				.bbe-portal table.bbe-table tr.selected-row td { background:#f0f7ff; }
 				.bbe-portal table.bbe-table tr.selected-row td.sticky-l { background:#dbeafe; }
-				.bbe-portal .bbe-cell {
-					width:100%; min-width:72px; text-align:right; border:1px solid transparent;
-					padding:4px 6px; border-radius:4px; background:transparent;
+				.bbe-portal .bbe-cell-display {
+					display:block; min-height:28px; padding:4px 6px; text-align:right;
+					cursor:cell; border-radius:4px; min-width:72px;
 				}
-				.bbe-portal .bbe-cell:focus {
-					outline:none; border-color:#2f6fed; background:#fff; box-shadow:0 0 0 2px rgba(47,111,237,.2);
-				}
-				.bbe-portal .bbe-cell.empty { color:#adb5bd; }
-				.bbe-portal .bbe-cell.has-val { font-weight:600; }
+				.bbe-portal .bbe-cell-display.has-val { font-weight:600; color:#0f172a; }
+				.bbe-portal .bbe-cell-display.empty { color:#cbd5e1; }
+				.bbe-portal .bbe-cell-display:hover { background:#eff6ff; }
 				.bbe-portal td.cell-active { outline:2px solid #2f6fed; outline-offset:-2px; background:#eff6ff !important; }
 				.bbe-portal .fill-handle {
 					position:absolute; right:1px; bottom:1px; width:8px; height:8px;
@@ -153,9 +159,23 @@ function render_shell(page, state) {
 					<i class="fa fa-download"></i> ${__("Load Variant BOMs")}
 				</button>
 			</div>
+			<div class="bbe-search-bar" id="bbe-search-bar">
+				<div style="flex:2;min-width:240px;">
+					<label>${__("Filter (type anything)")}</label>
+					<input type="text" class="form-control input-sm" id="bbe-search"
+						placeholder="${__("item, size, colour, EAN, BOM, raw material…")}">
+				</div>
+				<div style="flex:1;min-width:220px;">
+					<label>${__("Search Item")}</label>
+					<div id="bbe-item-search-wrap"></div>
+				</div>
+				<button type="button" class="btn btn-default btn-sm" id="bbe-clear-filter" style="height:30px;">
+					${__("Clear filters")}
+				</button>
+			</div>
 			<div id="bbe-body">
 				<div class="bbe-empty">${__(
-					"Select a Sales Order — loads its Item Template variant items and default BOMs"
+					"Select a Sales Order — loads its Item Template variant items and default BOMs. Filters above work after load."
 				)}</div>
 			</div>
 		</div>
@@ -193,7 +213,32 @@ function render_shell(page, state) {
 	});
 	template_control.refresh();
 
-	state.controls = { sales_order: so_control, item_template: template_control };
+	const item_filter_control = frappe.ui.form.make_control({
+		parent: $(page.body).find("#bbe-item-search-wrap"),
+		df: {
+			fieldtype: "Link",
+			fieldname: "item_filter",
+			options: "Item",
+			placeholder: __("Search / select Item"),
+			only_select: 0,
+			get_query() {
+				const codes = (state.rows || []).map((r) => r.item_code).filter(Boolean);
+				if (codes.length && codes.length <= 500) {
+					return { filters: { name: ["in", codes] } };
+				}
+				return { filters: { disabled: 0 } };
+			},
+		},
+		render_input: true,
+	});
+	item_filter_control.refresh();
+
+	state.controls = {
+		sales_order: so_control,
+		item_template: template_control,
+		item_filter: item_filter_control,
+	};
+
 	so_control.$input.on("change awesomplete-selectcomplete", () => {
 		state.sales_order = so_control.get_value() || "";
 		if (state.sales_order) load_matrix(state);
@@ -201,8 +246,30 @@ function render_shell(page, state) {
 	template_control.$input.on("change awesomplete-selectcomplete", () => {
 		state.item_template = template_control.get_value() || "";
 	});
+	item_filter_control.$input.on("change awesomplete-selectcomplete input", () => {
+		state.item_filter = item_filter_control.get_value() || item_filter_control.$input.val() || "";
+		if (state.rows.length) render_matrix(state);
+	});
+
 	$(page.body).find("#bbe-variants-only").on("change", function () {
 		state.variants_only = $(this).is(":checked") ? 1 : 0;
+	});
+
+	// Permanent free-text filter (always visible)
+	let search_timer = null;
+	$(page.body).find("#bbe-search").on("input", function () {
+		state.search = $(this).val() || "";
+		clearTimeout(search_timer);
+		search_timer = setTimeout(() => {
+			if (state.rows.length) render_matrix(state);
+		}, 120);
+	});
+	$(page.body).find("#bbe-clear-filter").on("click", () => {
+		state.search = "";
+		state.item_filter = "";
+		$(page.body).find("#bbe-search").val("");
+		if (state.controls.item_filter) state.controls.item_filter.set_value("");
+		if (state.rows.length) render_matrix(state);
 	});
 
 	$(page.body).find("#bbe-load").on("click", () => {
@@ -335,7 +402,12 @@ function render_matrix(state) {
 		.map((row, idx) => ({ row, idx }))
 		.filter(({ row }) => row_matches_filter(state, row, q, item_f));
 
-	// If filter text matches RM columns, also narrow columns; else show all
+	// Column strategy (keeps DOM fast on large SO × many RMs):
+	// - filter matches RM → show those RM columns
+	// - else if filter/item search → only RMs used by visible rows
+	// - else cap at 35 columns (type filter to find more)
+	const RM_CAP = 35;
+	let col_capped = false;
 	let visible_cols = cols.map((c, ci) => ({ c, ci }));
 	if (q) {
 		const rm_hits = visible_cols.filter(
@@ -343,7 +415,30 @@ function render_matrix(state) {
 				cstr(c.item_code).toLowerCase().includes(q) ||
 				cstr(c.item_name).toLowerCase().includes(q)
 		);
-		if (rm_hits.length) visible_cols = rm_hits;
+		if (rm_hits.length) {
+			visible_cols = rm_hits;
+		} else {
+			const used = new Set();
+			visible.forEach(({ row }) => {
+				cols.forEach((c, ci) => {
+					const cell = state.cells[cell_key(row.item_code, c.item_code)];
+					if (cell && cell.qty !== "" && flt(cell.qty) !== 0) used.add(ci);
+				});
+			});
+			visible_cols = visible_cols.filter(({ ci }) => used.has(ci));
+		}
+	} else if (item_f) {
+		const used = new Set();
+		visible.forEach(({ row }) => {
+			cols.forEach((c, ci) => {
+				const cell = state.cells[cell_key(row.item_code, c.item_code)];
+				if (cell && cell.qty !== "" && flt(cell.qty) !== 0) used.add(ci);
+			});
+		});
+		visible_cols = visible_cols.filter(({ ci }) => used.has(ci));
+	} else if (visible_cols.length > RM_CAP) {
+		visible_cols = visible_cols.slice(0, RM_CAP);
+		col_capped = true;
 	}
 
 	const dirty_n = rows.filter((r) => cint(r.dirty)).length;
@@ -393,14 +488,16 @@ function render_matrix(state) {
 					<td data-row="${ri}" data-col="${ci}" data-item="${frappe.utils.escape_html(
 						row.item_code
 					)}" data-rm="${frappe.utils.escape_html(c.item_code)}" class="bbe-td">
-						<input type="number" step="any" min="0" class="bbe-cell ${
-							has ? "has-val" : "empty"
-						}"
-							value="${has ? qty : ""}" placeholder="—" data-row="${ri}" data-col="${ci}">
+						<span class="bbe-cell-display ${has ? "has-val" : "empty"}" data-row="${ri}" data-col="${ci}">${
+						has ? qty : "—"
+					}</span>
 						<div class="fill-handle" title="${__("Drag to fill down")}"></div>
 					</td>`;
 				})
 				.join("");
+			const short_item = frappe.utils.escape_html(
+				cstr(row.item_code).length > 42 ? cstr(row.item_code).slice(0, 40) + "…" : row.item_code
+			);
 			return `
 			<tr data-row="${ri}" class="${cint(row.dirty) ? "dirty" : ""} ${
 				item_f && cstr(row.item_code).toLowerCase().includes(item_f) ? "selected-row" : ""
@@ -418,10 +515,7 @@ function render_matrix(state) {
 					}
 				</td>
 				<td class="sticky-l" title="${frappe.utils.escape_html(row.item_code)}">
-					<div>${frappe.utils.escape_html(row.item_code)}</div>
-					<div style="font-size:10px;color:#64748b;font-weight:400;">${frappe.utils.escape_html(
-						row.item_name || ""
-					)}</div>
+					<div>${short_item}</div>
 					${
 						row.attributes_label
 							? `<div style="font-size:10px;color:#0f766e;">${frappe.utils.escape_html(
@@ -437,15 +531,14 @@ function render_matrix(state) {
 							: ""
 					}
 				</td>
-				<td style="white-space:nowrap;">
+				<td style="white-space:nowrap;font-size:11px;">
 					${
 						row.bom_no
 							? `<a href="/app/bom/${encodeURIComponent(row.bom_no)}">${frappe.utils.escape_html(
-									row.bom_no
+									cstr(row.bom_no).length > 28 ? cstr(row.bom_no).slice(0, 26) + "…" : row.bom_no
 							  )}</a>`
 							: `<span class="text-danger">${__("No BOM")}</span>`
 					}
-					${cint(row.is_default) ? ` <span class="badge badge-ok">default</span>` : ""}
 				</td>
 				<td style="text-align:right;">${format_number(row.so_qty, null, 0)}</td>
 				${cells}
@@ -454,28 +547,20 @@ function render_matrix(state) {
 		.join("");
 
 	$("#bbe-body").html(`
-		<div class="bbe-banner"><i class="fa fa-info-circle"></i> ${frappe.utils.escape_html(
-			meta.note || ""
-		)}</div>
+		${
+			col_capped
+				? `<div class="bbe-banner" style="background:#fff7ed;border-color:#fdba74;color:#9a3412;">
+				<i class="fa fa-filter"></i> ${__(
+					"Showing first {0} of {1} raw material columns for speed. Type anything in Filter (e.g. fabric name) to show matching columns.",
+					[RM_CAP, cols.length]
+				)}
+			</div>`
+				: `<div class="bbe-banner"><i class="fa fa-info-circle"></i> ${frappe.utils.escape_html(
+						meta.note || ""
+				  )}</div>`
+		}
 		${cards}
-		<div class="bbe-toolbar" style="align-items:end;">
-			<div style="flex:1;min-width:220px;">
-				<label style="font-size:11px;color:#64748b;display:block;margin-bottom:2px;">${__(
-					"Filter (type anything)"
-				)}</label>
-				<input type="text" class="form-control input-sm" id="bbe-search"
-					value="${frappe.utils.escape_html(state.search || "")}"
-					placeholder="${__("item, size, colour, EAN, BOM, raw material…")}">
-			</div>
-			<div style="min-width:220px;flex:1;">
-				<label style="font-size:11px;color:#64748b;display:block;margin-bottom:2px;">${__(
-					"Search Item"
-				)}</label>
-				<div id="bbe-item-search-wrap"></div>
-			</div>
-			<button type="button" class="btn btn-default btn-xs" id="bbe-clear-filter" style="height:30px;">${__(
-				"Clear filters"
-			)}</button>
+		<div class="bbe-toolbar">
 			<button type="button" class="btn btn-default btn-xs" id="bbe-select-all">${__("Select All")}</button>
 			<button type="button" class="btn btn-default btn-xs" id="bbe-select-none">${__("Clear Selection")}</button>
 			<button type="button" class="btn btn-info btn-xs" id="bbe-apply-rest">${__(
@@ -483,18 +568,14 @@ function render_matrix(state) {
 			)}</button>
 			<button type="button" class="btn btn-warning btn-xs" id="bbe-replace">${__("Replace RM…")}</button>
 			<button type="button" class="btn btn-success btn-xs" id="bbe-add-rm">${__("Add Material…")}</button>
+			<span class="text-muted" style="font-size:11px;margin-left:8px;">
+				${__("Click a cell to edit · drag blue square to fill down")}
+			</span>
 		</div>
 		<div class="text-muted small" style="margin:0 0 8px;">
 			${__("Showing")} ${visible.length} / ${rows.length} ${__("variant rows")}
-			${
-				visible_cols.length !== cols.length
-					? ` · ${visible_cols.length} / ${cols.length} ${__("RM columns")}`
-					: ""
-			}
+			· ${visible_cols.length} / ${cols.length} ${__("RM columns")}
 			${q ? ` · ${__("filter")}: <b>${frappe.utils.escape_html(state.search)}</b>` : ""}
-			<span style="margin-left:8px;color:#94a3b8;">${__(
-				"Tip: drag the blue square to fill down like Excel"
-			)}</span>
 		</div>
 		<div class="bbe-table-wrap">
 			<table class="bbe-table">
@@ -524,53 +605,6 @@ function render_matrix(state) {
 function bind_matrix_events(state) {
 	const $body = $("#bbe-body");
 
-	// Free-text filter
-	$body.find("#bbe-search").on("input", function () {
-		state.search = $(this).val() || "";
-		render_matrix(state);
-		const el = $("#bbe-search")[0];
-		if (el) {
-			el.focus();
-			const len = el.value.length;
-			el.setSelectionRange(len, len);
-		}
-	});
-
-	// Item Link search (filters to that item)
-	const item_control = frappe.ui.form.make_control({
-		parent: $body.find("#bbe-item-search-wrap"),
-		df: {
-			fieldtype: "Link",
-			fieldname: "item_filter",
-			options: "Item",
-			placeholder: __("Search / select Item"),
-			only_select: 0,
-			get_query() {
-				const codes = (state.rows || []).map((r) => r.item_code).filter(Boolean);
-				if (codes.length) {
-					return { filters: { name: ["in", codes] } };
-				}
-				return {};
-			},
-		},
-		render_input: true,
-	});
-	item_control.refresh();
-	if (state.item_filter) item_control.set_value(state.item_filter);
-	item_control.$input.on("change awesomplete-selectcomplete", () => {
-		state.item_filter = item_control.get_value() || "";
-		render_matrix(state);
-	});
-	state.controls = state.controls || {};
-	state.controls.item_filter = item_control;
-
-	$body.find("#bbe-clear-filter").on("click", () => {
-		state.search = "";
-		state.item_filter = "";
-		if (state.controls.item_filter) state.controls.item_filter.set_value("");
-		render_matrix(state);
-	});
-
 	$body.find("#bbe-select-all").on("click", () => {
 		state.rows.forEach((r) => (r._checked = 1));
 		render_matrix(state);
@@ -588,33 +622,59 @@ function bind_matrix_events(state) {
 		if (state.rows[ri]) state.rows[ri]._checked = $(this).is(":checked") ? 1 : 0;
 	});
 
-	$body.off("focus", ".bbe-cell").on("focus", ".bbe-cell", function () {
-		$body.find("td.cell-active").removeClass("cell-active");
-		const $td = $(this).closest("td");
-		$td.addClass("cell-active");
-		state.selected = {
-			row: cint($(this).data("row")),
-			col: cint($(this).data("col")),
-		};
-	});
-
-	$body.off("change input", ".bbe-cell").on("change input", ".bbe-cell", function () {
-		const ri = cint($(this).data("row"));
-		const ci = cint($(this).data("col"));
+	// Click-to-edit (lightweight cells — no thousands of inputs on load)
+	$body.off("click", ".bbe-cell-display").on("click", ".bbe-cell-display", function (e) {
+		e.stopPropagation();
+		const $span = $(this);
+		if ($span.data("editing")) return;
+		const ri = cint($span.data("row"));
+		const ci = cint($span.data("col"));
 		const row = state.rows[ri];
 		const col = state.rm_columns[ci];
 		if (!row || !col) return;
-		const val = $(this).val();
+
+		$body.find("td.cell-active").removeClass("cell-active");
+		const $td = $span.closest("td");
+		$td.addClass("cell-active");
+		state.selected = { row: ri, col: ci };
+
 		const cell = get_cell(state, row.item_code, col.item_code);
-		cell.qty = val === "" ? "" : flt(val);
-		if (!cell.uom && col.uom) cell.uom = col.uom;
-		mark_dirty(state, row.item_code);
-		$(this).toggleClass("has-val", cell.qty !== "" && flt(cell.qty) !== 0);
-		$(this).toggleClass("empty", !(cell.qty !== "" && flt(cell.qty) !== 0));
-		$(this).closest("tr").addClass("dirty");
+		const cur = cell.qty === 0 || cell.qty ? cell.qty : "";
+		$span.data("editing", 1);
+		const $inp = $(
+			`<input type="number" step="any" min="0" class="form-control input-xs bbe-cell-input" style="text-align:right;min-width:72px;">`
+		);
+		$inp.val(cur);
+		$span.replaceWith($inp);
+		$inp.focus().select();
+
+		const commit = () => {
+			const val = $inp.val();
+			cell.qty = val === "" ? "" : flt(val);
+			if (!cell.uom && col.uom) cell.uom = col.uom;
+			mark_dirty(state, row.item_code);
+			const has = cell.qty !== "" && flt(cell.qty) !== 0;
+			const $new = $(
+				`<span class="bbe-cell-display ${has ? "has-val" : "empty"}" data-row="${ri}" data-col="${ci}">${
+					has ? cell.qty : "—"
+				}</span>`
+			);
+			$inp.replaceWith($new);
+			$td.closest("tr").addClass("dirty");
+		};
+		$inp.on("blur", commit);
+		$inp.on("keydown", (ev) => {
+			if (ev.key === "Enter") {
+				ev.preventDefault();
+				$inp.blur();
+			}
+			if (ev.key === "Escape") {
+				$inp.val(cur);
+				$inp.blur();
+			}
+		});
 	});
 
-	// Excel-like fill handle
 	$body.off("mousedown", ".fill-handle").on("mousedown", ".fill-handle", function (e) {
 		e.preventDefault();
 		e.stopPropagation();
@@ -631,6 +691,9 @@ function bind_matrix_events(state) {
 			value: cell.qty,
 			uom: cell.uom || col.uom || "",
 		};
+		$body.find("td.cell-active").removeClass("cell-active");
+		$td.addClass("cell-active");
+		state.selected = { row: ri, col: ci };
 		$(document)
 			.off(".bbeFill")
 			.on("mousemove.bbeFill", (ev) => on_fill_move(state, ev))

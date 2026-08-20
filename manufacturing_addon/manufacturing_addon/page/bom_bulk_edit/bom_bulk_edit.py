@@ -3,8 +3,6 @@
 
 """Bulk Edit BOM portal — SO → default active BOMs → RM matrix → new BOM versions."""
 
-import json
-
 import frappe
 from frappe import _
 from frappe.utils import cint, flt
@@ -24,9 +22,7 @@ def _parse(data):
 def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 	"""Load FG variant items from Sales Order + their default active BOM RM matrix.
 
-	- Rows = unique SO variant items (Item.variant_of = Item Template)
-	- Optional item_template filter limits to that template's variants on the SO
-	- Same raw material shares one column across variants
+	Batched queries (no per-item N+1) for fast load on large SOs.
 	"""
 	if not sales_order:
 		frappe.throw(_("Select Sales Order first."))
@@ -56,7 +52,7 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 			IFNULL(soi.uom, '') AS uom,
 			IFNULL(i.variant_of, '') AS item_template,
 			IFNULL(i.has_variants, 0) AS has_variants,
-			IFNULL(i.item_group, '') AS item_group
+			IFNULL(i.default_bom, '') AS default_bom
 		FROM `tabSales Order Item` soi
 		INNER JOIN `tabItem` i ON i.name = soi.item_code
 		WHERE soi.parent = %s
@@ -66,21 +62,11 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 		as_dict=True,
 	)
 
-	# Templates present on this SO (for UI filter)
 	templates_on_so = []
 	seen_templates = set()
-	for line in so_items:
-		t = (line.item_template or "").strip()
-		if t and t not in seen_templates:
-			seen_templates.add(t)
-			templates_on_so.append(t)
-
-	# One matrix row per unique variant/FG item; sum SO qty if repeated
+	# Aggregate unique FG rows first
 	seen = {}
-	rows = []
-	rm_order = []
-	rm_set = set()
-	cells = {}
+	pending_rows = []
 
 	for line in so_items:
 		item_code = line.item_code
@@ -91,68 +77,140 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 		is_template_item = cint(line.has_variants) == 1
 		is_variant = bool(template) and not is_template_item
 
-		# Default: only Item Template → Variant items (skip plain items & templates)
 		if only_variants and not is_variant:
 			continue
-
 		if template_filter and template != template_filter:
 			continue
 
+		if template and template not in seen_templates:
+			seen_templates.add(template)
+			templates_on_so.append(template)
+
 		if item_code in seen:
-			# Aggregate qty onto existing row
-			idx = seen[item_code]
-			rows[idx]["so_qty"] = flt(rows[idx]["so_qty"]) + flt(line.so_qty)
+			pending_rows[seen[item_code]]["so_qty"] = flt(pending_rows[seen[item_code]]["so_qty"]) + flt(
+				line.so_qty
+			)
 			continue
 
-		bom_no = get_default_active_bom(item_code) or line.so_bom_no or ""
-		bom_meta = None
-		materials = []
-		if bom_no and frappe.db.exists("BOM", bom_no):
-			bom_meta = frappe.db.get_value(
-				"BOM",
-				bom_no,
-				["name", "item", "quantity", "uom", "is_active", "is_default", "docstatus"],
-				as_dict=True,
-			)
-			materials = frappe.db.sql(
-				"""
-				SELECT
-					bi.name AS bom_item_name,
-					bi.item_code,
-					bi.item_name,
-					IFNULL(bi.qty, 0) AS qty,
-					IFNULL(bi.uom, '') AS uom,
-					IFNULL(bi.stock_qty, 0) AS stock_qty,
-					IFNULL(bi.rate, 0) AS rate
-				FROM `tabBOM Item` bi
-				WHERE bi.parent = %s
-				ORDER BY bi.idx
-				""",
-				(bom_no,),
-				as_dict=True,
-			)
+		seen[item_code] = len(pending_rows)
+		pending_rows.append(
+			{
+				"item_code": item_code,
+				"item_name": line.item_name,
+				"item_template": template,
+				"is_variant": 1 if is_variant else 0,
+				"so_detail": line.so_detail,
+				"so_qty": flt(line.so_qty),
+				"so_bom_no": line.so_bom_no or "",
+				"default_bom": line.default_bom or "",
+				"uom": line.uom or "",
+			}
+		)
 
-		attrs = _variant_attributes(item_code) if is_variant else {}
-
-		row = {
-			"item_code": item_code,
-			"item_name": line.item_name,
-			"item_template": template,
-			"is_variant": 1 if is_variant else 0,
-			"attributes": attrs,
-			"attributes_label": ", ".join(f"{k}: {v}" for k, v in attrs.items()) if attrs else "",
-			"so_detail": line.so_detail,
-			"so_qty": flt(line.so_qty),
-			"bom_no": bom_no or "",
-			"bom_qty": flt(bom_meta.quantity) if bom_meta else 1,
-			"bom_uom": (bom_meta.uom if bom_meta else line.uom) or "",
-			"is_active": cint(bom_meta.is_active) if bom_meta else 0,
-			"is_default": cint(bom_meta.is_default) if bom_meta else 0,
-			"has_bom": 1 if bom_meta else 0,
-			"dirty": 0,
+	item_codes = [r["item_code"] for r in pending_rows]
+	if not item_codes:
+		return {
+			"sales_order": so.name,
+			"customer": so.customer,
+			"company": so.company,
+			"transaction_date": so.transaction_date,
+			"item_template": template_filter,
+			"templates": templates_on_so,
+			"variants_only": only_variants,
+			"rows": [],
+			"rm_columns": [],
+			"cells": {},
+			"note": _(
+				"Loads Item Template variant items from the Sales Order. "
+				"Same raw material shares one column. Edit qty, replace RM, fill-down, "
+				"then Save to create new default BOM versions."
+			),
 		}
-		seen[item_code] = len(rows)
-		rows.append(row)
+
+	# --- Batch resolve default active BOMs ---
+	bom_by_item = _batch_default_boms(item_codes, pending_rows)
+
+	bom_nos = list({b for b in bom_by_item.values() if b})
+	bom_meta_map = {}
+	if bom_nos:
+		for b in frappe.db.sql(
+			"""
+			SELECT name, item, quantity, uom, is_active, is_default, docstatus
+			FROM `tabBOM`
+			WHERE name IN ({})
+			""".format(",".join(["%s"] * len(bom_nos))),
+			tuple(bom_nos),
+			as_dict=True,
+		):
+			bom_meta_map[b.name] = b
+
+	# --- Batch BOM items ---
+	materials_by_bom = {b: [] for b in bom_nos}
+	if bom_nos:
+		for m in frappe.db.sql(
+			"""
+			SELECT
+				bi.parent,
+				bi.name AS bom_item_name,
+				bi.item_code,
+				bi.item_name,
+				IFNULL(bi.qty, 0) AS qty,
+				IFNULL(bi.uom, '') AS uom
+			FROM `tabBOM Item` bi
+			WHERE bi.parent IN ({})
+			ORDER BY bi.parent, bi.idx
+			""".format(",".join(["%s"] * len(bom_nos))),
+			tuple(bom_nos),
+			as_dict=True,
+		):
+			materials_by_bom.setdefault(m.parent, []).append(m)
+
+	# --- Batch variant attributes ---
+	attrs_by_item = {c: {} for c in item_codes}
+	for a in frappe.db.sql(
+		"""
+		SELECT parent, attribute, attribute_value, idx
+		FROM `tabItem Variant Attribute`
+		WHERE parent IN ({})
+		ORDER BY parent, idx
+		""".format(",".join(["%s"] * len(item_codes))),
+		tuple(item_codes),
+		as_dict=True,
+	):
+		if a.attribute:
+			attrs_by_item.setdefault(a.parent, {})[a.attribute] = a.attribute_value
+
+	rows = []
+	rm_order = []
+	rm_set = set()
+	cells = {}
+
+	for pr in pending_rows:
+		item_code = pr["item_code"]
+		bom_no = bom_by_item.get(item_code) or ""
+		bom_meta = bom_meta_map.get(bom_no)
+		materials = materials_by_bom.get(bom_no, []) if bom_no else []
+		attrs = attrs_by_item.get(item_code) or {}
+
+		rows.append(
+			{
+				"item_code": item_code,
+				"item_name": pr["item_name"],
+				"item_template": pr["item_template"],
+				"is_variant": pr["is_variant"],
+				"attributes": attrs,
+				"attributes_label": ", ".join(f"{k}: {v}" for k, v in attrs.items()) if attrs else "",
+				"so_detail": pr["so_detail"],
+				"so_qty": pr["so_qty"],
+				"bom_no": bom_no,
+				"bom_qty": flt(bom_meta.quantity) if bom_meta else 1,
+				"bom_uom": (bom_meta.uom if bom_meta else pr["uom"]) or "",
+				"is_active": cint(bom_meta.is_active) if bom_meta else 0,
+				"is_default": cint(bom_meta.is_default) if bom_meta else 0,
+				"has_bom": 1 if bom_meta else 0,
+				"dirty": 0,
+			}
+		)
 
 		for m in materials:
 			rm = m.item_code
@@ -190,6 +248,89 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 			"then Save to create new default BOM versions."
 		),
 	}
+
+
+def _batch_default_boms(item_codes, pending_rows):
+	"""Resolve default active BOM per item with few SQL round-trips."""
+	result = {}
+	# Prefer Item.default_bom when active+submitted
+	default_map = {r["item_code"]: r.get("default_bom") or "" for r in pending_rows}
+	so_bom_map = {r["item_code"]: r.get("so_bom_no") or "" for r in pending_rows}
+
+	candidate_boms = list({b for b in default_map.values() if b} | {b for b in so_bom_map.values() if b})
+	valid_defaults = set()
+	if candidate_boms:
+		for name, is_active, docstatus in frappe.db.sql(
+			"""
+			SELECT name, is_active, docstatus
+			FROM `tabBOM`
+			WHERE name IN ({})
+			""".format(",".join(["%s"] * len(candidate_boms))),
+			tuple(candidate_boms),
+		):
+			if cint(is_active) == 1 and cint(docstatus) == 1:
+				valid_defaults.add(name)
+
+	missing = []
+	for code in item_codes:
+		dbom = default_map.get(code) or ""
+		if dbom and dbom in valid_defaults:
+			result[code] = dbom
+		else:
+			missing.append(code)
+
+	if missing:
+		# Active default BOM per item (newest modified)
+		rows = frappe.db.sql(
+			"""
+			SELECT b.item, b.name
+			FROM `tabBOM` b
+			INNER JOIN (
+				SELECT item, MAX(modified) AS mx
+				FROM `tabBOM`
+				WHERE item IN ({0})
+					AND is_active = 1 AND is_default = 1 AND docstatus = 1
+				GROUP BY item
+			) t ON t.item = b.item AND t.mx = b.modified
+			WHERE b.is_active = 1 AND b.is_default = 1 AND b.docstatus = 1
+			""".format(",".join(["%s"] * len(missing))),
+			tuple(missing),
+		)
+		found = {item: name for item, name in rows}
+		still = []
+		for code in missing:
+			if code in found:
+				result[code] = found[code]
+			else:
+				still.append(code)
+
+		if still:
+			# Any active BOM (newest)
+			rows = frappe.db.sql(
+				"""
+				SELECT b.item, b.name
+				FROM `tabBOM` b
+				INNER JOIN (
+					SELECT item, MAX(modified) AS mx
+					FROM `tabBOM`
+					WHERE item IN ({0})
+						AND is_active = 1 AND docstatus = 1
+					GROUP BY item
+				) t ON t.item = b.item AND t.mx = b.modified
+				WHERE b.is_active = 1 AND b.docstatus = 1
+				""".format(",".join(["%s"] * len(still))),
+				tuple(still),
+			)
+			found2 = {item: name for item, name in rows}
+			for code in still:
+				if code in found2:
+					result[code] = found2[code]
+				else:
+					# last resort: SO bom_no if valid
+					sb = so_bom_map.get(code) or ""
+					result[code] = sb if sb in valid_defaults else sb or ""
+
+	return result
 
 
 def _variant_attributes(item_code):

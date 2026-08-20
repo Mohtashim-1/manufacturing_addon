@@ -136,7 +136,7 @@ function render_shell(page, state) {
 			<div class="bbe-hero">
 				<h3><i class="fa fa-th"></i> ${__("Bulk Edit BOM Versions")}</h3>
 				<p>${__(
-					"Loads Item Template → Variant items from the Sales Order. Same RM = same column. Edit / fill-down / replace / add material, then Save new default BOM versions."
+					"Load by Sales Order OR search Item directly (no SO needed). Same RM = same column. Edit / fill-down / replace / add material, then Save new default BOM versions."
 				)}</p>
 			</div>
 			<div class="bbe-filters">
@@ -161,21 +161,24 @@ function render_shell(page, state) {
 			</div>
 			<div class="bbe-search-bar" id="bbe-search-bar">
 				<div style="flex:2;min-width:240px;">
-					<label>${__("Filter (type anything)")}</label>
+					<label>${__("Filter loaded rows (type anything)")}</label>
 					<input type="text" class="form-control input-sm" id="bbe-search"
 						placeholder="${__("item, size, colour, EAN, BOM, raw material…")}">
 				</div>
-				<div style="flex:1;min-width:220px;">
-					<label>${__("Search Item")}</label>
+				<div style="flex:2;min-width:260px;">
+					<label>${__("Search Item / load BOM (no SO needed)")}</label>
 					<div id="bbe-item-search-wrap"></div>
 				</div>
+				<button type="button" class="btn btn-primary btn-sm" id="bbe-load-item" style="height:30px;">
+					<i class="fa fa-search"></i> ${__("Load Item BOM")}
+				</button>
 				<button type="button" class="btn btn-default btn-sm" id="bbe-clear-filter" style="height:30px;">
 					${__("Clear filters")}
 				</button>
 			</div>
 			<div id="bbe-body">
 				<div class="bbe-empty">${__(
-					"Select a Sales Order — loads its Item Template variant items and default BOMs. Filters above work after load."
+					"Option A: select Sales Order → Load Variant BOMs. Option B: search Item below → Load Item BOM (loads that item + template siblings)."
 				)}</div>
 			</div>
 		</div>
@@ -219,13 +222,9 @@ function render_shell(page, state) {
 			fieldtype: "Link",
 			fieldname: "item_filter",
 			options: "Item",
-			placeholder: __("Search / select Item"),
+			placeholder: __("Type item code / name / EAN…"),
 			only_select: 0,
 			get_query() {
-				const codes = (state.rows || []).map((r) => r.item_code).filter(Boolean);
-				if (codes.length && codes.length <= 500) {
-					return { filters: { name: ["in", codes] } };
-				}
 				return { filters: { disabled: 0 } };
 			},
 		},
@@ -246,16 +245,15 @@ function render_shell(page, state) {
 	template_control.$input.on("change awesomplete-selectcomplete", () => {
 		state.item_template = template_control.get_value() || "";
 	});
-	item_filter_control.$input.on("change awesomplete-selectcomplete input", () => {
-		state.item_filter = item_filter_control.get_value() || item_filter_control.$input.val() || "";
-		if (state.rows.length) render_matrix(state);
+	item_filter_control.$input.on("change awesomplete-selectcomplete", () => {
+		state.item_filter = item_filter_control.get_value() || "";
+		if (state.item_filter) load_matrix_by_item(state);
 	});
 
 	$(page.body).find("#bbe-variants-only").on("change", function () {
 		state.variants_only = $(this).is(":checked") ? 1 : 0;
 	});
 
-	// Permanent free-text filter (always visible)
 	let search_timer = null;
 	$(page.body).find("#bbe-search").on("input", function () {
 		state.search = $(this).val() || "";
@@ -272,12 +270,40 @@ function render_shell(page, state) {
 		if (state.rows.length) render_matrix(state);
 	});
 
+	$(page.body).find("#bbe-load-item").on("click", () => {
+		const typed =
+			(item_filter_control.get_value && item_filter_control.get_value()) ||
+			(item_filter_control.$input && item_filter_control.$input.val()) ||
+			"";
+		state.item_filter = (typed || "").trim();
+		if (!state.item_filter) {
+			frappe.show_alert({
+				message: __("Type or select an Item, then click Load Item BOM"),
+				indicator: "orange",
+			});
+			return;
+		}
+		load_matrix_by_item(state);
+	});
+
 	$(page.body).find("#bbe-load").on("click", () => {
 		state.sales_order = so_control.get_value() || state.sales_order;
 		state.item_template = template_control.get_value() || "";
 		state.variants_only = $(page.body).find("#bbe-variants-only").is(":checked") ? 1 : 0;
 		if (!state.sales_order) {
-			frappe.show_alert({ message: __("Select Sales Order first"), indicator: "orange" });
+			const typed =
+				(item_filter_control.get_value && item_filter_control.get_value()) ||
+				(item_filter_control.$input && item_filter_control.$input.val()) ||
+				"";
+			if (typed) {
+				state.item_filter = typed.trim();
+				load_matrix_by_item(state);
+				return;
+			}
+			frappe.show_alert({
+				message: __("Select Sales Order, or search Item and Load Item BOM"),
+				indicator: "orange",
+			});
 			return;
 		}
 		load_matrix(state);
@@ -298,6 +324,110 @@ function mark_dirty(state, item_code) {
 	const row = state.rows.find((r) => r.item_code === item_code);
 	if (row) row.dirty = 1;
 	state.dirty = true;
+}
+
+function apply_loaded_payload(state, msg) {
+	state.meta = msg;
+	state.rows = (msg.rows || []).map((row) => ({ ...row, dirty: 0, _checked: 1 }));
+	state.rm_columns = (msg.rm_columns || []).map((c) => ({ ...c }));
+	state.cells = { ...(msg.cells || {}) };
+	Object.keys(state.cells).forEach((k) => {
+		const c = state.cells[k];
+		if (c && c.qty !== undefined && c.qty !== null && c.qty !== "") {
+			c.qty = flt(c.qty);
+		}
+	});
+	state.dirty = false;
+	state.sales_order = msg.sales_order || state.sales_order || "";
+	render_matrix(state);
+}
+
+function load_matrix_by_item(state) {
+	const q =
+		state.item_filter ||
+		(state.controls.item_filter &&
+			(state.controls.item_filter.get_value() ||
+				(state.controls.item_filter.$input && state.controls.item_filter.$input.val()))) ||
+		"";
+	if (!cstr(q).trim()) {
+		frappe.show_alert({ message: __("Type or select an Item first"), indicator: "orange" });
+		return;
+	}
+	state.item_filter = cstr(q).trim();
+
+	$("#bbe-body").html(
+		`<div class="bbe-empty"><i class="fa fa-spinner fa-spin fa-2x"></i><div style="margin-top:12px;">${__(
+			"Loading item BOM…"
+		)}</div></div>`
+	);
+
+	frappe.call({
+		method: `${API}.get_bom_matrix_for_item`,
+		args: {
+			item_query: state.item_filter,
+			include_siblings: 1,
+			limit: 80,
+		},
+		callback(r) {
+			const msg = r.message || {};
+			if (cint(msg.needs_pick) && (msg.matches || []).length) {
+				show_item_pick_dialog(state, msg.matches);
+				return;
+			}
+			if (!(msg.rows || []).length) {
+				$("#bbe-body").html(
+					`<div class="bbe-empty">${__(
+						"No BOM rows found for this item. Check the item has an active default BOM."
+					)}</div>`
+				);
+				return;
+			}
+			apply_loaded_payload(state, msg);
+			frappe.show_alert({
+				message: __("Loaded {0} item(s)", [msg.rows.length]),
+				indicator: "green",
+			});
+		},
+		error() {
+			$("#bbe-body").html(
+				`<div class="bbe-empty text-danger">${__("Failed to load item BOM")}</div>`
+			);
+		},
+	});
+}
+
+function show_item_pick_dialog(state, matches) {
+	const opts = matches.map((m) => m.item_code).join("\n");
+	const d = new frappe.ui.Dialog({
+		title: __("Multiple items matched — pick one"),
+		fields: [
+			{
+				fieldtype: "Select",
+				fieldname: "item_code",
+				label: __("Item"),
+				options: opts,
+				reqd: 1,
+				default: matches[0].item_code,
+			},
+			{
+				fieldtype: "HTML",
+				options: `<div class="text-muted small">${__(
+					"Your search matched several items. Pick the exact one to load (siblings under the same template will also load)."
+				)}</div>`,
+			},
+		],
+		primary_action_label: __("Load"),
+		primary_action(values) {
+			d.hide();
+			state.item_filter = values.item_code;
+			if (state.controls.item_filter) state.controls.item_filter.set_value(values.item_code);
+			load_matrix_by_item(state);
+		},
+	});
+	d.show();
+	$("#bbe-body").html(
+		`<div class="bbe-empty">${__("Pick an item from the dialog to continue")}</div>`
+	);
 }
 
 function load_matrix(state) {
@@ -328,20 +458,7 @@ function load_matrix(state) {
 			variants_only: state.variants_only,
 		},
 		callback(r) {
-			const msg = r.message || {};
-			state.meta = msg;
-			state.rows = (msg.rows || []).map((row) => ({ ...row, dirty: 0, _checked: 1 }));
-			state.rm_columns = (msg.rm_columns || []).map((c) => ({ ...c }));
-			state.cells = { ...(msg.cells || {}) };
-			Object.keys(state.cells).forEach((k) => {
-				const c = state.cells[k];
-				if (c && c.qty !== undefined && c.qty !== null && c.qty !== "") {
-					c.qty = flt(c.qty);
-				}
-			});
-			state.dirty = false;
-			// If templates returned and filter empty, keep link options aware
-			render_matrix(state);
+			apply_loaded_payload(state, r.message || {});
 		},
 		error() {
 			$("#bbe-body").html(
@@ -1003,7 +1120,7 @@ function _do_save(state, save_all) {
 			rm_columns: state.rm_columns,
 			cells: cells_payload,
 			options: {
-				update_so_bom_no: 1,
+				update_so_bom_no: state.sales_order ? 1 : 0,
 				deactivate_old: 0,
 				save_all: save_all ? 1 : 0,
 			},

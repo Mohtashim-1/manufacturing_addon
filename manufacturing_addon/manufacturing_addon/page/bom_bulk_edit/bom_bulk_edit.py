@@ -108,8 +108,9 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 		)
 
 	item_codes = [r["item_code"] for r in pending_rows]
-	if not item_codes:
-		return {
+	payload = _assemble_matrix(pending_rows)
+	payload.update(
+		{
 			"sales_order": so.name,
 			"customer": so.customer,
 			"company": so.company,
@@ -117,19 +118,221 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 			"item_template": template_filter,
 			"templates": templates_on_so,
 			"variants_only": only_variants,
-			"rows": [],
-			"rm_columns": [],
-			"cells": {},
+			"load_mode": "sales_order",
 			"note": _(
-				"Loads Item Template variant items from the Sales Order. "
-				"Same raw material shares one column. Edit qty, replace RM, fill-down, "
-				"then Save to create new default BOM versions."
+				"Loaded from Sales Order. Same raw material shares one column. "
+				"Edit / fill-down / replace / add material, then Save new default BOM versions."
 			),
 		}
+	)
+	return payload
 
-	# --- Batch resolve default active BOMs ---
+
+@frappe.whitelist()
+def get_bom_matrix_for_item(item_query, include_siblings=1, limit=80):
+	"""Load BOM matrix by typing/searching an Item (no Sales Order required).
+
+	- Resolves exact or partial item match
+	- If include_siblings and item has a template, also loads other variants (capped)
+	"""
+	q = (item_query or "").strip()
+	if not q:
+		frappe.throw(_("Type or select an Item to load."))
+
+	resolved = _resolve_item_query(q)
+	if not resolved.get("item_code"):
+		matches = resolved.get("matches") or []
+		if matches:
+			return {
+				"sales_order": "",
+				"load_mode": "item",
+				"needs_pick": 1,
+				"matches": matches,
+				"rows": [],
+				"rm_columns": [],
+				"cells": {},
+				"note": _("Multiple items matched — pick one from Search Item / the list."),
+			}
+		frappe.throw(_("No Item found matching: {0}").format(q))
+
+	item_code = resolved["item_code"]
+	include_siblings = cint(include_siblings)
+	limit = max(1, min(cint(limit) or 80, 200))
+
+	meta = frappe.db.get_value(
+		"Item",
+		item_code,
+		["name", "item_name", "variant_of", "has_variants", "default_bom", "stock_uom"],
+		as_dict=True,
+	)
+	if not meta:
+		frappe.throw(_("Item {0} not found").format(item_code))
+
+	template = (meta.variant_of or "").strip()
+	codes = [item_code]
+
+	if include_siblings and template:
+		siblings = frappe.db.sql(
+			"""
+			SELECT name
+			FROM `tabItem`
+			WHERE variant_of = %s AND disabled = 0 AND has_variants = 0
+			ORDER BY
+				CASE WHEN name = %s THEN 0 ELSE 1 END,
+				name
+			LIMIT %s
+			""",
+			(template, item_code, limit),
+			as_list=True,
+		)
+		codes = [r[0] for r in siblings] or [item_code]
+	elif cint(meta.has_variants):
+		# User picked a template — load its variants
+		template = item_code
+		siblings = frappe.db.sql(
+			"""
+			SELECT name
+			FROM `tabItem`
+			WHERE variant_of = %s AND disabled = 0
+			ORDER BY name
+			LIMIT %s
+			""",
+			(item_code, limit),
+			as_list=True,
+		)
+		codes = [r[0] for r in siblings]
+		if not codes:
+			frappe.throw(_("Template {0} has no variant items").format(item_code))
+
+	# Prefetch item fields
+	item_map = {
+		r.name: r
+		for r in frappe.db.sql(
+			"""
+			SELECT name, item_name, variant_of, has_variants, default_bom, stock_uom
+			FROM `tabItem`
+			WHERE name IN ({})
+			""".format(",".join(["%s"] * len(codes))),
+			tuple(codes),
+			as_dict=True,
+		)
+	}
+
+	pending_rows = []
+	templates = []
+	seen_t = set()
+	for code in codes:
+		it = item_map.get(code)
+		if not it:
+			continue
+		t = (it.variant_of or "").strip()
+		if t and t not in seen_t:
+			seen_t.add(t)
+			templates.append(t)
+		pending_rows.append(
+			{
+				"item_code": code,
+				"item_name": it.item_name,
+				"item_template": t,
+				"is_variant": 1 if t and not cint(it.has_variants) else 0,
+				"so_detail": "",
+				"so_qty": 0,
+				"so_bom_no": "",
+				"default_bom": it.default_bom or "",
+				"uom": it.stock_uom or "",
+			}
+		)
+
+	payload = _assemble_matrix(pending_rows)
+	payload.update(
+		{
+			"sales_order": "",
+			"customer": "",
+			"company": "",
+			"transaction_date": None,
+			"item_template": template or "",
+			"templates": templates,
+			"variants_only": 1,
+			"load_mode": "item",
+			"resolved_item": item_code,
+			"query": q,
+			"note": _(
+				"Loaded by Item search{0}. Same RM = same column. Save creates new default BOM versions "
+				"(Sales Order bom_no is not updated in this mode)."
+			).format(f" ({template})" if template else ""),
+		}
+	)
+	return payload
+
+
+def _resolve_item_query(q):
+	"""Exact match, else partial search. Returns {item_code} or {matches:[...]}."""
+	if frappe.db.exists("Item", q):
+		return {"item_code": q}
+
+	like = f"%{q}%"
+	rows = frappe.db.sql(
+		"""
+		SELECT name, item_name, variant_of
+		FROM `tabItem`
+		WHERE disabled = 0
+			AND (name LIKE %(like)s OR item_code LIKE %(like)s OR item_name LIKE %(like)s)
+		ORDER BY
+			CASE
+				WHEN name = %(q)s THEN 0
+				WHEN name LIKE %(prefix)s THEN 1
+				WHEN name LIKE %(like)s THEN 2
+				ELSE 3
+			END,
+			name
+		LIMIT 25
+		""",
+		{"q": q, "like": like, "prefix": f"{q}%"},
+		as_dict=True,
+	)
+	if not rows:
+		# try last token (often EAN / code fragment)
+		token = q.replace(" ", "").split("-")[-1] if q else ""
+		if token and len(token) >= 6:
+			rows = frappe.db.sql(
+				"""
+				SELECT name, item_name, variant_of
+				FROM `tabItem`
+				WHERE disabled = 0 AND name LIKE %s
+				ORDER BY name
+				LIMIT 25
+				""",
+				(f"%{token}%",),
+				as_dict=True,
+			)
+
+	if not rows:
+		return {}
+	if len(rows) == 1:
+		return {"item_code": rows[0].name}
+	# Prefer exact-ish starts-with single winner
+	prefix_hits = [r for r in rows if cstr(r.name).lower().startswith(q.lower())]
+	if len(prefix_hits) == 1:
+		return {"item_code": prefix_hits[0].name}
+	return {
+		"matches": [
+			{"item_code": r.name, "item_name": r.item_name, "item_template": r.variant_of or ""}
+			for r in rows
+		]
+	}
+
+
+def cstr(v):
+	return "" if v is None else str(v)
+
+
+def _assemble_matrix(pending_rows):
+	"""Shared BOM/RM matrix builder from pending FG rows."""
+	item_codes = [r["item_code"] for r in pending_rows]
+	if not item_codes:
+		return {"rows": [], "rm_columns": [], "cells": {}}
+
 	bom_by_item = _batch_default_boms(item_codes, pending_rows)
-
 	bom_nos = list({b for b in bom_by_item.values() if b})
 	bom_meta_map = {}
 	if bom_nos:
@@ -144,7 +347,6 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 		):
 			bom_meta_map[b.name] = b
 
-	# --- Batch BOM items ---
 	materials_by_bom = {b: [] for b in bom_nos}
 	if bom_nos:
 		for m in frappe.db.sql(
@@ -165,7 +367,6 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 		):
 			materials_by_bom.setdefault(m.parent, []).append(m)
 
-	# --- Batch variant attributes ---
 	attrs_by_item = {c: {} for c in item_codes}
 	for a in frappe.db.sql(
 		"""
@@ -195,16 +396,16 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 		rows.append(
 			{
 				"item_code": item_code,
-				"item_name": pr["item_name"],
-				"item_template": pr["item_template"],
-				"is_variant": pr["is_variant"],
+				"item_name": pr.get("item_name"),
+				"item_template": pr.get("item_template") or "",
+				"is_variant": cint(pr.get("is_variant")),
 				"attributes": attrs,
 				"attributes_label": ", ".join(f"{k}: {v}" for k, v in attrs.items()) if attrs else "",
-				"so_detail": pr["so_detail"],
-				"so_qty": pr["so_qty"],
+				"so_detail": pr.get("so_detail") or "",
+				"so_qty": flt(pr.get("so_qty")),
 				"bom_no": bom_no,
 				"bom_qty": flt(bom_meta.quantity) if bom_meta else 1,
-				"bom_uom": (bom_meta.uom if bom_meta else pr["uom"]) or "",
+				"bom_uom": (bom_meta.uom if bom_meta else pr.get("uom")) or "",
 				"is_active": cint(bom_meta.is_active) if bom_meta else 0,
 				"is_default": cint(bom_meta.is_default) if bom_meta else 0,
 				"has_bom": 1 if bom_meta else 0,
@@ -231,23 +432,7 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 				"bom_item_name": m.bom_item_name,
 			}
 
-	return {
-		"sales_order": so.name,
-		"customer": so.customer,
-		"company": so.company,
-		"transaction_date": so.transaction_date,
-		"item_template": template_filter,
-		"templates": templates_on_so,
-		"variants_only": only_variants,
-		"rows": rows,
-		"rm_columns": rm_order,
-		"cells": cells,
-		"note": _(
-			"Loads Item Template variant items from the Sales Order. "
-			"Same raw material shares one column. Edit qty, replace RM, fill-down, "
-			"then Save to create new default BOM versions."
-		),
-	}
+	return {"rows": rows, "rm_columns": rm_order, "cells": cells}
 
 
 def _batch_default_boms(item_codes, pending_rows):
@@ -349,17 +534,15 @@ def _variant_attributes(item_code):
 
 
 @frappe.whitelist()
-def save_bom_matrix(sales_order, rows=None, rm_columns=None, cells=None, options=None):
+def save_bom_matrix(sales_order=None, rows=None, rm_columns=None, cells=None, options=None):
 	"""Create new default BOM versions from the edited matrix."""
-	if not sales_order:
-		frappe.throw(_("Sales Order is required."))
-
 	rows = _parse(rows) if not isinstance(rows, list) else rows
 	rm_columns = _parse(rm_columns) if not isinstance(rm_columns, list) else rm_columns
 	cells = _parse(cells) if not isinstance(cells, dict) else cells
 	options = _parse(options) if not isinstance(options, dict) else (options or {})
 
-	update_so = cint(options.get("update_so_bom_no", 1))
+	sales_order = (sales_order or "").strip()
+	update_so = cint(options.get("update_so_bom_no", 1)) if sales_order else 0
 	deactivate_old = cint(options.get("deactivate_old", 0))
 
 	created = []

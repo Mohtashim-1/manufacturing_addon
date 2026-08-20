@@ -7,9 +7,14 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
-from manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan import (
-	get_default_active_bom,
-)
+
+def _get_default_active_bom(item_code):
+	"""Lazy import — avoid heavy production_plan load on every request."""
+	from manufacturing_addon.manufacturing_addon.doctype.production_plan.production_plan import (
+		get_default_active_bom,
+	)
+
+	return get_default_active_bom(item_code)
 
 
 def _parse(data):
@@ -170,6 +175,11 @@ def get_bom_matrix_for_item(item_query, include_siblings=0, limit=40):
 			"total_sec": round(time.time() - t0, 3),
 			"mode": "single",
 		}
+		# Always log for debugging slow desk requests
+		frappe.logger("bom_bulk_edit").info(
+			f"single item ok query={q!r} item={item_code!r} timing={payload['_timing']}"
+		)
+		print(f"[bom_bulk_edit] single {payload['_timing']} item={item_code}")
 		return payload
 
 	limit = max(1, min(cint(limit) or 40, 100))
@@ -736,7 +746,7 @@ def save_bom_matrix(sales_order=None, rows=None, rm_columns=None, cells=None, op
 				skipped.append({"item_code": item_code, "reason": "not changed"})
 				continue
 
-		old_bom = row.get("bom_no") or get_default_active_bom(item_code)
+		old_bom = row.get("bom_no") or _get_default_active_bom(item_code)
 		if not old_bom or not frappe.db.exists("BOM", old_bom):
 			errors.append({"item_code": item_code, "error": _("No active BOM to base on")})
 			continue
@@ -829,6 +839,14 @@ def _create_bom_version(old_bom, materials, bom_qty=None, deactivate_old=0):
 			pass
 
 	return new_bom.name
+
+
+@frappe.whitelist()
+def bom_bulk_edit_ping():
+	"""Tiny health check so browser can measure network/server latency."""
+	import time
+
+	return {"ok": 1, "ts": time.time(), "site": frappe.local.site}
 
 
 @frappe.whitelist()

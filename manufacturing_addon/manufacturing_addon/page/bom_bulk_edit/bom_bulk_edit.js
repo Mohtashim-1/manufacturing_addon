@@ -165,9 +165,10 @@ function render_shell(page, state) {
 					<input type="text" class="form-control input-sm" id="bbe-search"
 						placeholder="${__("item, size, colour, EAN, BOM, raw material…")}">
 				</div>
-				<div style="flex:2;min-width:260px;">
-					<label>${__("Search Item / load BOM (no SO needed)")}</label>
-					<div id="bbe-item-search-wrap"></div>
+				<div style="flex:2;min-width:280px;">
+					<label>${__("Item code (paste / type — then Load)")}</label>
+					<input type="text" class="form-control input-sm" id="bbe-item-text"
+						placeholder="${__("Paste full Item code here")}">
 				</div>
 				<div style="min-width:160px;">
 					<label>&nbsp;</label>
@@ -185,7 +186,7 @@ function render_shell(page, state) {
 			</div>
 			<div id="bbe-body">
 				<div class="bbe-empty">${__(
-					"Fast path: search Item → Load Item BOM (one item). Tick “All template variants” only if you need every sibling. Or select Sales Order for order-wide load."
+					"Paste Item code → Load Item BOM (fast). Open browser Console (F12) to see timing logs. Avoid Item Link search — it was blocking the load."
 				)}</div>
 			</div>
 		</div>
@@ -223,26 +224,9 @@ function render_shell(page, state) {
 	});
 	template_control.refresh();
 
-	const item_filter_control = frappe.ui.form.make_control({
-		parent: $(page.body).find("#bbe-item-search-wrap"),
-		df: {
-			fieldtype: "Link",
-			fieldname: "item_filter",
-			options: "Item",
-			placeholder: __("Type item code / name / EAN…"),
-			only_select: 0,
-			get_query() {
-				return { filters: { disabled: 0 } };
-			},
-		},
-		render_input: true,
-	});
-	item_filter_control.refresh();
-
 	state.controls = {
 		sales_order: so_control,
 		item_template: template_control,
-		item_filter: item_filter_control,
 	};
 
 	so_control.$input.on("change awesomplete-selectcomplete", () => {
@@ -251,10 +235,6 @@ function render_shell(page, state) {
 	});
 	template_control.$input.on("change awesomplete-selectcomplete", () => {
 		state.item_template = template_control.get_value() || "";
-	});
-	item_filter_control.$input.on("change awesomplete-selectcomplete", () => {
-		// Do NOT auto-load — only remember selection (avoids slow double-loads)
-		state.item_filter = item_filter_control.get_value() || "";
 	});
 
 	$(page.body).find("#bbe-variants-only").on("change", function () {
@@ -273,19 +253,22 @@ function render_shell(page, state) {
 		state.search = "";
 		state.item_filter = "";
 		$(page.body).find("#bbe-search").val("");
-		if (state.controls.item_filter) state.controls.item_filter.set_value("");
+		$(page.body).find("#bbe-item-text").val("");
 		if (state.rows.length) render_matrix(state);
 	});
 
+	$(page.body).find("#bbe-item-text").on("keydown", function (e) {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			$(page.body).find("#bbe-load-item").click();
+		}
+	});
+
 	$(page.body).find("#bbe-load-item").on("click", () => {
-		const typed =
-			(item_filter_control.get_value && item_filter_control.get_value()) ||
-			(item_filter_control.$input && item_filter_control.$input.val()) ||
-			"";
-		state.item_filter = (typed || "").trim();
+		state.item_filter = ($(page.body).find("#bbe-item-text").val() || "").trim();
 		if (!state.item_filter) {
 			frappe.show_alert({
-				message: __("Type or select an Item, then click Load Item BOM"),
+				message: __("Paste/type Item code, then Load Item BOM"),
 				indicator: "orange",
 			});
 			return;
@@ -298,17 +281,14 @@ function render_shell(page, state) {
 		state.item_template = template_control.get_value() || "";
 		state.variants_only = $(page.body).find("#bbe-variants-only").is(":checked") ? 1 : 0;
 		if (!state.sales_order) {
-			const typed =
-				(item_filter_control.get_value && item_filter_control.get_value()) ||
-				(item_filter_control.$input && item_filter_control.$input.val()) ||
-				"";
+			const typed = ($(page.body).find("#bbe-item-text").val() || "").trim();
 			if (typed) {
-				state.item_filter = typed.trim();
+				state.item_filter = typed;
 				load_matrix_by_item(state);
 				return;
 			}
 			frappe.show_alert({
-				message: __("Select Sales Order, or search Item and Load Item BOM"),
+				message: __("Select Sales Order, or paste Item code and Load Item BOM"),
 				indicator: "orange",
 			});
 			return;
@@ -349,44 +329,101 @@ function apply_loaded_payload(state, msg) {
 	render_matrix(state);
 }
 
+function bbe_api_fetch(method, args, timeout_ms) {
+	/**
+	 * Direct fetch to /api/method — bypasses frappe.call queue quirks.
+	 * Returns Promise resolving to response JSON.message
+	 */
+	const url = `/api/method/${method}`;
+	const body = new URLSearchParams();
+	Object.keys(args || {}).forEach((k) => {
+		const v = args[k];
+		if (v === undefined || v === null) return;
+		body.append(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+	});
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeout_ms || 20000);
+
+	console.log("[BOM Bulk Edit] fetch START", method, args);
+	const t0 = performance.now();
+
+	return fetch(url, {
+		method: "POST",
+		credentials: "same-origin",
+		headers: {
+			"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+			"X-Frappe-CSRF-Token": frappe.csrf_token,
+			Accept: "application/json",
+			"X-Requested-With": "XMLHttpRequest",
+		},
+		body: body.toString(),
+		signal: controller.signal,
+	})
+		.then(async (res) => {
+			const ms = Math.round(performance.now() - t0);
+			console.log("[BOM Bulk Edit] fetch HEADERS", method, res.status, ms + "ms");
+			const text = await res.text();
+			const body_ms = Math.round(performance.now() - t0);
+			console.log("[BOM Bulk Edit] fetch BODY", method, body_ms + "ms", "bytes", text.length);
+			let data;
+			try {
+				data = JSON.parse(text);
+			} catch (e) {
+				console.error("[BOM Bulk Edit] JSON parse failed", text.slice(0, 500));
+				throw e;
+			}
+			if (!res.ok || data.exc_type) {
+				console.error("[BOM Bulk Edit] API error payload", data);
+				const err = new Error(
+					(data._error_message || data.exception || data.exc_type || "API error") + ""
+				);
+				err.data = data;
+				throw err;
+			}
+			return data.message !== undefined ? data.message : data;
+		})
+		.finally(() => clearTimeout(timer));
+}
+
 function load_matrix_by_item(state) {
-	const q =
-		state.item_filter ||
-		(state.controls.item_filter &&
-			(state.controls.item_filter.get_value() ||
-				(state.controls.item_filter.$input && state.controls.item_filter.$input.val()))) ||
-		"";
-	if (!cstr(q).trim()) {
-		frappe.show_alert({ message: __("Type or select an Item first"), indicator: "orange" });
+	const q = (state.item_filter || $("#bbe-item-text").val() || "").trim();
+	if (!q) {
+		frappe.show_alert({ message: __("Paste/type Item code first"), indicator: "orange" });
 		return;
 	}
-	state.item_filter = cstr(q).trim();
+	state.item_filter = q;
+	$("#bbe-item-text").val(q);
 	const include_siblings = $("#bbe-include-siblings").is(":checked") ? 1 : 0;
 
-	// Prevent stacked requests
 	if (state._loading_item) {
+		console.warn("[BOM Bulk Edit] blocked — already loading");
 		frappe.show_alert({ message: __("Already loading…"), indicator: "orange" });
 		return;
 	}
 	state._loading_item = true;
 
 	const t0 = performance.now();
+	const mark = (label, extra) => {
+		const ms = Math.round(performance.now() - t0);
+		console.log(`[BOM Bulk Edit] ${label} @ ${ms}ms`, extra || {});
+		return ms;
+	};
+	mark("start Load Item BOM", { q, include_siblings });
+
 	let elapsed_timer = null;
-	const $status = $(`
+	$("#bbe-body").html(`
 		<div class="bbe-empty">
 			<i class="fa fa-spinner fa-spin fa-2x"></i>
-			<div style="margin-top:12px;" id="bbe-load-status">${
-				include_siblings
-					? __("Loading item + template variants…")
-					: __("Loading this item BOM…")
-			}</div>
+			<div style="margin-top:12px;" id="bbe-load-status">${__("Loading this item BOM…")}</div>
 			<div class="text-muted" style="margin-top:6px;font-size:12px;" id="bbe-load-elapsed">0.0s</div>
+			<div class="text-muted" style="margin-top:4px;font-size:11px;">${__(
+				"Console (F12): fetch START → HEADERS → BODY"
+			)}</div>
 		</div>
 	`);
-	$("#bbe-body").html($status);
 	elapsed_timer = setInterval(() => {
-		const s = ((performance.now() - t0) / 1000).toFixed(1);
-		$("#bbe-load-elapsed").text(s + "s");
+		$("#bbe-load-elapsed").text(((performance.now() - t0) / 1000).toFixed(1) + "s");
 	}, 200);
 
 	const finish = () => {
@@ -394,18 +431,32 @@ function load_matrix_by_item(state) {
 		if (elapsed_timer) clearInterval(elapsed_timer);
 	};
 
-	frappe.call({
-		method: `${API}.get_bom_matrix_for_item`,
-		args: {
-			item_query: state.item_filter,
-			include_siblings,
-			limit: include_siblings ? 40 : 1,
-		},
-		freeze: false,
-		callback(r) {
+	const ping_method = `${API}.bom_bulk_edit_ping`;
+	const load_method = `${API}.get_bom_matrix_for_item`;
+
+	bbe_api_fetch(ping_method, {}, 10000)
+		.then((ping_msg) => {
+			mark("ping OK", ping_msg);
+			$("#bbe-load-status").text(__("Ping OK — loading BOM…"));
+			return bbe_api_fetch(
+				load_method,
+				{
+					item_query: q,
+					include_siblings: include_siblings ? 1 : 0,
+					limit: include_siblings ? 40 : 1,
+				},
+				30000
+			);
+		})
+		.then((msg) => {
 			finish();
-			const msg = r.message || {};
-			const api_ms = Math.round(performance.now() - t0);
+			msg = msg || {};
+			mark("BOM response", {
+				server_timing: msg._timing,
+				rows: (msg.rows || []).length,
+				rm: (msg.rm_columns || []).length,
+				resolved: msg.resolved_item,
+			});
 			if (cint(msg.needs_pick) && (msg.matches || []).length) {
 				show_item_pick_dialog(state, msg.matches);
 				return;
@@ -421,29 +472,36 @@ function load_matrix_by_item(state) {
 			const t1 = performance.now();
 			apply_loaded_payload(state, msg);
 			const render_ms = Math.round(performance.now() - t1);
-			const server = (msg._timing && msg._timing.total_sec) || "?";
+			const total_ms = Math.round(performance.now() - t0);
+			console.log("[BOM Bulk Edit] DONE", { total_ms, render_ms, timing: msg._timing });
 			frappe.show_alert({
-				message: __("Loaded {0} item · {1} RM · server {2}s · browser {3}ms / render {4}ms", [
+				message: __("Loaded {0} item · {1} RM · total {2}ms · server {3}s · render {4}ms", [
 					msg.rows.length,
 					(msg.rm_columns || []).length,
-					server,
-					api_ms,
+					total_ms,
+					(msg._timing && msg._timing.total_sec) || "?",
 					render_ms,
 				]),
 				indicator: "green",
 			});
-		},
-		error(err) {
+		})
+		.catch((err) => {
 			finish();
-			const msg =
-				(err && err.message) ||
-				(err && err._server_messages) ||
-				__("Failed to load item BOM");
+			const aborted = err && err.name === "AbortError";
+			console.error("[BOM Bulk Edit] FAILED", aborted ? "TIMEOUT" : err);
 			$("#bbe-body").html(
-				`<div class="bbe-empty text-danger">${frappe.utils.escape_html(cstr(msg))}</div>`
+				`<div class="bbe-empty text-danger">
+					${
+						aborted
+							? __("Timed out waiting for server. Check Console + Network tab.")
+							: __("Load failed — see Console (F12).")
+					}
+					<div style="margin-top:8px;font-size:12px;color:#64748b;">${frappe.utils.escape_html(
+						cstr(err && err.message)
+					)}</div>
+				</div>`
 			);
-		},
-	});
+		});
 }
 
 function show_item_pick_dialog(state, matches) {
@@ -470,8 +528,8 @@ function show_item_pick_dialog(state, matches) {
 		primary_action(values) {
 			d.hide();
 			state.item_filter = values.item_code;
-			if (state.controls.item_filter) state.controls.item_filter.set_value(values.item_code);
-			load_matrix_by_item(state);
+		$("#bbe-item-text").val(values.item_code);
+		load_matrix_by_item(state);
 		},
 	});
 	d.show();

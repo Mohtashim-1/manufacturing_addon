@@ -129,17 +129,20 @@ def get_bom_matrix(sales_order, item_template=None, variants_only=1):
 
 
 @frappe.whitelist()
-def get_bom_matrix_for_item(item_query, include_siblings=1, limit=80):
-	"""Load BOM matrix by typing/searching an Item (no Sales Order required).
+def get_bom_matrix_for_item(item_query, include_siblings=0, limit=40):
+	"""Load BOM matrix by Item search (no Sales Order required).
 
-	- Resolves exact or partial item match
-	- If include_siblings and item has a template, also loads other variants (capped)
+	Default path is single-item and intentionally minimal SQL for speed.
 	"""
+	import time
+
+	t0 = time.time()
 	q = (item_query or "").strip()
 	if not q:
 		frappe.throw(_("Type or select an Item to load."))
 
 	resolved = _resolve_item_query(q)
+	t_resolve = time.time() - t0
 	if not resolved.get("item_code"):
 		matches = resolved.get("matches") or []
 		if matches:
@@ -151,14 +154,25 @@ def get_bom_matrix_for_item(item_query, include_siblings=1, limit=80):
 				"rows": [],
 				"rm_columns": [],
 				"cells": {},
-				"note": _("Multiple items matched — pick one from Search Item / the list."),
+				"note": _("Multiple items matched — pick one."),
+				"_timing": {"resolve_sec": round(t_resolve, 3)},
 			}
 		frappe.throw(_("No Item found matching: {0}").format(q))
 
 	item_code = resolved["item_code"]
 	include_siblings = cint(include_siblings)
-	limit = max(1, min(cint(limit) or 80, 200))
 
+	# Fast path: one item only
+	if not include_siblings:
+		payload = _fast_single_item_matrix(item_code)
+		payload["_timing"] = {
+			"resolve_sec": round(t_resolve, 3),
+			"total_sec": round(time.time() - t0, 3),
+			"mode": "single",
+		}
+		return payload
+
+	limit = max(1, min(cint(limit) or 40, 100))
 	meta = frappe.db.get_value(
 		"Item",
 		item_code,
@@ -171,15 +185,13 @@ def get_bom_matrix_for_item(item_query, include_siblings=1, limit=80):
 	template = (meta.variant_of or "").strip()
 	codes = [item_code]
 
-	if include_siblings and template:
+	if template:
 		siblings = frappe.db.sql(
 			"""
 			SELECT name
 			FROM `tabItem`
 			WHERE variant_of = %s AND disabled = 0 AND has_variants = 0
-			ORDER BY
-				CASE WHEN name = %s THEN 0 ELSE 1 END,
-				name
+			ORDER BY CASE WHEN name = %s THEN 0 ELSE 1 END, name
 			LIMIT %s
 			""",
 			(template, item_code, limit),
@@ -187,15 +199,12 @@ def get_bom_matrix_for_item(item_query, include_siblings=1, limit=80):
 		)
 		codes = [r[0] for r in siblings] or [item_code]
 	elif cint(meta.has_variants):
-		# User picked a template — load its variants
 		template = item_code
 		siblings = frappe.db.sql(
 			"""
-			SELECT name
-			FROM `tabItem`
+			SELECT name FROM `tabItem`
 			WHERE variant_of = %s AND disabled = 0
-			ORDER BY name
-			LIMIT %s
+			ORDER BY name LIMIT %s
 			""",
 			(item_code, limit),
 			as_list=True,
@@ -204,14 +213,12 @@ def get_bom_matrix_for_item(item_query, include_siblings=1, limit=80):
 		if not codes:
 			frappe.throw(_("Template {0} has no variant items").format(item_code))
 
-	# Prefetch item fields
 	item_map = {
 		r.name: r
 		for r in frappe.db.sql(
 			"""
 			SELECT name, item_name, variant_of, has_variants, default_bom, stock_uom
-			FROM `tabItem`
-			WHERE name IN ({})
+			FROM `tabItem` WHERE name IN ({})
 			""".format(",".join(["%s"] * len(codes))),
 			tuple(codes),
 			as_dict=True,
@@ -256,70 +263,233 @@ def get_bom_matrix_for_item(item_query, include_siblings=1, limit=80):
 			"load_mode": "item",
 			"resolved_item": item_code,
 			"query": q,
-			"note": _(
-				"Loaded by Item search{0}. Same RM = same column. Save creates new default BOM versions "
-				"(Sales Order bom_no is not updated in this mode)."
-			).format(f" ({template})" if template else ""),
+			"note": _("Loaded template variants (slower). Uncheck for single-item speed."),
+			"_timing": {
+				"resolve_sec": round(t_resolve, 3),
+				"total_sec": round(time.time() - t0, 3),
+				"mode": "siblings",
+				"items": len(pending_rows),
+			},
 		}
 	)
 	return payload
 
 
-def _resolve_item_query(q):
-	"""Exact match, else partial search. Returns {item_code} or {matches:[...]}."""
-	if frappe.db.exists("Item", q):
-		return {"item_code": q}
-
-	like = f"%{q}%"
-	rows = frappe.db.sql(
-		"""
-		SELECT name, item_name, variant_of
-		FROM `tabItem`
-		WHERE disabled = 0
-			AND (name LIKE %(like)s OR item_code LIKE %(like)s OR item_name LIKE %(like)s)
-		ORDER BY
-			CASE
-				WHEN name = %(q)s THEN 0
-				WHEN name LIKE %(prefix)s THEN 1
-				WHEN name LIKE %(like)s THEN 2
-				ELSE 3
-			END,
-			name
-		LIMIT 25
-		""",
-		{"q": q, "like": like, "prefix": f"{q}%"},
+def _fast_single_item_matrix(item_code):
+	"""Minimal queries for one FG item BOM — keep UI snappy."""
+	meta = frappe.db.get_value(
+		"Item",
+		item_code,
+		["name", "item_name", "variant_of", "has_variants", "default_bom", "stock_uom"],
 		as_dict=True,
 	)
-	if not rows:
-		# try last token (often EAN / code fragment)
-		token = q.replace(" ", "").split("-")[-1] if q else ""
-		if token and len(token) >= 6:
-			rows = frappe.db.sql(
-				"""
-				SELECT name, item_name, variant_of
-				FROM `tabItem`
-				WHERE disabled = 0 AND name LIKE %s
-				ORDER BY name
-				LIMIT 25
-				""",
-				(f"%{token}%",),
-				as_dict=True,
+	if not meta:
+		frappe.throw(_("Item {0} not found").format(item_code))
+	if cint(meta.has_variants):
+		frappe.throw(
+			_("“{0}” is an Item Template. Tick “All template variants” or pick a variant.").format(
+				item_code
 			)
+		)
 
-	if not rows:
-		return {}
-	if len(rows) == 1:
-		return {"item_code": rows[0].name}
-	# Prefer exact-ish starts-with single winner
-	prefix_hits = [r for r in rows if cstr(r.name).lower().startswith(q.lower())]
-	if len(prefix_hits) == 1:
-		return {"item_code": prefix_hits[0].name}
+	bom_no = ""
+	# 1) Item.default_bom if active submitted
+	if meta.default_bom:
+		st = frappe.db.get_value(
+			"BOM", meta.default_bom, ["is_active", "docstatus", "quantity", "uom"], as_dict=True
+		)
+		if st and cint(st.is_active) == 1 and cint(st.docstatus) == 1:
+			bom_no = meta.default_bom
+			bom_qty = flt(st.quantity) or 1
+			bom_uom = st.uom or meta.stock_uom or ""
+			is_default = 1
+		else:
+			st = None
+	else:
+		st = None
+
+	if not bom_no:
+		row = frappe.db.sql(
+			"""
+			SELECT name, quantity, uom, is_default
+			FROM `tabBOM`
+			WHERE item = %s AND is_active = 1 AND docstatus = 1
+			ORDER BY is_default DESC, modified DESC
+			LIMIT 1
+			""",
+			(item_code,),
+			as_dict=True,
+		)
+		if row:
+			bom_no = row[0].name
+			bom_qty = flt(row[0].quantity) or 1
+			bom_uom = row[0].uom or meta.stock_uom or ""
+			is_default = cint(row[0].is_default)
+		else:
+			bom_qty, bom_uom, is_default = 1, meta.stock_uom or "", 0
+
+	materials = []
+	if bom_no:
+		materials = frappe.db.sql(
+			"""
+			SELECT item_code, item_name, IFNULL(qty, 0) AS qty, IFNULL(uom, '') AS uom, name AS bom_item_name
+			FROM `tabBOM Item`
+			WHERE parent = %s
+			ORDER BY idx
+			""",
+			(bom_no,),
+			as_dict=True,
+		)
+
+	# Skip attributes for speed — optional light fetch
+	attrs = {}
+	attrs_label = ""
+	attr_rows = frappe.db.sql(
+		"""
+		SELECT attribute, attribute_value
+		FROM `tabItem Variant Attribute`
+		WHERE parent = %s
+		ORDER BY idx
+		LIMIT 12
+		""",
+		(item_code,),
+		as_dict=True,
+	)
+	if attr_rows:
+		attrs = {r.attribute: r.attribute_value for r in attr_rows if r.attribute}
+		attrs_label = ", ".join(f"{k}: {v}" for k, v in attrs.items())
+
+	rm_order = []
+	cells = {}
+	for m in materials:
+		rm = m.item_code
+		if not rm:
+			continue
+		rm_order.append({"item_code": rm, "item_name": m.item_name or rm, "uom": m.uom or ""})
+		cells[f"{item_code}::{rm}"] = {
+			"qty": flt(m.qty),
+			"uom": m.uom or "",
+			"bom_item_name": m.bom_item_name,
+		}
+
+	template = (meta.variant_of or "").strip()
 	return {
-		"matches": [
-			{"item_code": r.name, "item_name": r.item_name, "item_template": r.variant_of or ""}
-			for r in rows
-		]
+		"sales_order": "",
+		"customer": "",
+		"company": "",
+		"transaction_date": None,
+		"item_template": template,
+		"templates": [template] if template else [],
+		"variants_only": 1,
+		"load_mode": "item",
+		"resolved_item": item_code,
+		"rows": [
+			{
+				"item_code": item_code,
+				"item_name": meta.item_name,
+				"item_template": template,
+				"is_variant": 1 if template else 0,
+				"attributes": attrs,
+				"attributes_label": attrs_label,
+				"so_detail": "",
+				"so_qty": 0,
+				"bom_no": bom_no or "",
+				"bom_qty": bom_qty,
+				"bom_uom": bom_uom,
+				"is_active": 1 if bom_no else 0,
+				"is_default": is_default if bom_no else 0,
+				"has_bom": 1 if bom_no else 0,
+				"dirty": 0,
+			}
+		],
+		"rm_columns": rm_order,
+		"cells": cells,
+		"note": _("Single item loaded (fast). Tick “All template variants” to edit siblings together."),
 	}
+
+
+def _resolve_item_query(q):
+	"""Resolve item with indexed-friendly lookups (avoid slow leading-wildcard scans)."""
+	import re
+
+	candidates = [q]
+	if "+" in q:
+		candidates.append(q.replace("+", " "))
+	if " " in q and "+" not in q:
+		# common truncation / encoding swap
+		candidates.append(q.replace(" ", "+", 1) if "X" in q else q)
+
+	for c in candidates:
+		if frappe.db.exists("Item", c):
+			return {"item_code": c}
+
+	# Prefix match (uses index better than %q%)
+	for c in candidates:
+		rows = frappe.db.sql(
+			"""
+			SELECT name, item_name, variant_of
+			FROM `tabItem`
+			WHERE disabled = 0 AND name LIKE %s
+			ORDER BY name
+			LIMIT 20
+			""",
+			(c + "%",),
+			as_dict=True,
+		)
+		if len(rows) == 1:
+			return {"item_code": rows[0].name}
+		if len(rows) > 1:
+			return {
+				"matches": [
+					{
+						"item_code": r.name,
+						"item_name": r.item_name,
+						"item_template": r.variant_of or "",
+					}
+					for r in rows
+				]
+			}
+
+	# Numeric token (EAN / barcode fragment) — last long digit run
+	nums = re.findall(r"\d{8,}", q)
+	if nums:
+		token = nums[-1]
+		rows = frappe.db.sql(
+			"""
+			SELECT name, item_name, variant_of
+			FROM `tabItem`
+			WHERE disabled = 0 AND name LIKE %s
+			ORDER BY
+				CASE WHEN name LIKE %s THEN 0 ELSE 1 END,
+				name
+			LIMIT 20
+			""",
+			(f"%{token}%", f"%{token}"),
+			as_dict=True,
+		)
+		# Prefer non-sticker / exact-ish contains of original stem
+		stem = q.split("-")[0] if q else ""
+		if stem and len(rows) > 1:
+			pref = [r for r in rows if cstr(r.name).startswith(stem)]
+			if len(pref) == 1:
+				return {"item_code": pref[0].name}
+			if pref:
+				rows = pref
+		if len(rows) == 1:
+			return {"item_code": rows[0].name}
+		if rows:
+			return {
+				"matches": [
+					{
+						"item_code": r.name,
+						"item_name": r.item_name,
+						"item_template": r.variant_of or "",
+					}
+					for r in rows
+				]
+			}
+
+	return {}
 
 
 def cstr(v):

@@ -169,6 +169,13 @@ function render_shell(page, state) {
 					<label>${__("Search Item / load BOM (no SO needed)")}</label>
 					<div id="bbe-item-search-wrap"></div>
 				</div>
+				<div style="min-width:160px;">
+					<label>&nbsp;</label>
+					<label style="font-weight:500;color:#475569;display:flex;gap:6px;align-items:center;white-space:nowrap;">
+						<input type="checkbox" id="bbe-include-siblings">
+						${__("All template variants")}
+					</label>
+				</div>
 				<button type="button" class="btn btn-primary btn-sm" id="bbe-load-item" style="height:30px;">
 					<i class="fa fa-search"></i> ${__("Load Item BOM")}
 				</button>
@@ -178,7 +185,7 @@ function render_shell(page, state) {
 			</div>
 			<div id="bbe-body">
 				<div class="bbe-empty">${__(
-					"Option A: select Sales Order → Load Variant BOMs. Option B: search Item below → Load Item BOM (loads that item + template siblings)."
+					"Fast path: search Item → Load Item BOM (one item). Tick “All template variants” only if you need every sibling. Or select Sales Order for order-wide load."
 				)}</div>
 			</div>
 		</div>
@@ -246,8 +253,8 @@ function render_shell(page, state) {
 		state.item_template = template_control.get_value() || "";
 	});
 	item_filter_control.$input.on("change awesomplete-selectcomplete", () => {
+		// Do NOT auto-load — only remember selection (avoids slow double-loads)
 		state.item_filter = item_filter_control.get_value() || "";
-		if (state.item_filter) load_matrix_by_item(state);
 	});
 
 	$(page.body).find("#bbe-variants-only").on("change", function () {
@@ -354,22 +361,51 @@ function load_matrix_by_item(state) {
 		return;
 	}
 	state.item_filter = cstr(q).trim();
+	const include_siblings = $("#bbe-include-siblings").is(":checked") ? 1 : 0;
 
-	$("#bbe-body").html(
-		`<div class="bbe-empty"><i class="fa fa-spinner fa-spin fa-2x"></i><div style="margin-top:12px;">${__(
-			"Loading item BOM…"
-		)}</div></div>`
-	);
+	// Prevent stacked requests
+	if (state._loading_item) {
+		frappe.show_alert({ message: __("Already loading…"), indicator: "orange" });
+		return;
+	}
+	state._loading_item = true;
+
+	const t0 = performance.now();
+	let elapsed_timer = null;
+	const $status = $(`
+		<div class="bbe-empty">
+			<i class="fa fa-spinner fa-spin fa-2x"></i>
+			<div style="margin-top:12px;" id="bbe-load-status">${
+				include_siblings
+					? __("Loading item + template variants…")
+					: __("Loading this item BOM…")
+			}</div>
+			<div class="text-muted" style="margin-top:6px;font-size:12px;" id="bbe-load-elapsed">0.0s</div>
+		</div>
+	`);
+	$("#bbe-body").html($status);
+	elapsed_timer = setInterval(() => {
+		const s = ((performance.now() - t0) / 1000).toFixed(1);
+		$("#bbe-load-elapsed").text(s + "s");
+	}, 200);
+
+	const finish = () => {
+		state._loading_item = false;
+		if (elapsed_timer) clearInterval(elapsed_timer);
+	};
 
 	frappe.call({
 		method: `${API}.get_bom_matrix_for_item`,
 		args: {
 			item_query: state.item_filter,
-			include_siblings: 1,
-			limit: 80,
+			include_siblings,
+			limit: include_siblings ? 40 : 1,
 		},
+		freeze: false,
 		callback(r) {
+			finish();
 			const msg = r.message || {};
+			const api_ms = Math.round(performance.now() - t0);
 			if (cint(msg.needs_pick) && (msg.matches || []).length) {
 				show_item_pick_dialog(state, msg.matches);
 				return;
@@ -377,20 +413,34 @@ function load_matrix_by_item(state) {
 			if (!(msg.rows || []).length) {
 				$("#bbe-body").html(
 					`<div class="bbe-empty">${__(
-						"No BOM rows found for this item. Check the item has an active default BOM."
+						"No BOM found for this item. Check it has an active default BOM."
 					)}</div>`
 				);
 				return;
 			}
+			const t1 = performance.now();
 			apply_loaded_payload(state, msg);
+			const render_ms = Math.round(performance.now() - t1);
+			const server = (msg._timing && msg._timing.total_sec) || "?";
 			frappe.show_alert({
-				message: __("Loaded {0} item(s)", [msg.rows.length]),
+				message: __("Loaded {0} item · {1} RM · server {2}s · browser {3}ms / render {4}ms", [
+					msg.rows.length,
+					(msg.rm_columns || []).length,
+					server,
+					api_ms,
+					render_ms,
+				]),
 				indicator: "green",
 			});
 		},
-		error() {
+		error(err) {
+			finish();
+			const msg =
+				(err && err.message) ||
+				(err && err._server_messages) ||
+				__("Failed to load item BOM");
 			$("#bbe-body").html(
-				`<div class="bbe-empty text-danger">${__("Failed to load item BOM")}</div>`
+				`<div class="bbe-empty text-danger">${frappe.utils.escape_html(cstr(msg))}</div>`
 			);
 		},
 	});

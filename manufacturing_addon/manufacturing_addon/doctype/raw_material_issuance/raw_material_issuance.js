@@ -58,6 +58,58 @@ frappe.ui.form.on('Raw Material Issuance', {
 				frappe.set_route('Form', 'Stock Entry', frm.doc.stock_entry);
 			});
 		}
+
+		if (!frm.is_new() && frm.doc.docstatus === 0 && frm.doc.from_warehouse) {
+			frm.add_custom_button(__('Show Blocking Reservations'), () => {
+				frappe.call({
+					method:
+						'manufacturing_addon.manufacturing_addon.utils.rmi_stock_reservation.get_blocking_reservations_for_rmi',
+					args: { issuance_name: frm.doc.name },
+					freeze: true,
+					callback: (r) => {
+						const rows = r.message || [];
+						if (!rows.length) {
+							frappe.msgprint({
+								title: __('No Blocking Reservations'),
+								message: __(
+									'No open reservations from other Sales Orders / vouchers for these items in {0}. Same-SO Production Plan reservations are consumed automatically on submit.',
+									[frm.doc.from_warehouse]
+								),
+								indicator: 'green',
+							});
+							return;
+						}
+
+						const html = [
+							`<p>${__(
+								'These quantities are reserved for other vouchers and will block submit. Open each SRE and use Actions → Unreserve Remaining.'
+							)}</p>`,
+							'<table class="table table-bordered"><thead><tr>',
+							`<th>${__('SRE')}</th><th>${__('Item')}</th><th>${__('Open Qty')}</th>`,
+							`<th>${__('Voucher')}</th><th>${__('Status')}</th>`,
+							'</tr></thead><tbody>',
+						];
+						rows.forEach((row) => {
+							html.push(
+								'<tr>',
+								`<td><a href="/desk/stock-reservation-entry/${encodeURIComponent(row.name)}">${frappe.utils.escape_html(row.name)}</a></td>`,
+								`<td>${frappe.utils.escape_html(row.item_code)}</td>`,
+								`<td>${flt(row.open_qty)}</td>`,
+								`<td>${frappe.utils.escape_html(row.voucher_type)}: ${frappe.utils.escape_html(row.voucher_no)}</td>`,
+								`<td>${frappe.utils.escape_html(row.status)}</td>`,
+								'</tr>'
+							);
+						});
+						html.push('</tbody></table>');
+						frappe.msgprint({
+							title: __('Blocking Reservations'),
+							message: html.join(''),
+							indicator: 'orange',
+						});
+					},
+				});
+			});
+		}
 	},
 	
 	planning(frm) {

@@ -748,19 +748,37 @@ def find_or_create_size(size_value):
 		return None
 
 
+def _carton_dimension_is_inches(dimension_text):
+	"""True when carton dimension unit is inches (not cm)."""
+	text = str(dimension_text or "")
+	if re.search(r"\bcm\b|\bcentimet", text, re.I):
+		return False
+	return bool(re.search(r"\binch(?:es)?\b|\bin\b|\"", text, re.I))
+
+
 def parse_carton_dimension(dimension_text):
-	"""Parse carton dimension text and return length, width, height in cm."""
+	"""Parse carton dimension text and return length, width, height in cm.
+
+	Supports units in the text, e.g. '37X27X30 CM' or '27.5X11X28 INCH'.
+	Inch values are converted to cm (× 2.54) before CBM.
+	"""
 	if not dimension_text:
 		return (None, None, None)
 
+	text = str(dimension_text)
 	match = re.search(
 		r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)",
-		str(dimension_text)
+		text,
 	)
 	if not match:
 		return (None, None, None)
 
-	return (flt(match.group(1)), flt(match.group(2)), flt(match.group(3)))
+	length, width, height = flt(match.group(1)), flt(match.group(2)), flt(match.group(3))
+	if _carton_dimension_is_inches(text):
+		length *= 2.54
+		width *= 2.54
+		height *= 2.54
+	return (length, width, height)
 
 
 def get_item_weight_per_unit(item_code, cache=None):
@@ -828,6 +846,98 @@ def get_carton_weights(carton_item, so_weight_per_unit=0, so_gross_per_unit=0, q
 	return flt(carton_net), flt(carton_gross)
 
 
+def _dimension_from_text(text):
+	"""Return a compact LxWxH unit string if text contains parseable carton dimensions."""
+	if not text:
+		return None
+	text = str(text)
+	if not parse_carton_dimension(text)[0]:
+		return None
+	match = re.search(
+		r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)"
+		r"(?:\s*(CM|INCH(?:ES)?|IN|\"))?",
+		text,
+	)
+	if not match:
+		return text.strip()
+	dim = f"{match.group(1)}X{match.group(2)}X{match.group(3)}"
+	unit = (match.group(4) or "").strip()
+	if unit:
+		if unit in ('"', "IN"):
+			unit = "INCH"
+		dim = f"{dim} {unit.upper()}"
+	return dim
+
+
+def get_carton_dimension_for_item(carton_item):
+	"""Resolve carton LxWxH from variant attrs, Item field, or the item code/name."""
+	if not carton_item:
+		return None
+
+	dim = frappe.db.get_value(
+		"Item Variant Attribute",
+		{"parent": carton_item, "attribute": "Carton Dimension"},
+		"attribute_value",
+	)
+	parsed = _dimension_from_text(dim)
+	if parsed:
+		return dim
+
+	if frappe.db.has_column("Item", "custom_cartons_dimension"):
+		custom = frappe.db.get_value("Item", carton_item, "custom_cartons_dimension")
+		parsed = _dimension_from_text(custom)
+		if parsed:
+			return custom
+
+	size = frappe.db.get_value(
+		"Item Variant Attribute",
+		{"parent": carton_item, "attribute": "SIZE"},
+		"attribute_value",
+	)
+	parsed = _dimension_from_text(size)
+	if parsed:
+		return size
+
+	item_name = frappe.db.get_value("Item", carton_item, "item_name")
+	return _dimension_from_text(carton_item) or _dimension_from_text(item_name)
+
+
+def _get_bom_carton_item_row(bom_name):
+	"""Pick the shipping carton from a BOM.
+
+	BOMs often list a PDQ/display box in group CARTONS before the outer carton.
+	Prefer item codes/names that start with CARTON over PDQ so CBM uses the shipper.
+	"""
+	if not bom_name:
+		return None
+
+	rows = frappe.db.sql(
+		"""
+		SELECT bi.item_code, bi.item_name, bi.qty, i.item_group
+		FROM `tabBOM Item` bi
+		LEFT JOIN `tabItem` i ON i.name = bi.item_code
+		WHERE bi.parent = %s
+		  AND (
+			UPPER(IFNULL(i.item_group, '')) LIKE 'CARTON%%'
+			OR UPPER(IFNULL(bi.item_code, '')) LIKE 'CARTON%%'
+			OR UPPER(IFNULL(bi.item_name, '')) LIKE 'CARTON%%'
+		  )
+		ORDER BY
+			CASE
+				WHEN UPPER(IFNULL(bi.item_code, '')) LIKE 'CARTON%%'
+				  OR UPPER(IFNULL(bi.item_name, '')) LIKE 'CARTON%%'
+				THEN 0
+				ELSE 1
+			END,
+			bi.idx ASC
+		LIMIT 1
+		""",
+		(bom_name,),
+		as_dict=True,
+	)
+	return rows[0] if rows else None
+
+
 def get_bom_carton_details(item_code):
 	"""Get default BOM, active BOM, carton item and carton dimension for an item."""
 	if not item_code:
@@ -875,36 +985,12 @@ def get_bom_carton_details(item_code):
 
 	if bom_for_carton:
 		bom_qty = frappe.db.get_value("BOM", bom_for_carton, "quantity")
-
-		carton_item_row = frappe.db.sql(
-			"""
-			SELECT bi.item_code, bi.qty
-			FROM `tabBOM Item` bi
-			LEFT JOIN `tabItem` i ON i.name = bi.item_code
-			WHERE bi.parent = %s
-			  AND (
-				UPPER(IFNULL(i.item_group, '')) LIKE 'CARTON%%'
-				OR UPPER(IFNULL(bi.item_code, '')) LIKE 'CARTON%%'
-				OR UPPER(IFNULL(bi.item_name, '')) LIKE 'CARTON%%'
-			  )
-			ORDER BY bi.idx ASC
-			LIMIT 1
-			""",
-			(bom_for_carton,),
-			as_dict=True
-		)
+		carton_item_row = _get_bom_carton_item_row(bom_for_carton)
 
 		if carton_item_row:
-			carton_item = carton_item_row[0].item_code
-			carton_qty = carton_item_row[0].qty or 0
-			carton_dimension = frappe.db.get_value(
-				"Item Variant Attribute",
-				{
-					"parent": carton_item,
-					"attribute": "Carton Dimension"
-				},
-				"attribute_value"
-			)
+			carton_item = carton_item_row.item_code
+			carton_qty = carton_item_row.qty or 0
+			carton_dimension = get_carton_dimension_for_item(carton_item)
 
 			if bom_qty and carton_qty:
 				try:
@@ -940,6 +1026,8 @@ def apply_bom_carton_details_to_row(row, details, force_qty_ctn=False):
 		(row.default_bom or "") != (details.get("default_bom") or "")
 		or (row.active_bom or "") != (details.get("active_bom") or "")
 	)
+	carton_changed = (row.carton_item or "") != (details.get("carton_item") or "")
+	dimension_missing = not (row.carton_dimension or "").strip()
 
 	row.default_bom = details.get("default_bom")
 	row.active_bom = details.get("active_bom")
@@ -952,8 +1040,8 @@ def apply_bom_carton_details_to_row(row, details, force_qty_ctn=False):
 	if hasattr(row, "carton_gross_weight_per_unit"):
 		row.carton_gross_weight_per_unit = details.get("carton_gross_weight_per_unit") or 0
 
-	# Refresh qty/ctn when empty or when BOM reference changed (new version / default switch).
-	if force_qty_ctn or not row.qty_ctn or bom_changed:
+	# Refresh qty/ctn when empty, BOM changed, or packing carton changed (PDQ → outer carton).
+	if force_qty_ctn or not row.qty_ctn or bom_changed or carton_changed or dimension_missing:
 		if details.get("qty_ctn"):
 			row.qty_ctn = details.get("qty_ctn")
 
@@ -1044,22 +1132,25 @@ def refresh_order_sheet_bom_carton(order_sheet=None, force_qty_ctn=0):
 
 	if doc.docstatus == 0:
 		doc.save()
-	else:
-		for row in doc.order_sheet_ct:
-			if not row.so_item:
-				continue
-			frappe.db.set_value(
-				"Order Sheet CT",
-				row.name,
-				_order_sheet_ct_bom_carton_values(row),
-				update_modified=False,
-			)
+
+	# Carton/CBM fields are read_only; persist them with set_value so draft save
+	# cannot skip them, and commit so console/scripts actually write.
+	for row in doc.order_sheet_ct:
+		if not row.so_item:
+			continue
 		frappe.db.set_value(
-			"Order Sheet",
-			doc.name,
-			_order_sheet_summary_values(doc),
-			update_modified=True,
+			"Order Sheet CT",
+			row.name,
+			_order_sheet_ct_bom_carton_values(row),
+			update_modified=False,
 		)
+	frappe.db.set_value(
+		"Order Sheet",
+		doc.name,
+		_order_sheet_summary_values(doc),
+		update_modified=True,
+	)
+	frappe.db.commit()
 
 	result["order_sheet"] = doc.name
 	return result

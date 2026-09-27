@@ -15,7 +15,7 @@ frappe.pages["bom-bulk-edit"].on_page_load = function (wrapper) {
 		page,
 		sales_order: "",
 		item_template: "",
-		variants_only: 1,
+		variants_only: 0,
 		search: "",
 		item_filter: "",
 		meta: {},
@@ -29,8 +29,6 @@ frappe.pages["bom-bulk-edit"].on_page_load = function (wrapper) {
 
 	page.set_primary_action(__("Save New BOM Versions"), () => save_matrix(state));
 	page.add_inner_button(__("Refresh"), () => load_matrix(state));
-	page.add_inner_button(__("Add Material"), () => add_material_dialog(state));
-	page.add_inner_button(__("Replace RM"), () => replace_rm_dialog(state));
 
 	render_shell(page, state);
 };
@@ -53,11 +51,40 @@ function render_shell(page, state) {
 				}
 				.bbe-portal .bbe-filters {
 					display:flex; flex-wrap:wrap; gap:12px; align-items:end;
-					background:#fff3cd; border:2px solid #ffc107; border-radius:8px;
+					background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px;
 					padding:14px; margin-bottom:10px;
 				}
 				.bbe-portal .bbe-filters label {
-					font-size:12px; font-weight:700; color:#856404; display:block; margin-bottom:4px;
+					font-size:12px; font-weight:700; color:#334155; display:block; margin-bottom:4px;
+				}
+				.bbe-portal .bbe-action-panel {
+					display:grid;
+					grid-template-columns:minmax(340px,1.4fr) minmax(220px,.9fr) minmax(120px,.35fr) minmax(190px,.45fr);
+					gap:10px; align-items:end; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px;
+					padding:12px; margin-bottom:10px;
+				}
+				.bbe-portal .bbe-action-panel label {
+					font-size:11px; font-weight:700; color:#475569; display:block; margin-bottom:4px;
+				}
+				.bbe-portal .bbe-action-panel .mode-option {
+					display:inline-flex; align-items:center; gap:5px; margin:0 12px 0 0; font-weight:600; color:#334155;
+				}
+				.bbe-portal .bbe-action-panel .mode-option input { margin:0; }
+				.bbe-portal .bbe-action-panel .control-input-wrapper,
+				.bbe-portal .bbe-action-panel .link-field,
+				.bbe-portal .bbe-action-panel .awesomplete,
+				.bbe-portal .bbe-action-panel .form-control {
+					width:100%;
+				}
+				.bbe-portal .bbe-action-panel input.form-control,
+				.bbe-portal .bbe-action-panel .awesomplete input {
+					height:30px; min-height:30px; line-height:30px; padding-top:4px; padding-bottom:4px;
+				}
+				.bbe-portal .bbe-action-panel .btn {
+					height:30px; width:100%; margin:0;
+				}
+				@media (max-width: 900px) {
+					.bbe-portal .bbe-action-panel { grid-template-columns:1fr; }
 				}
 				.bbe-portal .bbe-search-bar {
 					display:flex; flex-wrap:wrap; gap:10px; align-items:end;
@@ -138,9 +165,9 @@ function render_shell(page, state) {
 				.bbe-portal .badge-ok { background:#16a34a; }
 			</style>
 			<div class="bbe-hero">
-				<h3><i class="fa fa-th"></i> ${__("Bulk Edit BOM Versions")}</h3>
+				<h3><i class="fa fa-list-check"></i> ${__("Sales Order BOM Bulk Edit")}</h3>
 				<p>${__(
-					"Load by Sales Order OR search Item directly (no SO needed). Same RM = same column. Edit / fill-down / replace / add material, then Save new default BOM versions."
+					"Select a Sales Order, tick the items to change, choose Add / Remove / Replace, then save new BOM versions."
 				)}</p>
 			</div>
 			<div class="bbe-filters">
@@ -148,22 +175,13 @@ function render_shell(page, state) {
 					<label>${__("Sales Order")}</label>
 					<div id="bbe-so-wrap"></div>
 				</div>
-				<div style="flex:1;min-width:200px;">
-					<label>${__("Item Template (optional)")}</label>
-					<div id="bbe-template-wrap"></div>
-				</div>
-				<div style="min-width:140px;">
-					<label>&nbsp;</label>
-					<label style="font-weight:500;color:#856404;display:flex;gap:6px;align-items:center;">
-						<input type="checkbox" id="bbe-variants-only" checked>
-						${__("Variants only")}
-					</label>
-				</div>
 				<button type="button" class="btn btn-primary btn-sm" id="bbe-load" style="height:30px;">
-					<i class="fa fa-download"></i> ${__("Load Variant BOMs")}
+					<i class="fa fa-download"></i> ${__("Show Sales Order Items")}
 				</button>
+				<div id="bbe-template-wrap" style="display:none;"></div>
+				<input type="checkbox" id="bbe-variants-only" style="display:none;">
 			</div>
-			<div class="bbe-search-bar" id="bbe-search-bar">
+			<div class="bbe-search-bar" id="bbe-search-bar" style="display:none;">
 				<div style="flex:2;min-width:240px;">
 					<label>${__("Filter loaded rows (type anything)")}</label>
 					<input type="text" class="form-control input-sm" id="bbe-search"
@@ -189,9 +207,7 @@ function render_shell(page, state) {
 				</button>
 			</div>
 			<div id="bbe-body">
-				<div class="bbe-empty">${__(
-					"Paste Item code → Load Item BOM (fast). Open browser Console (F12) to see timing logs. Avoid Item Link search — it was blocking the load."
-				)}</div>
+				<div class="bbe-empty">${__("Select a Sales Order to show items and BOMs.")}</div>
 			</div>
 		</div>
 	`);
@@ -624,7 +640,7 @@ function render_matrix(state) {
 	if (!rows.length) {
 		$("#bbe-body").html(
 			`<div class="bbe-empty">${__(
-				"No Item Template variant items found on this Sales Order. Uncheck “Variants only” to include all items, or pick another SO."
+				"No Sales Order items with active BOMs were found. Pick another Sales Order or check Item BOMs."
 			)}</div>`
 		);
 		return;
@@ -688,7 +704,7 @@ function render_matrix(state) {
 			<div class="bbe-card"><div class="lbl">${__("Item Templates")}</div><div class="val" style="font-size:13px;">${
 				templates.length ? frappe.utils.escape_html(templates.join(", ")) : "—"
 			}</div></div>
-			<div class="bbe-card"><div class="lbl">${__("Variant Items")}</div><div class="val">${
+			<div class="bbe-card"><div class="lbl">${__("Sales Order Items")}</div><div class="val">${
 				visible.length
 			}<span style="font-size:12px;color:#94a3b8;font-weight:500;"> / ${rows.length}</span></div></div>
 			<div class="bbe-card"><div class="lbl">${__("Raw Materials")}</div><div class="val">${
@@ -792,20 +808,19 @@ function render_matrix(state) {
 				  )}</div>`
 		}
 		${cards}
+		${render_bulk_action_panel(state)}
 		<div class="bbe-toolbar">
 			<button type="button" class="btn btn-default btn-xs" id="bbe-select-all">${__("Select All")}</button>
 			<button type="button" class="btn btn-default btn-xs" id="bbe-select-none">${__("Clear Selection")}</button>
-			<button type="button" class="btn btn-info btn-xs" id="bbe-apply-rest">${__(
-				"Apply Active Cell Qty to Selected"
-			)}</button>
-			<button type="button" class="btn btn-warning btn-xs" id="bbe-replace">${__("Replace RM…")}</button>
-			<button type="button" class="btn btn-success btn-xs" id="bbe-add-rm">${__("Add Material…")}</button>
+			<button type="button" class="btn btn-warning btn-xs" id="bbe-replace">${__("Replace…")}</button>
+			<button type="button" class="btn btn-danger btn-xs" id="bbe-remove-rm">${__("Remove…")}</button>
+			<button type="button" class="btn btn-success btn-xs" id="bbe-add-rm">${__("Add…")}</button>
 			<span class="text-muted" style="font-size:11px;margin-left:8px;">
-				${__("Click a cell to edit · drag blue square to fill down")}
+				${__("Tick item rows, use Mode panel, then Save New BOM Versions")}
 			</span>
 		</div>
 		<div class="text-muted small" style="margin:0 0 8px;">
-			${__("Showing")} ${visible.length} / ${rows.length} ${__("variant rows")}
+			${__("Showing")} ${visible.length} / ${rows.length} ${__("item rows")}
 			· ${visible_cols.length} / ${cols.length} ${__("RM columns")}
 			${q ? ` · ${__("filter")}: <b>${frappe.utils.escape_html(state.search)}</b>` : ""}
 		</div>
@@ -845,8 +860,9 @@ function bind_matrix_events(state) {
 		state.rows.forEach((r) => (r._checked = 0));
 		render_matrix(state);
 	});
-	$body.find("#bbe-apply-rest").on("click", () => apply_active_to_selected(state));
+	init_bulk_action_panel(state);
 	$body.find("#bbe-replace").on("click", () => replace_rm_dialog(state));
+	$body.find("#bbe-remove-rm").on("click", () => remove_rm_dialog(state));
 	$body.find("#bbe-add-rm").on("click", () => add_material_dialog(state));
 
 	$body.off("change", ".bbe-sel").on("change", ".bbe-sel", function () {
@@ -1157,43 +1173,221 @@ function add_material_dialog(state) {
 function do_add_material(state, values) {
 	const rm = values.item_code;
 	if (!rm) return;
-	if (state.rm_columns.find((c) => c.item_code === rm)) {
-		frappe.show_alert({
-			message: __("Column already exists — use fill-down to set qty"),
-			indicator: "orange",
-		});
-		return;
-	}
 	frappe.call({
 		method: `${BBE_API}.get_item_uom`,
 		args: { item_code: rm },
 		callback(r) {
 			const uom = r.message || "";
 			frappe.db.get_value("Item", rm, "item_name", (v) => {
-				state.rm_columns.push({
-					item_code: rm,
-					item_name: (v && v.item_name) || rm,
-					uom,
-				});
+				let col = state.rm_columns.find((c) => c.item_code === rm);
+				if (!col) {
+					col = {
+						item_code: rm,
+						item_name: (v && v.item_name) || rm,
+						uom,
+					};
+					state.rm_columns.push(col);
+				}
 				const qty = flt(values.default_qty);
 				const scope = values.scope;
+				let n = 0;
 				if (scope !== "None (empty column)" && qty > 0) {
 					state.rows.forEach((row) => {
 						if (scope === "Selected rows" && !cint(row._checked)) return;
 						const cell = get_cell(state, row.item_code, rm);
 						cell.qty = qty;
-						cell.uom = uom;
+						cell.uom = uom || col.uom || cell.uom;
 						mark_dirty(state, row.item_code);
+						n++;
 					});
 				}
 				render_matrix(state);
 				frappe.show_alert({
-					message: __("Added material column {0}", [rm]),
+					message: n
+						? __("Set {0} on {1} selected BOM(s)", [rm, n])
+						: __("Added material column {0}", [rm]),
 					indicator: "green",
 				});
 			});
 		},
 	});
+}
+
+function selected_rows_count(state) {
+	return (state.rows || []).filter((r) => cint(r._checked)).length;
+}
+
+function render_bulk_action_panel(state) {
+	if (!state.rows.length) return "";
+	return `
+		<div class="bbe-action-panel">
+			<div class="bbe-mode-box">
+				<label>${__("Mode")}</label>
+				<div style="height:30px;display:flex;align-items:center;flex-wrap:wrap;">
+					<label class="mode-option"><input type="radio" name="bbe-mode" value="add" checked> ${__("Add")}</label>
+					<label class="mode-option"><input type="radio" name="bbe-mode" value="remove"> ${__("Remove")}</label>
+					<label class="mode-option"><input type="radio" name="bbe-mode" value="replace"> ${__("Replace")}</label>
+				</div>
+			</div>
+			<div class="bbe-item-box">
+				<label id="bbe-target-label">${__("Item to Add")}</label>
+				<div id="bbe-action-item-wrap"></div>
+			</div>
+			<div class="bbe-new-item-box" style="display:none;">
+				<label>${__("Replace With")}</label>
+				<div id="bbe-action-new-item-wrap"></div>
+			</div>
+			<div class="bbe-qty-box">
+				<label>${__("Qty")}</label>
+				<input type="number" step="any" min="0" class="form-control input-sm" id="bbe-action-qty" value="1">
+			</div>
+			<div class="bbe-apply-box">
+				<label>&nbsp;</label>
+				<button type="button" class="btn btn-primary btn-sm" id="bbe-apply-mode">
+					<i class="fa fa-check"></i> ${__("Apply to Selected")}
+				</button>
+			</div>
+		</div>`;
+}
+
+function init_bulk_action_panel(state) {
+	const $body = $("#bbe-body");
+	const item_control = frappe.ui.form.make_control({
+		parent: $body.find("#bbe-action-item-wrap"),
+		df: {
+			fieldtype: "Link",
+			fieldname: "action_item",
+			options: "Item",
+			placeholder: __("Select Item"),
+			get_query() {
+				return { filters: { is_stock_item: 1, disabled: 0 } };
+			},
+		},
+		render_input: true,
+	});
+	item_control.refresh();
+
+	const new_item_control = frappe.ui.form.make_control({
+		parent: $body.find("#bbe-action-new-item-wrap"),
+		df: {
+			fieldtype: "Link",
+			fieldname: "new_item",
+			options: "Item",
+			placeholder: __("New Item"),
+			get_query() {
+				return { filters: { is_stock_item: 1, disabled: 0 } };
+			},
+		},
+		render_input: true,
+	});
+	new_item_control.refresh();
+	state.action_controls = { item: item_control, new_item: new_item_control };
+
+	function sync_mode() {
+		const mode = $body.find('input[name="bbe-mode"]:checked').val() || "add";
+		const is_replace = mode === "replace";
+		const is_add = mode === "add";
+		$body.find("#bbe-target-label").text(
+			mode === "add" ? __("Item to Add") : mode === "remove" ? __("Item to Remove") : __("Item to Replace")
+		);
+		$body.find(".bbe-new-item-box").toggle(is_replace);
+		$body.find(".bbe-qty-box").toggle(is_add);
+		const columns = is_replace
+			? "minmax(300px,1fr) minmax(220px,.85fr) minmax(220px,.85fr) minmax(190px,.45fr)"
+			: "minmax(340px,1.4fr) minmax(220px,.9fr) minmax(120px,.35fr) minmax(190px,.45fr)";
+		$body.find(".bbe-action-panel").css("grid-template-columns", columns);
+	}
+	$body.find('input[name="bbe-mode"]').on("change", sync_mode);
+	$body.find("#bbe-apply-mode").on("click", () => apply_bulk_mode(state));
+	sync_mode();
+}
+
+function apply_bulk_mode(state) {
+	const $body = $("#bbe-body");
+	const mode = $body.find('input[name="bbe-mode"]:checked').val() || "add";
+	const item = state.action_controls && state.action_controls.item.get_value();
+	const new_item = state.action_controls && state.action_controls.new_item.get_value();
+	const qty = flt($body.find("#bbe-action-qty").val());
+	const selected = selected_rows_count(state);
+
+	if (!selected) {
+		frappe.show_alert({ message: __("Select at least one Sales Order item"), indicator: "orange" });
+		return;
+	}
+	if (!item) {
+		frappe.show_alert({ message: __("Select an item first"), indicator: "orange" });
+		return;
+	}
+	if (mode === "add" && qty <= 0) {
+		frappe.show_alert({ message: __("Enter qty greater than 0"), indicator: "orange" });
+		return;
+	}
+	if (mode === "replace" && (!new_item || new_item === item)) {
+		frappe.show_alert({ message: __("Select a different replacement item"), indicator: "orange" });
+		return;
+	}
+
+	if (mode === "add") {
+		do_add_material(state, { item_code: item, default_qty: qty, scope: "Selected rows" });
+	} else if (mode === "remove") {
+		do_remove_rm(state, { item_code: item, scope: "Selected rows" });
+	} else {
+		do_replace_rm(state, { old_rm: item, new_rm: new_item, scope: "Selected rows", keep_qty: 1 });
+	}
+}
+
+function remove_rm_dialog(state) {
+	if (!state.rm_columns.length) {
+		frappe.show_alert({ message: __("Load BOMs first"), indicator: "orange" });
+		return;
+	}
+	const d = new frappe.ui.Dialog({
+		title: __("Remove Raw Material"),
+		fields: [
+			{
+				fieldtype: "Select",
+				fieldname: "item_code",
+				label: __("Raw Material"),
+				options: state.rm_columns.map((c) => c.item_code).join("\n"),
+				reqd: 1,
+			},
+			{
+				fieldtype: "Select",
+				fieldname: "scope",
+				label: __("Apply to"),
+				options: ["Selected rows", "All rows"],
+				default: "Selected rows",
+			},
+		],
+		primary_action_label: __("Remove"),
+		primary_action(values) {
+			d.hide();
+			do_remove_rm(state, values);
+		},
+	});
+	d.show();
+}
+
+function do_remove_rm(state, values) {
+	const rm = values.item_code;
+	if (!rm) return;
+	const only_selected = values.scope === "Selected rows";
+	let n = 0;
+	state.rows.forEach((row) => {
+		if (only_selected && !cint(row._checked)) return;
+		const cell = get_cell(state, row.item_code, rm);
+		if (cell.qty === "" || flt(cell.qty) === 0) return;
+		cell.qty = "";
+		mark_dirty(state, row.item_code);
+		n++;
+	});
+	const still_used = state.rows.some((row) => {
+		const c = get_cell(state, row.item_code, rm);
+		return c.qty !== "" && flt(c.qty) !== 0;
+	});
+	if (!still_used) state.rm_columns = state.rm_columns.filter((c) => c.item_code !== rm);
+	render_matrix(state);
+	frappe.show_alert({ message: __("Removed {0} from {1} selected BOM(s)", [rm, n]), indicator: "green" });
 }
 
 function save_matrix(state) {

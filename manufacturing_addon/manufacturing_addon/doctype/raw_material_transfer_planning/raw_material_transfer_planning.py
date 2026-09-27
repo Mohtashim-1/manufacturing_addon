@@ -9,10 +9,28 @@ from erpnext.stock.doctype.bin.bin import get_actual_qty
 
 class RawMaterialTransferPlanning(Document):
 	def validate(self):
+		self._autofill_production_plan()
 		# Update issued_qty from stock entries if sales order is set
 		if self.sales_order and self.rmtp_raw_material:
 			self._update_issued_qty_from_stock_entries()
 		self.set_status_and_totals()
+
+	def _autofill_production_plan(self):
+		"""Link Production Plan for this Sales Order when blank (used by RMI reservation consume)."""
+		if not self.sales_order:
+			return
+		if getattr(self, "custom_production_plan", None):
+			return
+		if not self.meta.has_field("custom_production_plan"):
+			return
+
+		from manufacturing_addon.manufacturing_addon.utils.rmi_stock_reservation import (
+			get_production_plans_for_sales_order,
+		)
+
+		plans = get_production_plans_for_sales_order(self.sales_order)
+		if len(plans) == 1:
+			self.custom_production_plan = plans[0]
 
 	def set_status_and_totals(self):
 		total_planned = sum((d.qty or 0) for d in self.rmtp_raw_material)

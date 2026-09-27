@@ -71,6 +71,17 @@ class ProductionPlan(ERPNextProductionPlan):
 	instead of the BOM from sales order if it's inactive.
 	"""
 
+	def validate(self):
+		super().validate()
+		self._sync_excluded_mr_items()
+
+	def _sync_excluded_mr_items(self):
+		from manufacturing_addon.manufacturing_addon.utils.production_plan_excluded_mr import (
+			sync_excluded_mr_items_on_doc,
+		)
+
+		sync_excluded_mr_items_on_doc(self)
+
 	def combine_subassembly_items(self, sub_assembly_items_store):
 		"""Also sum required_qty when consolidating (ERPNext only summed qty)."""
 		from frappe.utils import flt

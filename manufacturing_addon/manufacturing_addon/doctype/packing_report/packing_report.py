@@ -141,16 +141,24 @@ class PackingReport(Document):
 
     @staticmethod
     def _parse_carton_dimension(dimension_text):
-        """Parse dimension text like '60x40x30' into (L, W, H) in cm."""
+        """Parse dimension text like '60x40x30 CM' / '27.5X11X28 INCH' into (L, W, H) in cm."""
         if not dimension_text:
             return (0.0, 0.0, 0.0)
+        text = str(dimension_text)
         match = re.search(
             r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)",
-            str(dimension_text),
+            text,
         )
         if not match:
             return (0.0, 0.0, 0.0)
-        return (flt(match.group(1)), flt(match.group(2)), flt(match.group(3)))
+        length, width, height = flt(match.group(1)), flt(match.group(2)), flt(match.group(3))
+        is_cm = bool(re.search(r"\bcm\b|\bcentimet", text, re.I))
+        is_inch = bool(re.search(r"\binch(?:es)?\b|\bin\b|\"", text, re.I))
+        if is_inch and not is_cm:
+            length *= 2.54
+            width *= 2.54
+            height *= 2.54
+        return (length, width, height)
 
     def _get_bundle_items_for_so_item(self, so_item):
         """Return bundle item definitions as [{'item': code, 'pcs': qty}, ...]."""
@@ -231,6 +239,44 @@ class PackingReport(Document):
             return 0
 
         return max(normalized_totals) if use_highest else min(normalized_totals)
+
+    def _upstream_uses_article_as_combo(self, row):
+        """Return True when upstream reports already use row.article as combo_item."""
+        article = (row.article or "").strip()
+        if not self.order_sheet or not row.so_item or not article:
+            return False
+
+        report_tables = (
+            ("Cutting Report", "Cutting Report CT"),
+            ("Stitching Report", "Stitching Report CT"),
+            ("Quality Report", "Quality Report CT"),
+        )
+        for report_table, child_table in report_tables:
+            exists = frappe.db.sql(
+                f"""
+                SELECT child.name
+                FROM `tab{child_table}` AS child
+                INNER JOIN `tab{report_table}` AS parent ON child.parent = parent.name
+                WHERE parent.order_sheet = %s
+                    AND parent.docstatus = 1
+                    AND child.so_item = %s
+                    AND child.combo_item = %s
+                LIMIT 1
+                """,
+                (self.order_sheet, row.so_item, article),
+            )
+            if exists:
+                return True
+
+        return False
+
+    def _normalize_packing_combo_items(self):
+        """Keep Packing Report combo keys aligned with upstream report rows."""
+        for row in self.packing_report_ct or []:
+            if row.combo_item:
+                continue
+            if self._upstream_uses_article_as_combo(row):
+                row.combo_item = row.article
 
     @frappe.whitelist()
     def get_data1(self):
@@ -507,7 +553,7 @@ class PackingReport(Document):
                             "qty": planned_qty,  # For finished item, qty = planned_qty (not multiplied)
                             "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
                             "so_item": so_item,  # Finished item
-                            "combo_item": None,  # No combo_item for finished item in packing
+                            "combo_item": r.get("combo_item") or r.get("stitching_article_no"),
                             "bundle_items": bundle_items_text,  # Bundle/combo items breakdown (HTML formatted)
                         })
                         
@@ -560,6 +606,7 @@ class PackingReport(Document):
             print(f"{'='*60}\n")
 
     def validate(self):
+        self._normalize_packing_combo_items()
         self.set_cost_center_from_sales_order()
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
@@ -578,6 +625,7 @@ class PackingReport(Document):
         self.total()
     
     def before_save(self):
+        self._normalize_packing_combo_items()
         self.set_cost_center_from_sales_order()
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()

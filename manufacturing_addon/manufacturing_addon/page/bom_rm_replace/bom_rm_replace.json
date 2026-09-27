@@ -1,32 +1,32 @@
 {
  "content": null,
- "creation": "2026-08-31 01:58:39.679374",
+ "creation": "2026-08-28 10:35:00.000000",
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-08-31 01:58:40.430976",
+ "modified": "2026-08-28 10:35:00.000000",
  "modified_by": "Administrator",
  "module": "Manufacturing Addon",
- "name": "container-loading",
+ "name": "bom-rm-replace",
  "owner": "Administrator",
- "page_name": "container-loading",
+ "page_name": "bom-rm-replace",
  "roles": [
   {
    "role": "System Manager"
   },
   {
-   "role": "Order Sheet Create"
+   "role": "Manufacturing Manager"
+  },
+  {
+   "role": "Manufacturing User"
   },
   {
    "role": "Manufacturing User SAH"
-  },
-  {
-   "role": "All"
   }
  ],
  "script": null,
  "standard": "Yes",
  "style": null,
  "system_page": 0,
- "title": "Container Loading"
+ "title": "Replace BOM Material"
 }

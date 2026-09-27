@@ -592,15 +592,27 @@ function update_total_cartoons_for_row(cdt, cdn, { force_weight = false } = {}) 
 	}
 }
 
+function carton_dimension_is_inches(dimensionText) {
+	const text = String(dimensionText || "");
+	if (/\bcm\b|\bcentimet/i.test(text)) return false;
+	return /\binch(?:es)?\b|\bin\b|"/i.test(text);
+}
+
 function parse_carton_dimensions(dimensionText) {
 	if (!dimensionText) return null;
-	const match = String(dimensionText).match(/(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/);
+	const text = String(dimensionText);
+	const match = text.match(/(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/);
 	if (!match) return null;
-	return {
-		length: toFloat(match[1]),
-		width: toFloat(match[2]),
-		height: toFloat(match[3])
-	};
+	let length = toFloat(match[1]);
+	let width = toFloat(match[2]);
+	let height = toFloat(match[3]);
+	// Carton dims marked INCH/IN/" must be converted to cm before CBM (cm³ / 1e6)
+	if (carton_dimension_is_inches(text)) {
+		length *= 2.54;
+		width *= 2.54;
+		height *= 2.54;
+	}
+	return { length, width, height };
 }
 
 frappe.ui.form.on("Order Sheet CT", {

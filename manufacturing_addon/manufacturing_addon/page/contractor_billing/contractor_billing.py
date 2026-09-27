@@ -306,10 +306,12 @@ def _fetch_billing_lines(filters, ct_rows=None):
 
 		for style_row in style_rows:
 			is_sub = style_row.name in subassembly_names or bool(style_row.get("is_subassembly"))
+			style_row, rate, scope = _with_effective_rate(
+				style_row, ct_row.report_date, so_item, operation, ct_row.order_sheet
+			)
 			style_qty = resolve_subassembly_unit_qty(so_item, style_row) if is_sub else (
 				flt(style_row.get("qty") or 1) or 1
 			)
-			rate = flt(style_row.get("rate"))
 			op = _billing_operation(operation, style_row, subassembly_names)
 
 			splits = resolve_style_splits(style_row, sc_list, work_qty, default_contractor)
@@ -317,15 +319,20 @@ def _fetch_billing_lines(filters, ct_rows=None):
 				continue
 
 			for contractor, split_work_qty, sc in splits:
-				if is_sub:
+				frozen_rate = flt((sc or {}).get("rate"))
+				if scope == "order_sheet":
+					use_rate = rate
+				else:
+					use_rate = frozen_rate or rate
+				if is_sub or scope == "order_sheet" or frozen_rate:
 					billable_qty = flt(split_work_qty) * style_qty
-					amount = billable_qty * (flt((sc or {}).get("rate")) or rate)
+					amount = billable_qty * use_rate
 				else:
 					billable_qty, amount = billable_amount_for_split(
 						so_item, style_row, split_work_qty, sc
 					)
 
-				if amount <= 0 and not rate and not flt(style_row.get("amount")):
+				if amount <= 0 and not use_rate and not flt(style_row.get("amount")):
 					continue
 
 				lines.append(
@@ -343,7 +350,7 @@ def _fetch_billing_lines(filters, ct_rows=None):
 						"item_style_row": style_row.name,
 						"work_qty": split_work_qty,
 						"style_qty": style_qty,
-						"rate": flt((sc or {}).get("rate")) or rate,
+						"rate": use_rate,
 						"qty": billable_qty,
 						"amount": amount,
 						"is_subassembly": is_sub,
@@ -511,6 +518,36 @@ def _apply_payment_split(rows, payment_map):
 			row["status"] = "Due"
 
 	return rows
+
+
+def _with_effective_rate(style_row, report_date, so_item, operation, order_sheet=None):
+	"""Prefer Style Rate Trail. Order Sheet rows beat rates already saved on the report."""
+	rate = flt(style_row.get("rate"))
+	style_name = style_row.get("style")
+	if not style_name:
+		return style_row, rate, None
+	try:
+		from contractor_management.contractor_management.doctype.style.style import (
+			get_effective_style_rate,
+		)
+	except ImportError:
+		return style_row, rate, None
+
+	effective, scope = get_effective_style_rate(
+		style_name,
+		report_date,
+		item=so_item,
+		operation=operation,
+		order_sheet=order_sheet,
+		return_scope=True,
+	)
+	if effective is None:
+		return style_row, rate, None
+
+	row = frappe._dict(style_row)
+	row.rate = flt(effective)
+	row.amount = 0
+	return row, flt(effective), scope
 
 
 def _filter_lines_by_process(lines, process_filter=None):

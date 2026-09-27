@@ -195,7 +195,14 @@ class RawMaterialIssuance(Document):
 			d.available_in_company = sum(_bin_qty(d.item_code, wh) for wh in wh_list)
 
 	def on_submit(self):
-		"""On submit: create Stock Entry and update planning"""
+		"""On submit: release matching PP reservations, create Stock Entry, update planning."""
+		from manufacturing_addon.manufacturing_addon.utils.rmi_stock_reservation import (
+			apply_pp_reservations_for_rmi,
+		)
+
+		# Must run before Stock Entry so SLE sees qty as no longer reserved-for-others
+		apply_pp_reservations_for_rmi(self)
+
 		se = make_stock_entry_from_issuance(self)
 		self.db_set("status", "Submitted")
 		
@@ -242,6 +249,56 @@ class RawMaterialIssuance(Document):
 				plan.save(ignore_permissions=True)
 		
 		frappe.msgprint(f"Stock Entry {se.name} created.", alert=True)
+
+	def on_cancel(self):
+		"""Cancel linked Stock Entry and restore Production Plan reservations."""
+		from manufacturing_addon.manufacturing_addon.utils.rmi_stock_reservation import (
+			reverse_pp_reservations_for_rmi,
+		)
+
+		if self.stock_entry and frappe.db.exists("Stock Entry", self.stock_entry):
+			se = frappe.get_doc("Stock Entry", self.stock_entry)
+			if se.docstatus == 1:
+				se.cancel()
+			elif se.docstatus == 0:
+				se.delete()
+
+		reverse_pp_reservations_for_rmi(self)
+		self.db_set("status", "Cancelled")
+		self.db_set("stock_entry", "")
+
+		if self.planning:
+			plan = frappe.get_doc("Raw Material Transfer Planning", self.planning)
+			plan._update_issued_qty_from_stock_entries()
+			plan._refresh_availability_rows()
+			plan.set_status_and_totals()
+			for rm_row in plan.rmtp_raw_material:
+				frappe.db.set_value(
+					"RMTP Raw Material",
+					rm_row.name,
+					{
+						"issued_qty": rm_row.issued_qty,
+						"pending_qty": rm_row.pending_qty,
+						"required_percentage": rm_row.required_percentage,
+						"transfer_percentage": rm_row.transfer_percentage,
+						"available_in_from_wh": rm_row.available_in_from_wh,
+						"available_in_company": rm_row.available_in_company,
+					},
+					update_modified=False,
+				)
+			frappe.db.set_value(
+				"Raw Material Transfer Planning",
+				self.planning,
+				{
+					"status": plan.status,
+					"total_planned_qty": plan.total_planned_qty,
+					"total_issued_qty": plan.total_issued_qty,
+					"total_pending_qty": plan.total_pending_qty,
+					"total_required_percentage": plan.total_required_percentage,
+					"total_transfer_percentage": plan.total_transfer_percentage,
+				},
+				update_modified=False,
+			)
 
 
 def _populate_items_from_sales_order(doc):

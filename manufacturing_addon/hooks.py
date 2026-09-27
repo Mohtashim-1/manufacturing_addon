@@ -63,6 +63,7 @@ doctype_js = {
     ],
     "Subcontracting Order": "public/js/subcontracting_order.js",
     "Subcontracting Receipt": "public/js/subcontracting_receipt.js",
+    "Stock Reservation Entry": "public/js/stock_reservation_entry.js",
     }
 app_include_css = [
 	"/assets/manufacturing_addon/css/subcontracting_receipt.css",

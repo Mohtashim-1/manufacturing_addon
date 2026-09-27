@@ -20,6 +20,7 @@
   "items",
   "more_info_section",
   "stock_entry",
+  "sre_allocations",
   "remarks",
   "amended_from"
  ],
@@ -114,6 +115,13 @@
    "fieldtype": "Link",
    "label": "Stock Entry",
    "options": "Stock Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sre_allocations",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "SRE Allocations",
    "read_only": 1
   },
   {

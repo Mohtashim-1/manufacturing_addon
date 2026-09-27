@@ -59,15 +59,24 @@ class ShipmentLoading(Document):
 
 
 def parse_carton_dimension(dimension_text):
+	"""Parse LxWxH; return values in cm (convert inches → cm when unit is inch)."""
 	if not dimension_text:
 		return (0.0, 0.0, 0.0)
+	text = str(dimension_text)
 	match = re.search(
 		r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)",
-		str(dimension_text),
+		text,
 	)
 	if not match:
 		return (0.0, 0.0, 0.0)
-	return (flt(match.group(1)), flt(match.group(2)), flt(match.group(3)))
+	length, width, height = flt(match.group(1)), flt(match.group(2)), flt(match.group(3))
+	is_cm = bool(re.search(r"\bcm\b|\bcentimet", text, re.I))
+	is_inch = bool(re.search(r"\binch(?:es)?\b|\bin\b|\"", text, re.I))
+	if is_inch and not is_cm:
+		length *= 2.54
+		width *= 2.54
+		height *= 2.54
+	return (length, width, height)
 
 
 def _carton_dimension_map(order_sheet):

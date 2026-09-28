@@ -69,11 +69,14 @@ def _normalize(value):
 	return cstr(value or "").strip()
 
 
-def _style_row_matches_report_line(style_row, so_item, combo_item, article):
+def _style_row_matches_report_line(style_row, so_item, combo_item, article, operation=None):
 	"""Match Item style row to a report CT line.
 
 	Unscoped styles (no stitching_component / combo_item) must not fan out onto
 	every duvet/pillow combo line — that duplicated SET BOM zip qty on each row.
+
+	Packing is one finished so_item per CT row (no set fan-out), so unscoped
+	Packing styles on the Item still attach when combo_item is the article label.
 	"""
 	combo_code = _normalize(combo_item)
 	article_text = _normalize(article)
@@ -98,6 +101,8 @@ def _style_row_matches_report_line(style_row, so_item, combo_item, article):
 	# Unscoped zip/button still attach on Sub Assembly / Checking (Cutting/Stitching
 	# never receive those styles from _iter_item_style_rows anymore).
 	if combo_code and not style_article and not component:
+		if operation == "Packing":
+			return True
 		return _is_subassembly_style(style_row)
 
 	if not style_article and not component:
@@ -196,7 +201,9 @@ def get_item_styles(item_code, operation="Stitching", combo_item=None, article=N
 	for row in _iter_item_style_rows(item, operation):
 		if mandatory_only and not row.get("is_mandatory"):
 			continue
-		if not _style_row_matches_report_line(row, item_code, combo_item, article):
+		if not _style_row_matches_report_line(
+			row, item_code, combo_item, article, operation=operation
+		):
 			continue
 		out.append(row)
 	return out

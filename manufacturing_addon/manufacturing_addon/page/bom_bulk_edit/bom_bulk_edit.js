@@ -23,6 +23,7 @@ frappe.pages["bom-bulk-edit"].on_page_load = function (wrapper) {
 		rm_columns: [],
 		cells: {}, // "item::rm" -> {qty, uom}
 		dirty: false,
+		show_rm_columns: false, // keep list clean; toggle to inspect RM matrix
 		selected: { row: null, col: null },
 		fill: null, // { startRow, col, value } while dragging
 	};
@@ -58,33 +59,56 @@ function render_shell(page, state) {
 					font-size:12px; font-weight:700; color:#334155; display:block; margin-bottom:4px;
 				}
 				.bbe-portal .bbe-action-panel {
-					display:grid;
-					grid-template-columns:minmax(340px,1.4fr) minmax(220px,.9fr) minmax(120px,.35fr) minmax(190px,.45fr);
-					gap:10px; align-items:end; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px;
+					display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;
+					background:#ffffff; border:1px solid #cbd5e1; border-radius:8px;
 					padding:12px; margin-bottom:10px;
 				}
+				.bbe-portal .bbe-action-panel > div {
+					display:flex; flex-direction:column; justify-content:flex-end; min-width:0;
+				}
+				.bbe-portal .bbe-action-panel .bbe-mode-box { flex:0 0 auto; min-width:240px; }
+				.bbe-portal .bbe-action-panel .bbe-item-box,
+				.bbe-portal .bbe-action-panel .bbe-new-item-box {
+					flex:1 1 260px; max-width:380px;
+				}
+				.bbe-portal .bbe-action-panel .bbe-qty-box { flex:0 0 96px; width:96px; }
+				.bbe-portal .bbe-action-panel .bbe-apply-box { flex:0 0 168px; width:168px; }
 				.bbe-portal .bbe-action-panel label {
-					font-size:11px; font-weight:700; color:#475569; display:block; margin-bottom:4px;
+					font-size:11px; font-weight:700; color:#475569; display:block; margin:0 0 4px;
+					line-height:1.2; min-height:14px;
 				}
 				.bbe-portal .bbe-action-panel .mode-option {
-					display:inline-flex; align-items:center; gap:5px; margin:0 12px 0 0; font-weight:600; color:#334155;
+					display:inline-flex; align-items:center; gap:5px; margin:0 12px 0 0;
+					font-weight:600; color:#334155; font-size:12px;
 				}
 				.bbe-portal .bbe-action-panel .mode-option input { margin:0; }
+				.bbe-portal .bbe-action-panel .frappe-control { margin-bottom:0 !important; width:100%; }
+				.bbe-portal .bbe-action-panel .frappe-control .clearfix,
+				.bbe-portal .bbe-action-panel .frappe-control .help-box,
+				.bbe-portal .bbe-action-panel .frappe-control .control-label { display:none !important; }
 				.bbe-portal .bbe-action-panel .control-input-wrapper,
 				.bbe-portal .bbe-action-panel .link-field,
 				.bbe-portal .bbe-action-panel .awesomplete,
-				.bbe-portal .bbe-action-panel .form-control {
-					width:100%;
+				.bbe-portal .bbe-action-panel .form-control,
+				.bbe-portal .bbe-action-panel .form-group {
+					width:100% !important; max-width:100%; margin:0 !important;
 				}
 				.bbe-portal .bbe-action-panel input.form-control,
 				.bbe-portal .bbe-action-panel .awesomplete input {
-					height:30px; min-height:30px; line-height:30px; padding-top:4px; padding-bottom:4px;
+					height:32px !important; min-height:32px; line-height:32px;
+					padding-top:4px; padding-bottom:4px; box-sizing:border-box;
 				}
 				.bbe-portal .bbe-action-panel .btn {
-					height:30px; width:100%; margin:0;
+					height:32px; width:100%; margin:0; white-space:nowrap;
 				}
 				@media (max-width: 900px) {
-					.bbe-portal .bbe-action-panel { grid-template-columns:1fr; }
+					.bbe-portal .bbe-action-panel .bbe-item-box,
+					.bbe-portal .bbe-action-panel .bbe-new-item-box,
+					.bbe-portal .bbe-action-panel .bbe-apply-box,
+					.bbe-portal .bbe-action-panel .bbe-qty-box,
+					.bbe-portal .bbe-action-panel .bbe-mode-box {
+						flex:1 1 100%; max-width:100%; width:100%;
+					}
 				}
 				.bbe-portal .bbe-search-bar {
 					display:flex; flex-wrap:wrap; gap:10px; align-items:end;
@@ -167,7 +191,7 @@ function render_shell(page, state) {
 			<div class="bbe-hero">
 				<h3><i class="fa fa-list-check"></i> ${__("Sales Order BOM Bulk Edit")}</h3>
 				<p>${__(
-					"Select a Sales Order, tick the items to change, choose Add / Remove / Replace, then save new BOM versions."
+					"Select a Sales Order, tick items, Add / Remove / Replace materials, then Save — always creates new BOM versions (never overwrites the old BOM)."
 				)}</p>
 			</div>
 			<div class="bbe-filters">
@@ -650,22 +674,36 @@ function render_matrix(state) {
 		.map((row, idx) => ({ row, idx }))
 		.filter(({ row }) => row_matches_filter(state, row, q, item_f));
 
-	// Column strategy (keeps DOM fast on large SO × many RMs):
-	// - filter matches RM → show those RM columns
-	// - else if filter/item search → only RMs used by visible rows
-	// - else cap at 35 columns (type filter to find more)
-	const RM_CAP = 35;
+	// Column strategy:
+	// - default: hide RM columns (clean item list; use Mode panel to edit)
+	// - when "Show RM columns" is on:
+	//   - filter matches RM → show those RM columns
+	//   - else if filter/item search → only RMs used by visible rows
+	//   - else cap at 12 columns (type filter to find more)
+	const RM_CAP = 12;
 	let col_capped = false;
-	let visible_cols = cols.map((c, ci) => ({ c, ci }));
-	if (q) {
-		const rm_hits = visible_cols.filter(
-			({ c }) =>
-				cstr(c.item_code).toLowerCase().includes(q) ||
-				cstr(c.item_name).toLowerCase().includes(q)
-		);
-		if (rm_hits.length) {
-			visible_cols = rm_hits;
-		} else {
+	let visible_cols = [];
+	if (state.show_rm_columns) {
+		visible_cols = cols.map((c, ci) => ({ c, ci }));
+		if (q) {
+			const rm_hits = visible_cols.filter(
+				({ c }) =>
+					cstr(c.item_code).toLowerCase().includes(q) ||
+					cstr(c.item_name).toLowerCase().includes(q)
+			);
+			if (rm_hits.length) {
+				visible_cols = rm_hits;
+			} else {
+				const used = new Set();
+				visible.forEach(({ row }) => {
+					cols.forEach((c, ci) => {
+						const cell = state.cells[cell_key(row.item_code, c.item_code)];
+						if (cell && cell.qty !== "" && flt(cell.qty) !== 0) used.add(ci);
+					});
+				});
+				visible_cols = visible_cols.filter(({ ci }) => used.has(ci));
+			}
+		} else if (item_f) {
 			const used = new Set();
 			visible.forEach(({ row }) => {
 				cols.forEach((c, ci) => {
@@ -674,19 +712,10 @@ function render_matrix(state) {
 				});
 			});
 			visible_cols = visible_cols.filter(({ ci }) => used.has(ci));
+		} else if (visible_cols.length > RM_CAP) {
+			visible_cols = visible_cols.slice(0, RM_CAP);
+			col_capped = true;
 		}
-	} else if (item_f) {
-		const used = new Set();
-		visible.forEach(({ row }) => {
-			cols.forEach((c, ci) => {
-				const cell = state.cells[cell_key(row.item_code, c.item_code)];
-				if (cell && cell.qty !== "" && flt(cell.qty) !== 0) used.add(ci);
-			});
-		});
-		visible_cols = visible_cols.filter(({ ci }) => used.has(ci));
-	} else if (visible_cols.length > RM_CAP) {
-		visible_cols = visible_cols.slice(0, RM_CAP);
-		col_capped = true;
 	}
 
 	const dirty_n = rows.filter((r) => cint(r.dirty)).length;
@@ -707,9 +736,7 @@ function render_matrix(state) {
 			<div class="bbe-card"><div class="lbl">${__("Sales Order Items")}</div><div class="val">${
 				visible.length
 			}<span style="font-size:12px;color:#94a3b8;font-weight:500;"> / ${rows.length}</span></div></div>
-			<div class="bbe-card"><div class="lbl">${__("Raw Materials")}</div><div class="val">${
-				visible_cols.length
-			}<span style="font-size:12px;color:#94a3b8;font-weight:500;"> / ${cols.length}</span></div></div>
+			<div class="bbe-card"><div class="lbl">${__("Raw Materials")}</div><div class="val">${cols.length}</div></div>
 			<div class="bbe-card"><div class="lbl">${__("Changed")}</div><div class="val" style="color:#d97706;">${dirty_n}</div></div>
 		</div>
 	`;
@@ -746,6 +773,7 @@ function render_matrix(state) {
 			const short_item = frappe.utils.escape_html(
 				cstr(row.item_code).length > 42 ? cstr(row.item_code).slice(0, 40) + "…" : row.item_code
 			);
+			const rm_count = count_row_materials(state, row.item_code);
 			return `
 			<tr data-row="${ri}" class="${cint(row.dirty) ? "dirty" : ""} ${
 				item_f && cstr(row.item_code).toLowerCase().includes(item_f) ? "selected-row" : ""
@@ -789,39 +817,54 @@ function render_matrix(state) {
 					}
 				</td>
 				<td style="text-align:right;">${format_number(row.so_qty, null, 0)}</td>
+				<td style="text-align:center;font-weight:600;color:#334155;">${rm_count}</td>
 				${cells}
 			</tr>`;
 		})
 		.join("");
 
-	$("#bbe-body").html(`
-		${
-			col_capped
-				? `<div class="bbe-banner" style="background:#fff7ed;border-color:#fdba74;color:#9a3412;">
+	const banner_html = !state.show_rm_columns
+		? `<div class="bbe-banner">
+				<i class="fa fa-check-circle"></i> ${__(
+					"Clean list view — raw material columns are hidden. Tick items and use Add / Remove / Replace. Save always creates new BOM versions."
+				)}
+			</div>`
+		: col_capped
+		? `<div class="bbe-banner" style="background:#fff7ed;border-color:#fdba74;color:#9a3412;">
 				<i class="fa fa-filter"></i> ${__(
-					"Showing first {0} of {1} raw material columns for speed. Type anything in Filter (e.g. fabric name) to show matching columns.",
+					"Showing first {0} of {1} raw material columns. Type a material name in Filter to narrow columns.",
 					[RM_CAP, cols.length]
 				)}
 			</div>`
-				: `<div class="bbe-banner"><i class="fa fa-info-circle"></i> ${frappe.utils.escape_html(
-						meta.note || ""
-				  )}</div>`
-		}
+		: `<div class="bbe-banner"><i class="fa fa-info-circle"></i> ${frappe.utils.escape_html(
+				meta.note || __("RM columns visible. Save creates new BOM versions (does not overwrite old BOMs).")
+		  )}</div>`;
+
+	$("#bbe-body").html(`
+		${banner_html}
 		${cards}
 		${render_bulk_action_panel(state)}
 		<div class="bbe-toolbar">
 			<button type="button" class="btn btn-default btn-xs" id="bbe-select-all">${__("Select All")}</button>
 			<button type="button" class="btn btn-default btn-xs" id="bbe-select-none">${__("Clear Selection")}</button>
+			<button type="button" class="btn btn-default btn-xs" id="bbe-toggle-rm-cols">
+				<i class="fa fa-${state.show_rm_columns ? "eye-slash" : "eye"}"></i>
+				${state.show_rm_columns ? __("Hide RM columns") : __("Show RM columns")}
+			</button>
 			<button type="button" class="btn btn-warning btn-xs" id="bbe-replace">${__("Replace…")}</button>
 			<button type="button" class="btn btn-danger btn-xs" id="bbe-remove-rm">${__("Remove…")}</button>
 			<button type="button" class="btn btn-success btn-xs" id="bbe-add-rm">${__("Add…")}</button>
 			<span class="text-muted" style="font-size:11px;margin-left:8px;">
-				${__("Tick item rows, use Mode panel, then Save New BOM Versions")}
+				${__("Tick rows → Mode panel → Save New BOM Versions")}
 			</span>
 		</div>
 		<div class="text-muted small" style="margin:0 0 8px;">
 			${__("Showing")} ${visible.length} / ${rows.length} ${__("item rows")}
-			· ${visible_cols.length} / ${cols.length} ${__("RM columns")}
+			${
+				state.show_rm_columns
+					? ` · ${visible_cols.length} / ${cols.length} ${__("RM columns")}`
+					: ` · ${__("RM columns hidden")} (${cols.length} ${__("in BOM data")})`
+			}
 			${q ? ` · ${__("filter")}: <b>${frappe.utils.escape_html(state.search)}</b>` : ""}
 		</div>
 		<div class="bbe-table-wrap">
@@ -833,12 +876,13 @@ function render_matrix(state) {
 						<th class="sticky-l">${__("Variant Item")}</th>
 						<th>${__("Current BOM")}</th>
 						<th>${__("SO Qty")}</th>
+						<th title="${__("Number of raw materials with qty on this BOM")}">${__("RM count")}</th>
 						${head_rm}
 					</tr>
 				</thead>
 				<tbody>${
 					body ||
-					`<tr><td colspan="${5 + visible_cols.length}" style="padding:24px;text-align:center;color:#94a3b8;">${__(
+					`<tr><td colspan="${6 + visible_cols.length}" style="padding:24px;text-align:center;color:#94a3b8;">${__(
 						"No rows match this filter. Clear filters to see all."
 					)}</td></tr>`
 				}</tbody>
@@ -847,6 +891,15 @@ function render_matrix(state) {
 	`);
 
 	bind_matrix_events(state);
+}
+
+function count_row_materials(state, item_code) {
+	let n = 0;
+	(state.rm_columns || []).forEach((c) => {
+		const cell = state.cells[cell_key(item_code, c.item_code)];
+		if (cell && cell.qty !== "" && flt(cell.qty) !== 0) n += 1;
+	});
+	return n;
 }
 
 function bind_matrix_events(state) {
@@ -858,6 +911,10 @@ function bind_matrix_events(state) {
 	});
 	$body.find("#bbe-select-none").on("click", () => {
 		state.rows.forEach((r) => (r._checked = 0));
+		render_matrix(state);
+	});
+	$body.find("#bbe-toggle-rm-cols").on("click", () => {
+		state.show_rm_columns = !state.show_rm_columns;
 		render_matrix(state);
 	});
 	init_bulk_action_panel(state);
@@ -1223,7 +1280,7 @@ function render_bulk_action_panel(state) {
 		<div class="bbe-action-panel">
 			<div class="bbe-mode-box">
 				<label>${__("Mode")}</label>
-				<div style="height:30px;display:flex;align-items:center;flex-wrap:wrap;">
+				<div style="height:32px;display:flex;align-items:center;flex-wrap:nowrap;">
 					<label class="mode-option"><input type="radio" name="bbe-mode" value="add" checked> ${__("Add")}</label>
 					<label class="mode-option"><input type="radio" name="bbe-mode" value="remove"> ${__("Remove")}</label>
 					<label class="mode-option"><input type="radio" name="bbe-mode" value="replace"> ${__("Replace")}</label>
@@ -1292,10 +1349,6 @@ function init_bulk_action_panel(state) {
 		);
 		$body.find(".bbe-new-item-box").toggle(is_replace);
 		$body.find(".bbe-qty-box").toggle(is_add);
-		const columns = is_replace
-			? "minmax(300px,1fr) minmax(220px,.85fr) minmax(220px,.85fr) minmax(190px,.45fr)"
-			: "minmax(340px,1.4fr) minmax(220px,.9fr) minmax(120px,.35fr) minmax(190px,.45fr)";
-		$body.find(".bbe-action-panel").css("grid-template-columns", columns);
 	}
 	$body.find('input[name="bbe-mode"]').on("change", sync_mode);
 	$body.find("#bbe-apply-mode").on("click", () => apply_bulk_mode(state));
@@ -1403,7 +1456,9 @@ function save_matrix(state) {
 		return;
 	}
 	frappe.confirm(
-		__("Create new default BOM versions for {0} changed FG item(s)?", [dirty_rows.length]),
+		__("Create NEW BOM versions for {0} changed FG item(s)? (Old BOMs stay as-is — not overwritten.)", [
+			dirty_rows.length,
+		]),
 		() => _do_save(state, 0)
 	);
 }

@@ -19,6 +19,7 @@ from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import
     apply_split_qty_defaults,
 )
 from manufacturing_addon.manufacturing_addon.utils.nested_style_contractors import (
+    _as_style_row,
     load_nested_style_contractors,
     save_nested_style_contractors,
 )
@@ -115,10 +116,28 @@ class PackingReport(Document):
             article=row_data.get("article"),
             work_qty_field="packaging_qty",
         )
+        self._autofill_style_contractors(ct_row)
         return ct_row
+
+    def _autofill_style_contractors(self, ct_row):
+        """Default blank style contractors to the report supplier (main contractor)."""
+        supplier = self.get("supplier")
+        if not supplier:
+            return
+        for sc in ct_row.get("style_contractors") or []:
+            # Nested rows may be Documents or frappe._dict. Do not call sc.set —
+            # _dict.__getattr__("set") returns None and crashes save.
+            contractor = sc.get("contractor") if hasattr(sc, "get") else getattr(sc, "contractor", None)
+            if contractor:
+                continue
+            if isinstance(sc, dict):
+                sc["contractor"] = supplier
+            else:
+                sc.contractor = supplier
 
     def _apply_subassembly_style_qty(self):
         for row in self.packing_report_ct or []:
+            self._autofill_style_contractors(row)
             apply_split_qty_defaults(row, "packaging_qty")
             apply_subassembly_contractor_qty(row, "packaging_qty")
             apply_all_style_contractor_amounts(row, "packaging_qty")
@@ -137,6 +156,7 @@ class PackingReport(Document):
                 article=row.article,
                 work_qty_field="packaging_qty",
             )
+            self._autofill_style_contractors(row)
         return len(self.packing_report_ct or [])
 
     @staticmethod
@@ -605,8 +625,60 @@ class PackingReport(Document):
             print(f"[get_data1] packing_report_ct already has {existing_rows} rows, skipping fetch")
             print(f"{'='*60}\n")
 
+    def _ensure_style_contractors_loaded(self):
+        """Keep nested styles loaded so mandatory style validation cannot be bypassed."""
+        for row in self.packing_report_ct or []:
+            existing = row.get("style_contractors") or []
+            if existing:
+                row.set("style_contractors", [_as_style_row(sc) for sc in existing])
+                continue
+            if not row.so_item:
+                continue
+            if row.name:
+                nested = frappe.get_all(
+                    "Report Style Contractor",
+                    filters={
+                        "parent": row.name,
+                        "parenttype": "Packing Report CT",
+                        "parentfield": "style_contractors",
+                    },
+                    fields=["*"],
+                    order_by="idx asc",
+                )
+                if nested:
+                    row.set("style_contractors", [_as_style_row(sc) for sc in nested])
+                    continue
+            append_style_contractors(
+                row,
+                row.so_item,
+                operation="Packing",
+                combo_item=row.combo_item,
+                article=row.article,
+                work_qty_field="packaging_qty",
+            )
+            self._autofill_style_contractors(row)
+
+    def _validate_packing_styles_present(self):
+        """Packing qty requires at least one style row, even when Item has no mandatory styles."""
+        purchased_ready_cache = {}
+        for row in self.packing_report_ct or []:
+            if flt(row.get("packaging_qty")) <= 0:
+                continue
+            if self._is_purchased_ready(row, purchased_ready_cache):
+                continue
+            styles = [sc for sc in (row.get("style_contractors") or []) if sc.get("style")]
+            if styles:
+                continue
+            frappe.throw(
+                _(
+                    "Row {0}: add at least one Packing Style Contractor before entering Packing Qty (Item: {1}, Article: {2})."
+                ).format(row.idx, row.so_item or _("N/A"), row.article or row.combo_item or _("N/A")),
+                title=_("Packing Report — Style Contractors"),
+            )
+
     def validate(self):
         self._normalize_packing_combo_items()
+        self._ensure_style_contractors_loaded()
         self.set_cost_center_from_sales_order()
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
@@ -614,6 +686,7 @@ class PackingReport(Document):
         self.calculate_finished_packaging_qty()
         self._apply_subassembly_style_qty()
         self.packing_condition()
+        self._validate_packing_styles_present()
         validate_mandatory_contractors(
             self.packing_report_ct,
             qty_field="packaging_qty",
@@ -626,6 +699,7 @@ class PackingReport(Document):
     
     def before_save(self):
         self._normalize_packing_combo_items()
+        self._ensure_style_contractors_loaded()
         self.set_cost_center_from_sales_order()
         self.calculate_finished_cutting_qty()
         self.calculate_finished_stitching_qty()
@@ -807,8 +881,10 @@ class PackingReport(Document):
                             FROM `tabPacking Report CT` AS prct 
                             LEFT JOIN `tabPacking Report` AS pr 
                             ON prct.parent = pr.name
-                            WHERE pr.order_sheet = %s AND prct.so_item = %s AND prct.combo_item = %s AND pr.docstatus = 1 {current_doc_filter}
-                            GROUP BY prct.so_item, prct.combo_item
+                            WHERE pr.order_sheet = %s AND prct.so_item = %s
+                                AND (prct.combo_item = %s OR prct.combo_item IS NULL OR prct.combo_item = '')
+                                AND pr.docstatus = 1 {current_doc_filter}
+                            GROUP BY prct.so_item
                         """.format(current_doc_filter=current_doc_filter)
                         params = (self.order_sheet, row.so_item, row.combo_item, self.name)
                     else:
@@ -829,8 +905,10 @@ class PackingReport(Document):
                             FROM `tabPacking Report CT` AS prct 
                             LEFT JOIN `tabPacking Report` AS pr 
                             ON prct.parent = pr.name
-                            WHERE pr.order_sheet = %s AND prct.so_item = %s AND prct.combo_item = %s AND pr.docstatus = 1
-                            GROUP BY prct.so_item, prct.combo_item
+                            WHERE pr.order_sheet = %s AND prct.so_item = %s
+                                AND (prct.combo_item = %s OR prct.combo_item IS NULL OR prct.combo_item = '')
+                                AND pr.docstatus = 1
+                            GROUP BY prct.so_item
                         """
                         params = (self.order_sheet, row.so_item, row.combo_item)
                     else:
@@ -854,6 +932,20 @@ class PackingReport(Document):
             frappe.log_error(frappe.get_traceback(), "Finished Packaging Quantity Calculation Failed")
             frappe.throw(f"Error in calculating finished packaging quantity: {str(e)}")
 
+    @staticmethod
+    def _is_purchased_ready(row, cache):
+        """True when the SO item or its combo item is flagged as bought finished (no in-house production)."""
+        for item_code in (row.so_item, row.combo_item):
+            if not item_code:
+                continue
+            if item_code not in cache:
+                cache[item_code] = bool(
+                    frappe.db.get_value("Item", item_code, "custom_purchased_ready")
+                )
+            if cache[item_code]:
+                return True
+        return False
+
     def packing_condition(self):
         """Total packing cannot exceed Cutting/Stitching/Checking flow qty."""
         if not self.packing_report_ct:
@@ -864,9 +956,14 @@ class PackingReport(Document):
         self.calculate_finished_quality_qty()
         self.calculate_finished_packaging_qty()
 
+        purchased_ready_cache = {}
         for i in self.packing_report_ct:
             current_packaging_qty = flt(i.packaging_qty)
             if current_packaging_qty <= 0:
+                continue
+
+            # Purchased-ready items are only packed here, so there is no upstream qty to cap against.
+            if self._is_purchased_ready(i, purchased_ready_cache):
                 continue
 
             finished_packaging_qty = flt(i.finished_packaging_qty)

@@ -358,12 +358,15 @@ frappe.provide("manufacturing_addon.contractor_performance");
 
 		let filterHtml = "";
 		if (opts.show_filters) {
+			const showDates = !opts.all_dates;
 			filterHtml = `
 				<div class="cp-filters card border p-3 mb-3 bg-white rounded">
 					<div class="cp-filter-row">
-						<div class="cp-f-from"></div>
-						<div class="cp-f-to"></div>
+						${showDates ? `<div class="cp-f-from"></div><div class="cp-f-to"></div>` : ""}
 						${opts.order_sheet ? "" : `<div class="cp-f-customer"></div>`}
+						<div class="cp-f-so-item"></div>
+						<div class="cp-f-combo-item"></div>
+						<div class="cp-f-supplier"></div>
 						<div class="ml-auto"><button type="button" class="btn btn-dark btn-sm cp-refresh">${__("Refresh")}</button></div>
 					</div>
 				</div>`;
@@ -401,16 +404,20 @@ frappe.provide("manufacturing_addon.contractor_performance");
 
 		const ctrls = {};
 		if (opts.show_filters) {
-			ctrls.from_date = frappe.ui.form.make_control({
-				parent: $root.find(".cp-f-from"),
-				df: { fieldtype: "Date", label: __("From Date"), default: opts.from_date },
-				render_input: true,
-			});
-			ctrls.to_date = frappe.ui.form.make_control({
-				parent: $root.find(".cp-f-to"),
-				df: { fieldtype: "Date", label: __("To Date"), default: opts.to_date },
-				render_input: true,
-			});
+			if (!opts.all_dates) {
+				ctrls.from_date = frappe.ui.form.make_control({
+					parent: $root.find(".cp-f-from"),
+					df: { fieldtype: "Date", label: __("From Date"), default: opts.from_date },
+					render_input: true,
+				});
+				ctrls.to_date = frappe.ui.form.make_control({
+					parent: $root.find(".cp-f-to"),
+					df: { fieldtype: "Date", label: __("To Date"), default: opts.to_date },
+					render_input: true,
+				});
+				ctrls.from_date.set_value(opts.from_date);
+				ctrls.to_date.set_value(opts.to_date);
+			}
 			if (!opts.order_sheet) {
 				ctrls.customer = frappe.ui.form.make_control({
 					parent: $root.find(".cp-f-customer"),
@@ -419,8 +426,39 @@ frappe.provide("manufacturing_addon.contractor_performance");
 				});
 				if (opts.customer) ctrls.customer.set_value(opts.customer);
 			}
-			ctrls.from_date.set_value(opts.from_date);
-			ctrls.to_date.set_value(opts.to_date);
+			ctrls.so_item = frappe.ui.form.make_control({
+				parent: $root.find(".cp-f-so-item"),
+				df: {
+					fieldtype: "Link",
+					options: "Item",
+					label: __("SO Item"),
+					default: opts.so_item || "",
+				},
+				render_input: true,
+			});
+			ctrls.combo_item = frappe.ui.form.make_control({
+				parent: $root.find(".cp-f-combo-item"),
+				df: {
+					fieldtype: "Link",
+					options: "Item",
+					label: __("Combo Item"),
+					default: opts.combo_item || "",
+				},
+				render_input: true,
+			});
+			ctrls.supplier = frappe.ui.form.make_control({
+				parent: $root.find(".cp-f-supplier"),
+				df: {
+					fieldtype: "Link",
+					options: "Manufacturing Contractor",
+					label: __("Contractor"),
+					default: opts.supplier || "",
+				},
+				render_input: true,
+			});
+			if (opts.so_item) ctrls.so_item.set_value(opts.so_item);
+			if (opts.combo_item) ctrls.combo_item.set_value(opts.combo_item);
+			if (opts.supplier) ctrls.supplier.set_value(opts.supplier);
 			Object.values(ctrls).forEach((c) => c.refresh && c.refresh());
 		}
 
@@ -446,9 +484,13 @@ frappe.provide("manufacturing_addon.contractor_performance");
 				to_date: ctrls.to_date ? ctrls.to_date.get_value() : opts.to_date,
 				customer: ctrls.customer ? ctrls.customer.get_value() || undefined : opts.customer || undefined,
 				order_sheet: opts.order_sheet || undefined,
-				so_item: opts.so_item || undefined,
-				combo_item: opts.combo_item || undefined,
-				supplier: opts.supplier || undefined,
+				so_item: ctrls.so_item ? ctrls.so_item.get_value() || undefined : opts.so_item || undefined,
+				combo_item: ctrls.combo_item
+					? ctrls.combo_item.get_value() || undefined
+					: opts.combo_item || undefined,
+				supplier: ctrls.supplier
+					? ctrls.supplier.get_value() || undefined
+					: opts.supplier || undefined,
 				all_dates: opts.all_dates ? 1 : 0,
 			};
 			console.log("[CP embed] load", args);

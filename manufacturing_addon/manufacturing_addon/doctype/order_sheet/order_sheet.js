@@ -1318,13 +1318,15 @@ const orderSheetContractorDashboard = {
 			order_sheet: frm.doc.name,
 			customer: frm.doc.customer,
 			title: __("Contractor performance"),
-			show_filters: false,
+			show_filters: true,
 			all_dates: true,
 		});
 	},
 };
 
 const orderSheetContractorSettlementBoard = {
+	_state: null,
+
 	bind_tab_refresh(frm) {
 		if (frm._cs_settlement_tab_bound) return;
 		frm._cs_settlement_tab_bound = true;
@@ -1359,7 +1361,7 @@ const orderSheetContractorSettlementBoard = {
 				"contractor_management.contractor_management.utils.order_sheet_settlement.get_order_sheet_settlement_board",
 			args: { order_sheet: frm.doc.name },
 			callback: (r) => {
-				orderSheetContractorSettlementBoard.paint($wrapper, r.message || {});
+				orderSheetContractorSettlementBoard.mount($wrapper, r.message || {}, frm);
 			},
 			error: () => {
 				$wrapper.html(
@@ -1369,184 +1371,375 @@ const orderSheetContractorSettlementBoard = {
 		});
 	},
 
-	paint($wrapper, data) {
-		const totals = data.totals || {};
-		const blocks = data.by_contractor || [];
-		const settlements = data.settlements || [];
+	_unique(rows, key) {
+		return [...new Set((rows || []).map((r) => r[key]).filter(Boolean))].sort();
+	},
 
-		const settlementLinks = settlements
-			.map(
-				(name) =>
-					`<a href="/desk/contractor-settlement/${encodeURIComponent(
-						name
-					)}" target="_blank">${frappe.utils.escape_html(name)}</a>`
+	_selectOpts(list, selected) {
+		return [`<option value="">${__("All")}</option>`]
+			.concat(
+				(list || []).map((v) => {
+					const sel = String(v) === String(selected || "") ? " selected" : "";
+					return `<option value="${frappe.utils.escape_html(v)}"${sel}>${frappe.utils.escape_html(
+						v
+					)}</option>`;
+				})
 			)
-			.join(", ");
+			.join("");
+	},
 
-		const summaryTable = (title, rows, keyField, keyLabel) => {
-			if (!(rows || []).length) return "";
-			const body = rows
-				.map(
-					(r) => `
-				<tr>
-					<td>${frappe.utils.escape_html(r[keyField] || "—")}</td>
-					<td class="text-right">${frappe.format(r.qty || 0, { fieldtype: "Float" })}</td>
-					<td class="text-right"><b>${frappe.utils.escape_html(r.amount_fmt || "")}</b></td>
-				</tr>`
-				)
-				.join("");
-			return `
-				<div class="os-cs-mini">
-					<div class="os-cs-mini-title">${frappe.utils.escape_html(title)}</div>
-					<table class="table table-bordered table-sm os-cs-table">
-						<thead><tr>
-							<th>${frappe.utils.escape_html(keyLabel)}</th>
-							<th class="text-right">${__("Qty")}</th>
-							<th class="text-right">${__("Amount")}</th>
-						</tr></thead>
-						<tbody>${body}</tbody>
-					</table>
-				</div>`;
+	_readFilters($wrapper) {
+		return {
+			contractor: $wrapper.find(".os-cs-contractor").val() || "",
+			so_item: $wrapper.find(".os-cs-so-item").val() || "",
+			combo_item: $wrapper.find(".os-cs-combo-item").val() || "",
+			style: $wrapper.find(".os-cs-style").val() || "",
+			operation: $wrapper.find(".os-cs-operation").val() || "",
+			search: ($wrapper.find(".os-cs-search").val() || "").trim().toLowerCase(),
 		};
+	},
 
-		const treeHtml = (tree) => {
-			if (!(tree || []).length) return "";
-			return (tree || [])
-				.map((op) => {
-					const styles = (op.styles || [])
-						.map((st) => {
-							const articles = (st.articles || [])
-								.map(
-									(art) => `
-								<tr>
-									<td class="os-cs-indent-2">${frappe.utils.escape_html(art.article_key)}</td>
-									<td class="text-right">${frappe.format(art.qty || 0, {
-										fieldtype: "Float",
-									})}</td>
-									<td class="text-right">${frappe.utils.escape_html(art.amount_fmt || "")}</td>
-								</tr>`
-								)
-								.join("");
-							return `
-							<tr class="os-cs-style-row">
-								<td class="os-cs-indent-1"><b>${__("Style")}:</b> ${frappe.utils.escape_html(
-									st.style
-								)}</td>
-								<td class="text-right"><b>${frappe.format(st.qty || 0, {
-									fieldtype: "Float",
-								})}</b></td>
-								<td class="text-right"><b>${frappe.utils.escape_html(st.amount_fmt || "")}</b></td>
-							</tr>
-							${articles}`;
-						})
-						.join("");
-					return `
-					<div class="os-cs-tree-block">
-						<div class="os-cs-tree-op">
-							<span>${__("Operation")}: <b>${frappe.utils.escape_html(op.operation)}</b></span>
-							<span>${frappe.format(op.qty || 0, { fieldtype: "Float" })} | <b>${frappe.utils.escape_html(
-						op.amount_fmt || ""
-					)}</b></span>
-						</div>
-						<table class="table table-bordered table-sm os-cs-table">
-							<thead><tr>
-								<th>${__("Style / Article")}</th>
-								<th class="text-right">${__("Qty")}</th>
-								<th class="text-right">${__("Amount")}</th>
-							</tr></thead>
-							<tbody>${styles}</tbody>
-						</table>
-					</div>`;
-				})
-				.join("");
+	_filterRows(rows, f) {
+		return (rows || []).filter((r) => {
+			if (f.contractor && r.contractor !== f.contractor) return false;
+			if (f.so_item && (r.so_item || r.item) !== f.so_item) return false;
+			if (f.style && r.style !== f.style) return false;
+			if (f.operation && r.operation !== f.operation) return false;
+			if (f.combo_item) {
+				const combos = r.combo_items || [];
+				if (!combos.includes(f.combo_item)) return false;
+			}
+			if (f.search) {
+				const hay = [
+					r.contractor,
+					r.so_item || r.item,
+					r.article_key,
+					r.style,
+					r.operation,
+					r.combo_label,
+				]
+					.join(" ")
+					.toLowerCase();
+				if (!hay.includes(f.search)) return false;
+			}
+			return true;
+		});
+	},
+
+	_totals(rows) {
+		const qty = (rows || []).reduce((s, r) => s + (flt(r.qty) || 0), 0);
+		const amount = (rows || []).reduce((s, r) => s + (flt(r.amount) || 0), 0);
+		const contractors = new Set((rows || []).map((r) => r.contractor).filter(Boolean)).size;
+		return { qty, amount, contractors, lines: (rows || []).length };
+	},
+
+	_exportCsv(rows, orderSheet) {
+		const headers = [
+			"Contractor",
+			"Operation",
+			"Style",
+			"SO Item",
+			"Combo Item",
+			"Article",
+			"Size",
+			"GSM",
+			"Qty",
+			"Rate",
+			"Amount",
+			"Settlements",
+		];
+		const lines = [headers.join(",")];
+		(rows || []).forEach((r) => {
+			const vals = [
+				r.contractor,
+				r.operation,
+				r.style,
+				r.so_item || r.item,
+				r.combo_label || "",
+				r.article_key,
+				r.size,
+				r.gsm,
+				r.qty,
+				r.rate,
+				r.amount,
+				(r.settlements || []).join("; "),
+			].map((v) => {
+				const s = v == null ? "" : String(v);
+				return `"${s.replace(/"/g, '""')}"`;
+			});
+			lines.push(vals.join(","));
+		});
+		const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = `contractor-settlement-${(orderSheet || "export").replace(/\//g, "-")}.csv`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	},
+
+	mount($wrapper, data, frm) {
+		const allRows = data.rows || [];
+		const opts = data.filter_options || {};
+		const state = {
+			frm,
+			data,
+			allRows,
+			filters: {},
+			sortKey: "amount",
+			sortDir: "desc",
 		};
+		this._state = state;
 
-		let body = "";
-		if (!blocks.length) {
-			body = `<div class="alert alert-warning m-0">${frappe.utils.escape_html(
-				data.message || __("No settlement data.")
-			)}</div>`;
-		} else {
-			body = blocks
-				.map((block) => {
-					return `
-					<div class="os-cs-contractor-card">
-						<div class="os-cs-contractor-head">
-							<div class="os-cs-contractor-name">${frappe.utils.escape_html(block.contractor)}</div>
-							<div class="os-cs-contractor-total">${frappe.utils.escape_html(block.amount_fmt)}</div>
-						</div>
-						<div class="os-cs-mini-grid">
-							${summaryTable(__("Operation wise"), block.by_operation, "operation", __("Operation"))}
-							${summaryTable(__("Article wise"), block.by_article, "article_key", __("Article"))}
-							${summaryTable(__("Style wise"), block.by_style, "style", __("Style"))}
-						</div>
-						<div class="os-cs-tree-wrap">
-							<div class="os-cs-mini-title">${__("Operation → Style → Article")}</div>
-							${treeHtml(block.tree)}
-						</div>
-					</div>`;
-				})
-				.join("");
-		}
+		const comboOpts =
+			opts.combo_items && opts.combo_items.length
+				? opts.combo_items
+				: [
+						...new Set(
+							allRows.flatMap((r) => r.combo_items || []).filter(Boolean)
+						),
+				  ].sort();
 
 		$wrapper.html(`
 			<style>
-				.os-cs-board { padding: 4px 2px 16px; }
-				.os-cs-summary { display:grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:14px; }
-				.os-cs-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; }
-				.os-cs-card .label { color:#6b7280; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
-				.os-cs-card .value { font-size:18px; font-weight:700; margin-top:4px; color:#111827; }
-				.os-cs-meta { color:#6b7280; font-size:12px; margin-bottom:12px; }
-				.os-cs-contractor-card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; margin-bottom:16px; overflow:hidden; }
-				.os-cs-contractor-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px 14px; background:linear-gradient(180deg,#f8fafc,#fff); border-bottom:1px solid #eef2f7; }
-				.os-cs-contractor-name { font-weight:700; font-size:14px; color:#0f172a; }
-				.os-cs-contractor-total { font-weight:800; font-size:16px; color:#0f766e; white-space:nowrap; }
-				.os-cs-mini-grid { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; padding:12px; }
-				@media (max-width: 1100px) { .os-cs-mini-grid { grid-template-columns: 1fr; } }
-				.os-cs-mini { border:1px solid #eef2f7; border-radius:10px; overflow:hidden; background:#fff; }
-				.os-cs-mini-title { font-size:12px; font-weight:700; color:#334155; padding:8px 10px; background:#f8fafc; border-bottom:1px solid #eef2f7; }
-				.os-cs-tree-wrap { padding:0 12px 12px; }
-				.os-cs-tree-block { border:1px solid #e5e7eb; border-radius:10px; margin-top:10px; overflow:hidden; }
-				.os-cs-tree-op { display:flex; justify-content:space-between; gap:10px; padding:8px 10px; background:#ecfeff; color:#0e7490; font-size:12px; border-bottom:1px solid #a5f3fc; }
-				.os-cs-style-row td { background:#f8fafc; }
-				.os-cs-indent-1 { padding-left:12px !important; }
-				.os-cs-indent-2 { padding-left:28px !important; color:#475569; }
-				.os-cs-table { margin:0; }
-				.os-cs-table thead th { background:#f8fafc; font-size:12px; white-space:nowrap; }
-				.os-cs-table td { font-size:12px; vertical-align:middle; }
+				.os-cs-board { padding: 2px 0 16px; font-family: inherit; color: #1e293b; }
+				.os-cs-toolbar {
+					display: flex; flex-wrap: wrap; gap: 8px; align-items: end;
+					padding: 12px; margin-bottom: 10px;
+					background: #fff; border: 1px solid #dbe3ea; border-radius: 8px;
+				}
+				.os-cs-toolbar .f { flex: 1 1 140px; min-width: 130px; }
+				.os-cs-toolbar .f-grow { flex: 2 1 220px; }
+				.os-cs-toolbar label {
+					display: block; margin: 0 0 3px; font-size: 12px; color: #475569; font-weight: 500;
+				}
+				.os-cs-toolbar select, .os-cs-toolbar input {
+					width: 100%; height: 32px; border: 1px solid #cbd5e1; border-radius: 6px;
+					padding: 4px 8px; font-size: 12px; background: #fff;
+				}
+				.os-cs-toolbar .actions { display: flex; gap: 6px; flex: 0 0 auto; margin-left: auto; }
+				.os-cs-stats {
+					display: flex; flex-wrap: wrap; gap: 16px; align-items: baseline;
+					padding: 8px 4px 12px; font-size: 13px; color: #475569;
+				}
+				.os-cs-stats b { color: #0f172a; font-size: 15px; }
+				.os-cs-stats .sep { color: #cbd5e1; }
+				.os-cs-table-wrap {
+					background: #fff; border: 1px solid #dbe3ea; border-radius: 8px; overflow: auto;
+					max-height: min(70vh, 720px);
+				}
+				.os-cs-grid {
+					width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; margin: 0;
+				}
+				.os-cs-grid thead th {
+					position: sticky; top: 0; z-index: 2;
+					background: #eef2f6; color: #334155; font-weight: 600;
+					border-bottom: 1px solid #cbd5e1; padding: 9px 10px; white-space: nowrap;
+					cursor: pointer; user-select: none;
+				}
+				.os-cs-grid thead th:hover { background: #e2e8f0; }
+				.os-cs-grid thead th .sort { color: #94a3b8; margin-left: 4px; font-size: 10px; }
+				.os-cs-grid tbody td {
+					padding: 8px 10px; border-bottom: 1px solid #eef2f7; vertical-align: top;
+					max-width: 280px; word-break: break-word;
+				}
+				.os-cs-grid tbody tr:nth-child(even) { background: #f8fafc; }
+				.os-cs-grid tbody tr:hover { background: #f1f5f9; }
+				.os-cs-grid .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+				.os-cs-grid .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: #334155; }
+				.os-cs-grid tfoot td {
+					position: sticky; bottom: 0; background: #eef2f6; font-weight: 700;
+					border-top: 1px solid #cbd5e1; padding: 9px 10px;
+				}
+				.os-cs-empty { padding: 28px; text-align: center; color: #64748b; }
+				.os-cs-meta { font-size: 12px; color: #64748b; padding: 0 4px 8px; }
 			</style>
 			<div class="os-cs-board">
-				<div class="os-cs-summary">
-					<div class="os-cs-card"><div class="label">${__("Contractors")}</div><div class="value">${
-						totals.contractors || 0
-					}</div></div>
-					<div class="os-cs-card"><div class="label">${__("Settlements")}</div><div class="value">${
-						totals.settlements || 0
-					}</div></div>
-					<div class="os-cs-card"><div class="label">${__("Lines")}</div><div class="value">${
-						totals.lines || 0
-					}</div></div>
-					<div class="os-cs-card"><div class="label">${__("Total Amount")}</div><div class="value">${frappe.utils.escape_html(
-						totals.amount_fmt || String(totals.amount || 0)
-					)}</div></div>
+				<div class="os-cs-toolbar">
+					<div class="f">
+						<label>${__("Contractor")}</label>
+						<select class="os-cs-contractor">${this._selectOpts(opts.contractors || this._unique(allRows, "contractor"), "")}</select>
+					</div>
+					<div class="f f-grow">
+						<label>${__("SO Item")}</label>
+						<select class="os-cs-so-item">${this._selectOpts(opts.so_items || this._unique(allRows, "so_item"), "")}</select>
+					</div>
+					<div class="f">
+						<label>${__("Has Combo")}</label>
+						<select class="os-cs-combo-item">${this._selectOpts(comboOpts, "")}</select>
+					</div>
+					<div class="f">
+						<label>${__("Style")}</label>
+						<select class="os-cs-style">${this._selectOpts(opts.styles || this._unique(allRows, "style"), "")}</select>
+					</div>
+					<div class="f">
+						<label>${__("Operation")}</label>
+						<select class="os-cs-operation">${this._selectOpts(opts.operations || this._unique(allRows, "operation"), "")}</select>
+					</div>
+					<div class="f">
+						<label>${__("Search")}</label>
+						<input type="text" class="os-cs-search" placeholder="${__("Type to filter...")}">
+					</div>
+					<div class="actions">
+						<button type="button" class="btn btn-sm btn-default os-cs-clear">${__("Clear")}</button>
+						<button type="button" class="btn btn-sm btn-default os-cs-reload">${__("Refresh")}</button>
+						<button type="button" class="btn btn-sm btn-primary os-cs-export">${__("Export CSV")}</button>
+					</div>
 				</div>
 				<div class="os-cs-meta">
 					${__("Sales Order")}: <b>${frappe.utils.escape_html(data.sales_order || "—")}</b>
-					&nbsp;|&nbsp; ${__("Delivery Notes")}: <b>${(data.delivery_notes || []).length || 0}</b>
+					&nbsp;·&nbsp; ${__("Delivery Notes")}: <b>${(data.delivery_notes || []).length || 0}</b>
 					${
-						settlementLinks
-							? `&nbsp;|&nbsp; ${__("Open")}: ${settlementLinks}`
+						(data.settlements || []).length
+							? `&nbsp;·&nbsp; ${__("Settlements")}: ${(data.settlements || [])
+									.map(
+										(n) =>
+											`<a href="/desk/contractor-settlement/${encodeURIComponent(
+												n
+											)}" target="_blank">${frappe.utils.escape_html(n)}</a>`
+									)
+									.join(", ")}`
 							: ""
 					}
-					<button class="btn btn-xs btn-default pull-right os-cs-refresh">${__("Refresh")}</button>
+					<div class="text-muted" style="margin-top:4px;">
+						${__(
+							"Combo shows Product Combo parts on the SO Item. Settlements are booked on the SET (SO Item), not per Duvet/Pillow — so filtering Has Combo keeps SET rows that include that part (often both)."
+						)}
+					</div>
 				</div>
-				${body}
+				<div class="os-cs-stats"></div>
+				<div class="os-cs-table-wrap"><div class="os-cs-table-host"></div></div>
 			</div>
 		`);
 
-		$wrapper.find(".os-cs-refresh").on("click", () => {
-			const frm = cur_frm;
-			if (frm) orderSheetContractorSettlementBoard.render(frm);
+		const apply = () => {
+			state.filters = this._readFilters($wrapper);
+			this.paintTable($wrapper, state);
+		};
+
+		$wrapper.find(".os-cs-contractor, .os-cs-so-item, .os-cs-combo-item, .os-cs-style, .os-cs-operation").on(
+			"change",
+			apply
+		);
+		let searchTimer = null;
+		$wrapper.find(".os-cs-search").on("input", () => {
+			clearTimeout(searchTimer);
+			searchTimer = setTimeout(apply, 180);
+		});
+		$wrapper.find(".os-cs-clear").on("click", () => {
+			$wrapper.find(".os-cs-contractor, .os-cs-so-item, .os-cs-combo-item, .os-cs-style, .os-cs-operation").val("");
+			$wrapper.find(".os-cs-search").val("");
+			apply();
+		});
+		$wrapper.find(".os-cs-reload").on("click", () => this.render(frm || cur_frm));
+		$wrapper.find(".os-cs-export").on("click", () => {
+			const filtered = this._filterRows(state.allRows, this._readFilters($wrapper));
+			this._exportCsv(filtered, data.order_sheet || frm.doc.name);
+			frappe.show_alert({ message: __("Exported {0} rows", [filtered.length]), indicator: "green" });
+		});
+
+		this.paintTable($wrapper, state);
+	},
+
+	paintTable($wrapper, state) {
+		const filtered = this._filterRows(state.allRows, state.filters || {});
+		const key = state.sortKey || "amount";
+		const dir = state.sortDir === "asc" ? 1 : -1;
+		filtered.sort((a, b) => {
+			const av = a[key];
+			const bv = b[key];
+			if (typeof av === "number" || typeof bv === "number") {
+				return (flt(av) - flt(bv)) * dir;
+			}
+			return String(av || "").localeCompare(String(bv || "")) * dir;
+		});
+
+		const totals = this._totals(filtered);
+		const currency = state.data.currency || "PKR";
+		$wrapper.find(".os-cs-stats").html(`
+			<span>${__("Rows")}: <b>${totals.lines}</b></span>
+			<span class="sep">|</span>
+			<span>${__("Contractors")}: <b>${totals.contractors}</b></span>
+			<span class="sep">|</span>
+			<span>${__("Qty")}: <b>${frappe.format(totals.qty, { fieldtype: "Float" })}</b></span>
+			<span class="sep">|</span>
+			<span>${__("Amount")}: <b>${frappe.format(totals.amount, { fieldtype: "Currency", options: currency })}</b></span>
+		`);
+
+		const sortMark = (col) =>
+			state.sortKey === col ? `<span class="sort">${state.sortDir === "asc" ? "▲" : "▼"}</span>` : "";
+
+		if (!filtered.length) {
+			$wrapper.find(".os-cs-table-host").html(
+				`<div class="os-cs-empty">${frappe.utils.escape_html(
+					state.data.message || __("No rows match these filters.")
+				)}</div>`
+			);
+			return;
+		}
+
+		const comboFilter = (state.filters && state.filters.combo_item) || "";
+		const body = filtered
+			.map((r) => {
+				let comboShow = r.combo_label || "—";
+				if (comboFilter && (r.combo_items || []).includes(comboFilter)) {
+					comboShow = comboFilter;
+				}
+				return `
+			<tr>
+				<td>${frappe.utils.escape_html(r.contractor || "—")}</td>
+				<td>${frappe.utils.escape_html(r.operation || "—")}</td>
+				<td>${frappe.utils.escape_html(r.style || "—")}</td>
+				<td class="mono" title="${frappe.utils.escape_html(r.so_item || r.item || "")}">${frappe.utils.escape_html(
+					r.so_item || r.item || "—"
+				)}</td>
+				<td>${frappe.utils.escape_html(comboShow)}</td>
+				<td>${frappe.utils.escape_html(r.article_key || "—")}</td>
+				<td class="num">${frappe.format(r.qty || 0, { fieldtype: "Float" })}</td>
+				<td class="num">${frappe.utils.escape_html(r.rate_fmt || frappe.format(r.rate || 0, { fieldtype: "Currency", options: currency }))}</td>
+				<td class="num"><b>${frappe.utils.escape_html(r.amount_fmt || frappe.format(r.amount || 0, { fieldtype: "Currency", options: currency }))}</b></td>
+			</tr>`;
+			})
+			.join("");
+
+		$wrapper.find(".os-cs-table-host").html(`
+			<table class="os-cs-grid">
+				<thead>
+					<tr>
+						<th data-sort="contractor">${__("Contractor")}${sortMark("contractor")}</th>
+						<th data-sort="operation">${__("Operation")}${sortMark("operation")}</th>
+						<th data-sort="style">${__("Style")}${sortMark("style")}</th>
+						<th data-sort="so_item">${__("SO Item")}${sortMark("so_item")}</th>
+						<th data-sort="combo_label">${__("Combo")}${sortMark("combo_label")}</th>
+						<th data-sort="article_key">${__("Article")}${sortMark("article_key")}</th>
+						<th data-sort="qty" class="num">${__("Qty")}${sortMark("qty")}</th>
+						<th data-sort="rate" class="num">${__("Rate")}${sortMark("rate")}</th>
+						<th data-sort="amount" class="num">${__("Amount")}${sortMark("amount")}</th>
+					</tr>
+				</thead>
+				<tbody>${body}</tbody>
+				<tfoot>
+					<tr>
+						<td colspan="6">${__("Total")} (${totals.lines})</td>
+						<td class="num">${frappe.format(totals.qty, { fieldtype: "Float" })}</td>
+						<td></td>
+						<td class="num">${frappe.format(totals.amount, { fieldtype: "Currency", options: currency })}</td>
+					</tr>
+				</tfoot>
+			</table>
+		`);
+
+		$wrapper.find(".os-cs-grid thead th[data-sort]").on("click", (e) => {
+			const col = $(e.currentTarget).attr("data-sort");
+			if (state.sortKey === col) {
+				state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+			} else {
+				state.sortKey = col;
+				state.sortDir = col === "amount" || col === "qty" || col === "rate" ? "desc" : "asc";
+			}
+			this.paintTable($wrapper, state);
 		});
 	},
 };

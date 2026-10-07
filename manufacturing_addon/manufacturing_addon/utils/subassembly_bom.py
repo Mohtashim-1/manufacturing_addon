@@ -397,15 +397,15 @@ def apply_subassembly_contractor_qty(ct_row, work_qty_field):
 
 
 def _report_configs():
-	"""Reports that book/count sub-assembly (zip/button) qty against plan.
+	"""Reports that book/count sub-assembly (zip/button) qty against the SAR cap.
 
-	Cutting and Stitching are excluded — those reports no longer load or validate
-	sub-assembly styles; caps are enforced on Sub Assembly Report only.
+	Only Sub Assembly Report consumes the zip/button quota. Checking / Packing may
+	still store style rows historically, but they must not inflate "Already used"
+	on Sub Assembly Report (UI "Already Sub Assembled" is SAR-only; ceiling is
+	Cutting→Stitching→Checking flow).
 	"""
 	return (
 		("Sub Assembly Report", "Sub Assembly Report CT", "sub_assembly_qty"),
-		("Packing Report", "Packing Report CT", "packaging_qty"),
-		("Checking Report", "Checking Report CT", "checking_qty"),
 	)
 
 

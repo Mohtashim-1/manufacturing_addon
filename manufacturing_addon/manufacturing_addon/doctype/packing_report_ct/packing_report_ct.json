@@ -194,6 +194,7 @@
    "read_only": 1
   },
   {
+   "description": "Auto from Get Data only when the Order Sheet row has a real Item combo (e.g. Fitted Sheet). For Quilt Cover Set packing this stays blank — DUVET/PILLOW are set on Item \u2192 Bundle Detail (Product Combo) and used in Cutting/Stitching, not here. Packing packs the finished set (see Article).",
    "fieldname": "combo_item",
    "fieldtype": "Link",
    "label": "Combo Item",

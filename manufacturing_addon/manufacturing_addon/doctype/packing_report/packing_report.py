@@ -77,6 +77,24 @@ if not hasattr(frappe, '_stock_entry_rate_patch_applied'):
 
 
 @frappe.whitelist()
+def run_get_data(name):
+	"""Load Packing Report from DB and refetch Order Sheet rows.
+
+	Called from the form instead of frm.call(doc=...) so stale/invalid
+	Combo Item link values on the client never block Get Data.
+	"""
+	if not name:
+		frappe.throw(_("Packing Report name is required"))
+	doc = frappe.get_doc("Packing Report", name)
+	if not doc.order_sheet:
+		frappe.throw(_("Please select an Order Sheet first."))
+	# Drop invalid combo links left in DB from older Get Data runs
+	doc._normalize_packing_combo_items()
+	doc.get_data1()
+	return {"name": doc.name, "rows": len(doc.packing_report_ct or [])}
+
+
+@frappe.whitelist()
 def get_style_contractors_for_line(
     so_item, combo_item=None, article=None, operation="Packing", work_qty=0
 ):
@@ -260,10 +278,20 @@ class PackingReport(Document):
 
         return max(normalized_totals) if use_highest else min(normalized_totals)
 
+    def _valid_combo_item_link(self, value):
+        """Return value only when it exists as Item (combo_item is a Link field)."""
+        value = (value or "").strip()
+        if value and frappe.db.exists("Item", value):
+            return value
+        return None
+
     def _upstream_uses_article_as_combo(self, row):
         """Return True when upstream reports already use row.article as combo_item."""
         article = (row.article or "").strip()
         if not self.order_sheet or not row.so_item or not article:
+            return False
+        # Article labels like "QUILT COVER SET" are not Items — cannot be Link values.
+        if not frappe.db.exists("Item", article):
             return False
 
         report_tables = (
@@ -291,8 +319,14 @@ class PackingReport(Document):
         return False
 
     def _normalize_packing_combo_items(self):
-        """Keep Packing Report combo keys aligned with upstream report rows."""
+        """Keep Packing Report combo keys aligned with upstream report rows.
+
+        Clears invalid Link values (article names stored in combo_item by mistake).
+        """
         for row in self.packing_report_ct or []:
+            if row.combo_item and not frappe.db.exists("Item", row.combo_item):
+                # Was set to an article label (e.g. QUILT COVER SET) — not an Item.
+                row.combo_item = None
             if row.combo_item:
                 continue
             if self._upstream_uses_article_as_combo(row):
@@ -304,6 +338,9 @@ class PackingReport(Document):
         print(f"[get_data1] Starting for Packing Report: '{self.name}'")
         print(f"[get_data1] Order Sheet: '{self.order_sheet}'")
         print(f"{'='*60}")
+
+        # Sanitize any invalid Combo Item links already on the form (article labels).
+        self._normalize_packing_combo_items()
         
         if not self.order_sheet:
             print(f"[get_data1] ERROR: No Order Sheet selected")
@@ -573,7 +610,11 @@ class PackingReport(Document):
                             "qty": planned_qty,  # For finished item, qty = planned_qty (not multiplied)
                             "planned_qty": planned_qty,  # Original planned_qty from Order Sheet CT
                             "so_item": so_item,  # Finished item
-                            "combo_item": r.get("combo_item") or r.get("stitching_article_no"),
+                            # combo_item is Link → Item. Never fall back to article name
+                            # (e.g. "QUILT COVER SET") — that breaks save validation.
+                            "combo_item": self._valid_combo_item_link(
+                                r.get("combo_item")
+                            ),
                             "bundle_items": bundle_items_text,  # Bundle/combo items breakdown (HTML formatted)
                         })
                         
@@ -605,6 +646,10 @@ class PackingReport(Document):
                     print(f"    - qty: {row.qty}")
                 print(f"{'='*60}")
                 print(f"[get_data1] Saving Packing Report...")
+
+                # Finished packing rows use Article (set name). Combo Item is only a
+                # real Item link (DUVET/PILLOW) — never the article label.
+                self._normalize_packing_combo_items()
                 
                 # Set flag to ignore link validation (allow cancelled Order Sheets)
                 self.flags.ignore_links = True
@@ -622,7 +667,8 @@ class PackingReport(Document):
                 print(f"[get_data1] Order Sheet is_or = 1, skipping (only process when is_or = 0)")
                 print(f"{'='*60}\n")
         else:
-            print(f"[get_data1] packing_report_ct already has {existing_rows} rows, skipping fetch")
+            # Should not happen after clear — keep message for safety
+            print(f"[get_data1] packing_report_ct still has rows after clear; forcing empty and retry skipped")
             print(f"{'='*60}\n")
 
     def _ensure_style_contractors_loaded(self):

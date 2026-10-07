@@ -43,61 +43,53 @@ frappe.ui.form.on("Packing Report", {
             frappe.msgprint(__("Please select an Order Sheet first."));
             return;
         }
-        
-        frm.call({
-            method:"get_data1",
-            doc: frm.doc,
-            args: {},
-            freeze: true,
-            freeze_message: __("Fetching data from Order Sheet..."),
-            callback: function(r) {
-                console.log("[Packing Report JS] get_data1 response:", r);
-                if (r.message) {
-                    console.log("[Packing Report JS] Success");
-                }
-                frm.reload_doc().then(function() {
-                    console.log("[Packing Report JS] Document reloaded, checking bundle_items...");
-                    render_packing_article_summary(frm);
-                    if (frm.doc.packing_report_ct) {
-                        frm.doc.packing_report_ct.forEach(function(row, idx) {
-                            console.log(`[Packing Report JS] After reload - Row ${idx + 1}:`, {
-                                name: row.name,
-                                so_item: row.so_item,
-                                bundle_items_exists: !!row.bundle_items,
-                                bundle_items_length: row.bundle_items ? row.bundle_items.length : 0
-                            });
-                            
-                            // If bundle_items is missing, fetch it from database
-                            if (!row.bundle_items && row.name) {
-                                console.log(`[Packing Report JS] bundle_items missing for row ${idx + 1}, fetching from database...`);
-                                frappe.call({
-                                    method: "frappe.client.get_value",
-                                    args: {
-                                        doctype: "Packing Report CT",
-                                        filters: { name: row.name },
-                                        fieldname: ["bundle_items"]
-                                    },
-                                    callback: function(response) {
-                                        if (response.message && response.message.bundle_items) {
-                                            console.log(`[Packing Report JS] Fetched bundle_items from DB, length:`, response.message.bundle_items.length);
-                                            row.bundle_items = response.message.bundle_items;
-                                            // Trigger refresh to render
-                                            frm.refresh_field("packing_report_ct");
-                                        } else {
-                                            console.log(`[Packing Report JS] bundle_items not found in database either`);
-                                        }
-                                    }
-                                });
-                            }
-                        });
-                    }
-                });
-            },
-            error: function(r) {
-                console.error("[Packing Report JS] Error:", r);
-                frappe.msgprint(__("Error fetching data: {0}", [r.message || r.exc]));
+
+        const run = () => {
+            if (frm.is_new()) {
+                frappe.msgprint(__("Please save the Packing Report first, then click Get Data."));
+                return;
             }
+            frappe.call({
+                method:
+                    "manufacturing_addon.manufacturing_addon.doctype.packing_report.packing_report.run_get_data",
+                args: { name: frm.doc.name },
+                freeze: true,
+                freeze_message: __("Fetching data from Order Sheet..."),
+                callback(r) {
+                    console.log("[Packing Report JS] run_get_data response:", r);
+                    frm.reload_doc().then(() => {
+                        render_packing_article_summary(frm);
+                        frappe.show_alert({
+                            message: __("Data loaded. Article shows set name; Combo Item stays blank for finished packing (DUVET/PILLOW are in Bundle Detail)."),
+                            indicator: "green",
+                        });
+                    });
+                },
+                error(r) {
+                    console.error("[Packing Report JS] Error:", r);
+                    frappe.msgprint(__("Error fetching data: {0}", [r.message || r.exc || ""]));
+                },
+            });
+        };
+
+        // Clear bad Combo Item values on the form so a pending Save does not fail
+        (frm.doc.packing_report_ct || []).forEach((row) => {
+            row.combo_item = "";
         });
+        frm.refresh_field("packing_report_ct");
+
+        if (frm.is_dirty()) {
+            frm.save().then(run).catch(() => {
+                // If save still fails on links, force-clear via SQL path after reload
+                frappe.msgprint(
+                    __(
+                        "Could not save current rows. Clear Combo Item on each row (leave blank), Save, then click Get Data again."
+                    )
+                );
+            });
+        } else {
+            run();
+        }
     },
     
     refresh(frm) {

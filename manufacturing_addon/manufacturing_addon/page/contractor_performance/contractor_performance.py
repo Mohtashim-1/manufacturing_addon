@@ -146,20 +146,25 @@ def _cutting_agg(
 	return frappe.db.sql(
 		f"""
 		SELECT
-			COALESCE(
+			CONCAT_WS(
+				'|',
 				NULLIF(TRIM(crct.so_item), ''),
 				NULLIF(TRIM(crct.combo_item), ''),
-				CONCAT(
-					'ATTR:',
-					IFNULL(crct.article, ''),
-					'|',
-					IFNULL(crct.design, ''),
-					'|',
-					IFNULL(crct.colour, '')
-				)
+				CASE
+					WHEN NULLIF(TRIM(crct.so_item), '') IS NULL
+						AND NULLIF(TRIM(crct.combo_item), '') IS NULL
+					THEN CONCAT(
+						'ATTR:',
+						IFNULL(crct.article, ''),
+						'|',
+						IFNULL(crct.design, ''),
+						'|',
+						IFNULL(crct.colour, '')
+					)
+				END
 			) AS item_key,
-			MAX(crct.so_item) AS so_item,
-			MAX(crct.combo_item) AS combo_item,
+			NULLIF(TRIM(crct.so_item), '') AS so_item,
+			NULLIF(TRIM(crct.combo_item), '') AS combo_item,
 			NULLIF(TRIM(crct.article), '') AS article,
 			NULLIF(TRIM(crct.design), '') AS design,
 			NULLIF(TRIM(crct.colour), '') AS colour,
@@ -170,9 +175,9 @@ def _cutting_agg(
 		FROM `tabCutting Report` cr
 		INNER JOIN `tabCutting Report CT` crct ON crct.parent = cr.name
 		WHERE {where_clause}
-		GROUP BY item_key, cr.supplier, article, design, colour
+		GROUP BY item_key, cr.supplier, so_item, combo_item, article, design, colour
 		HAVING SUM(IFNULL(crct.cutting_qty, 0)) <> 0
-		ORDER BY item_key, cr.supplier, article, design, colour
+		ORDER BY so_item, combo_item, cr.supplier, article, design, colour
 		""",
 		values,
 		as_dict=True,
@@ -214,20 +219,25 @@ def _stitching_agg(
 	return frappe.db.sql(
 		f"""
 		SELECT
-			COALESCE(
+			CONCAT_WS(
+				'|',
 				NULLIF(TRIM(srct.so_item), ''),
 				NULLIF(TRIM(srct.combo_item), ''),
-				CONCAT(
-					'ATTR:',
-					IFNULL(srct.article, ''),
-					'|',
-					IFNULL(srct.design, ''),
-					'|',
-					IFNULL(srct.colour, '')
-				)
+				CASE
+					WHEN NULLIF(TRIM(srct.so_item), '') IS NULL
+						AND NULLIF(TRIM(srct.combo_item), '') IS NULL
+					THEN CONCAT(
+						'ATTR:',
+						IFNULL(srct.article, ''),
+						'|',
+						IFNULL(srct.design, ''),
+						'|',
+						IFNULL(srct.colour, '')
+					)
+				END
 			) AS item_key,
-			MAX(srct.so_item) AS so_item,
-			MAX(srct.combo_item) AS combo_item,
+			NULLIF(TRIM(srct.so_item), '') AS so_item,
+			NULLIF(TRIM(srct.combo_item), '') AS combo_item,
 			NULLIF(TRIM(srct.article), '') AS article,
 			NULLIF(TRIM(srct.design), '') AS design,
 			NULLIF(TRIM(srct.colour), '') AS colour,
@@ -238,9 +248,9 @@ def _stitching_agg(
 		FROM `tabStitching Report` sr
 		INNER JOIN `tabStitching Report CT` srct ON srct.parent = sr.name
 		WHERE {where_clause}
-		GROUP BY item_key, sr.supplier, article, design, colour
+		GROUP BY item_key, sr.supplier, so_item, combo_item, article, design, colour
 		HAVING SUM(IFNULL(srct.stitching_qty, 0)) <> 0
-		ORDER BY item_key, sr.supplier, article, design, colour
+		ORDER BY so_item, combo_item, sr.supplier, article, design, colour
 		""",
 		values,
 		as_dict=True,
@@ -282,20 +292,25 @@ def _packing_agg(
 	return frappe.db.sql(
 		f"""
 		SELECT
-			COALESCE(
+			CONCAT_WS(
+				'|',
 				NULLIF(TRIM(prct.so_item), ''),
 				NULLIF(TRIM(prct.combo_item), ''),
-				CONCAT(
-					'ATTR:',
-					IFNULL(prct.article, ''),
-					'|',
-					IFNULL(prct.design, ''),
-					'|',
-					IFNULL(prct.colour, '')
-				)
+				CASE
+					WHEN NULLIF(TRIM(prct.so_item), '') IS NULL
+						AND NULLIF(TRIM(prct.combo_item), '') IS NULL
+					THEN CONCAT(
+						'ATTR:',
+						IFNULL(prct.article, ''),
+						'|',
+						IFNULL(prct.design, ''),
+						'|',
+						IFNULL(prct.colour, '')
+					)
+				END
 			) AS item_key,
-			MAX(prct.so_item) AS so_item,
-			MAX(prct.combo_item) AS combo_item,
+			NULLIF(TRIM(prct.so_item), '') AS so_item,
+			NULLIF(TRIM(prct.combo_item), '') AS combo_item,
 			NULLIF(TRIM(prct.article), '') AS article,
 			NULLIF(TRIM(prct.design), '') AS design,
 			NULLIF(TRIM(prct.colour), '') AS colour,
@@ -306,9 +321,9 @@ def _packing_agg(
 		FROM `tabPacking Report` pr
 		INNER JOIN `tabPacking Report CT` prct ON prct.parent = pr.name
 		WHERE {where_clause}
-		GROUP BY item_key, pr.supplier, article, design, colour
+		GROUP BY item_key, pr.supplier, so_item, combo_item, article, design, colour
 		HAVING SUM(IFNULL(prct.packaging_qty, 0)) <> 0
-		ORDER BY item_key, pr.supplier, article, design, colour
+		ORDER BY so_item, combo_item, pr.supplier, article, design, colour
 		""",
 		values,
 		as_dict=True,

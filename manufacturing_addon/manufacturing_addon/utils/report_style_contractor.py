@@ -75,13 +75,19 @@ def _style_row_matches_report_line(style_row, so_item, combo_item, article, oper
 	Unscoped styles (no stitching_component / combo_item) must not fan out onto
 	every duvet/pillow combo line — that duplicated SET BOM zip qty on each row.
 
-	Packing is one finished so_item per CT row (no set fan-out), so unscoped
-	Packing styles on the Item still attach when combo_item is the article label.
+	Packing is one finished so_item per CT row (no set fan-out). Packing Report
+	lines are article-level (e.g. SHEET SET) with empty combo_item, while Item
+	packing styles are often scoped to components (FITTED SHEET / PILLOW). Those
+	still belong on the finished packing line.
 	"""
 	combo_code = _normalize(combo_item)
 	article_text = _normalize(article)
 	style_article = _normalize(style_row.get("combo_item"))
 	component = _normalize(style_row.get("stitching_component"))
+
+	# Finished packing line: attach all Packing styles for this so_item.
+	if operation == "Packing" and not combo_code:
+		return True
 
 	if not combo_code and not article_text:
 		return True

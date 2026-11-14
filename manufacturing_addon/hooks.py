@@ -11,7 +11,10 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/manufacturing_addon/css/manufacturing_addon.css"
-app_include_js = "/assets/manufacturing_addon/js/sales_addon_workspace_v2.js"
+app_include_js = [
+	"/assets/manufacturing_addon/js/sales_addon_workspace_v2.js",
+	"/assets/manufacturing_addon/js/revise_subcontract_qty.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/manufacturing_addon/css/manufacturing_addon.css"
@@ -40,7 +43,10 @@ doctype_js = {
     ],
     "BOM" : "public/js/bom.js",
     "Purchase Receipt" : "public/js/purchase_receipt.js",
-    "Purchase Order" : "public/js/purchase_order.js",
+    "Purchase Order" : [
+        "public/js/revise_subcontract_qty.js",
+        "public/js/purchase_order.js",
+    ],
     "Production Plan" : "public/js/production_plan.js",
     "Order Sheet": [
         "public/js/contractor_performance_embed.js",
@@ -61,7 +67,10 @@ doctype_js = {
     "Packing Report": [
         "public/js/report_style_contractors.js",
     ],
-    "Subcontracting Order": "public/js/subcontracting_order.js",
+    "Subcontracting Order": [
+        "public/js/revise_subcontract_qty.js",
+        "public/js/subcontracting_order.js",
+    ],
     "Subcontracting Receipt": "public/js/subcontracting_receipt.js",
     "Stock Reservation Entry": "public/js/stock_reservation_entry.js",
     }

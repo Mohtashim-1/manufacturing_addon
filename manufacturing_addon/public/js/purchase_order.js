@@ -209,7 +209,7 @@ frappe.ui.form.on("Purchase Order", {
 			console.log("[PO] Made stock_qty field editable");
 		}
 	},
-
+	
 	validate: function(frm) {
 		// Check if user is System Manager
 		var is_system_manager = frappe.user.has_role("System Manager");
@@ -444,37 +444,6 @@ frappe.ui.form.on("Purchase Order", {
 		if (frm.fields_dict.items && frm.fields_dict.items.grid) {
 			frm.fields_dict.items.grid.update_docfield_property("stock_qty", "read_only", 0);
 			console.log("[PO] Made stock_qty field editable");
-		}
-
-		// Button also added from buying_addon; keep a safe fallback here
-		if (
-			frm.doc.docstatus === 1 &&
-			cint(frm.doc.is_subcontracted) &&
-			frappe.user.has_role("System Manager")
-		) {
-			frm.add_custom_button(
-				__("Revise Qty (PO + SCO)"),
-				() => {
-					if (
-						window.manufacturing_addon &&
-						manufacturing_addon.revise_subcontract_qty &&
-						manufacturing_addon.revise_subcontract_qty.open
-					) {
-						manufacturing_addon.revise_subcontract_qty.open({
-							purchase_order: frm.doc.name,
-							frm,
-						});
-					} else {
-						frappe.require("/assets/manufacturing_addon/js/revise_subcontract_qty.js", () => {
-							manufacturing_addon.revise_subcontract_qty.open({
-								purchase_order: frm.doc.name,
-								frm,
-							});
-						});
-					}
-				},
-				__("Custom")
-			);
 		}
 		
 		// Add watcher to preserve exact stock_qty value

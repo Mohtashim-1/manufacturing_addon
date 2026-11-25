@@ -10,7 +10,11 @@ frappe.ui.form.on('BOM', {
             set_item_filter(frm);
             set_item_query(frm);
         }
+		_sync_bom_carton_display(frm);
     },
+	quantity(frm) {
+		_sync_bom_carton_display(frm);
+	},
     custom_customer(frm) {
         if (frm.doc.custom_filter_based_on === "Customer") {
             set_item_filter(frm);
@@ -142,4 +146,49 @@ frappe.ui.form.on('BOM', {
             frm.set_df_property('items', 'cannot_add_rows', 1);
         } 
     }
+});
+
+function _sync_bom_carton_display(frm) {
+	if (!frm.fields_dict.custom_qty_ctn && !frm.fields_dict.custom_carton_item) {
+		return;
+	}
+	const items = frm.doc.items || [];
+	let best = null;
+	items.forEach((row) => {
+		const code = (row.item_code || "").toUpperCase();
+		const name = (row.item_name || "").toUpperCase();
+		if (!(code.startsWith("CARTON") || name.includes("CARTON"))) {
+			return;
+		}
+		const score = code.startsWith("CARTON") || name.startsWith("CARTON") ? 0 : 1;
+		const cand = { item_code: row.item_code, qty: flt(row.qty), score, idx: row.idx };
+		if (!best || score < best.score || (score === best.score && cand.idx < best.idx)) {
+			best = cand;
+		}
+	});
+	const carton_item = best ? best.item_code : "";
+	const carton_qty = best ? flt(best.qty) : 0;
+	const bom_qty = flt(frm.doc.quantity);
+	let qty_ctn = bom_qty;
+	if (bom_qty && carton_qty) {
+		qty_ctn = bom_qty / carton_qty;
+	}
+	if (frm.fields_dict.custom_carton_item && frm.doc.custom_carton_item !== carton_item) {
+		frm.set_value("custom_carton_item", carton_item || null);
+	}
+	if (frm.fields_dict.custom_qty_ctn && flt(frm.doc.custom_qty_ctn) !== flt(qty_ctn)) {
+		frm.set_value("custom_qty_ctn", qty_ctn || 0);
+	}
+}
+
+frappe.ui.form.on("BOM Item", {
+	item_code(frm) {
+		_sync_bom_carton_display(frm);
+	},
+	qty(frm) {
+		_sync_bom_carton_display(frm);
+	},
+	items_remove(frm) {
+		_sync_bom_carton_display(frm);
+	},
 });

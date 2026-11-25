@@ -1008,15 +1008,30 @@ def get_bom_carton_details(item_code):
 	qty_ctn = None
 
 	if bom_for_carton:
-		bom_qty = frappe.db.get_value("BOM", bom_for_carton, "quantity")
+		bom_fields = ["quantity"]
+		if frappe.get_meta("BOM").has_field("custom_qty_ctn"):
+			bom_fields.append("custom_qty_ctn")
+		if frappe.get_meta("BOM").has_field("custom_carton_item"):
+			bom_fields.append("custom_carton_item")
+		bom_vals = frappe.db.get_value("BOM", bom_for_carton, bom_fields, as_dict=True) or frappe._dict()
+		bom_qty = bom_vals.get("quantity")
+		# Prefer explicit Qty / Carton on BOM when set
+		if flt(bom_vals.get("custom_qty_ctn")):
+			qty_ctn = flt(bom_vals.get("custom_qty_ctn"))
+		if bom_vals.get("custom_carton_item"):
+			carton_item = bom_vals.get("custom_carton_item")
+			carton_dimension = get_carton_dimension_for_item(carton_item)
+
 		carton_item_row = _get_bom_carton_item_row(bom_for_carton)
 
 		if carton_item_row:
-			carton_item = carton_item_row.item_code
+			if not carton_item:
+				carton_item = carton_item_row.item_code
 			carton_qty = carton_item_row.qty or 0
-			carton_dimension = get_carton_dimension_for_item(carton_item)
+			if not carton_dimension:
+				carton_dimension = get_carton_dimension_for_item(carton_item)
 
-			if bom_qty and carton_qty:
+			if qty_ctn is None and bom_qty and carton_qty:
 				try:
 					qty_ctn = float(bom_qty) / float(carton_qty)
 				except Exception:

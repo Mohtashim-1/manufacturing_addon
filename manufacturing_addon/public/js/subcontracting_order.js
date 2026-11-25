@@ -16,29 +16,6 @@ frappe.ui.form.on("Subcontracting Order", {
 				},
 				__("View")
 			);
-
-			if (frm.doc.docstatus === 1 && frappe.user.has_role("System Manager")) {
-				frm.add_custom_button(
-					__("Revise Qty (PO + SCO)"),
-					() => {
-						const run = () =>
-							manufacturing_addon.revise_subcontract_qty.open({
-								subcontracting_order: frm.doc.name,
-								frm,
-							});
-						if (
-							window.manufacturing_addon &&
-							manufacturing_addon.revise_subcontract_qty &&
-							manufacturing_addon.revise_subcontract_qty.open
-						) {
-							run();
-						} else {
-							frappe.require("/assets/manufacturing_addon/js/revise_subcontract_qty.js", run);
-						}
-					},
-					__("Custom")
-				);
-			}
 		}
 	},
 

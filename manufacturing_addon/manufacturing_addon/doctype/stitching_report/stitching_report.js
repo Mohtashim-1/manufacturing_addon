@@ -80,6 +80,72 @@ function preload_style_contractor_meta() {
     with_style_contractor_meta(() => {});
 }
 
+function inject_new_stitching_column_highlight() {
+	let style = document.getElementById("sr-new-stitching-highlight");
+	if (!style) {
+		style = document.createElement("style");
+		style.id = "sr-new-stitching-highlight";
+		document.head.appendChild(style);
+	}
+	style.textContent = `
+		[data-fieldname="stitching_report_ct"] .grid-heading-row [data-fieldname="stitching_qty"],
+		[data-fieldname="stitching_report_ct"] .grid-body [data-fieldname="stitching_qty"],
+		[data-fieldname="stitching_report_ct"] .grid-row [data-fieldname="stitching_qty"],
+		[data-fieldname="stitching_report_ct"] .grid-static-col[data-fieldname="stitching_qty"],
+		.form-grid [data-fieldname="stitching_qty"].grid-static-col {
+			background: #fef3c7 !important;
+			border-left: 2px solid #f59e0b !important;
+			border-right: 2px solid #f59e0b !important;
+		}
+		[data-fieldname="stitching_report_ct"] .grid-heading-row [data-fieldname="stitching_qty"] .static-area,
+		[data-fieldname="stitching_report_ct"] .grid-static-col[data-fieldname="stitching_qty"] .static-area {
+			color: #92400e !important;
+			font-weight: 700 !important;
+		}
+		[data-fieldname="stitching_report_ct"] .grid-body [data-fieldname="stitching_qty"] .static-area,
+		[data-fieldname="stitching_report_ct"] .grid-row [data-fieldname="stitching_qty"] .static-area,
+		[data-fieldname="stitching_report_ct"] .grid-row [data-fieldname="stitching_qty"] input,
+		[data-fieldname="stitching_report_ct"] .grid-static-col[data-fieldname="stitching_qty"] input {
+			font-weight: 700 !important;
+			color: #78350f !important;
+		}
+		[data-fieldname="stitching_report_ct"] .grid-row:hover [data-fieldname="stitching_qty"],
+		[data-fieldname="stitching_report_ct"] .grid-row:hover .grid-static-col[data-fieldname="stitching_qty"] {
+			background: #fde68a !important;
+		}
+	`;
+
+	const $grid = $('[data-fieldname="stitching_report_ct"] .form-grid');
+	if (!$grid.length) return;
+	$grid.each(function () {
+		const $formGrid = $(this);
+		let colIdx = -1;
+		$formGrid.find(".grid-heading-row .grid-static-col").each(function (idx) {
+			const label = ($(this).text() || "").replace(/\s+/g, " ").trim().toLowerCase();
+			if (label.includes("new stitching") || $(this).attr("data-fieldname") === "stitching_qty") {
+				colIdx = idx;
+				$(this).css({
+					background: "#fef3c7",
+					borderLeft: "2px solid #f59e0b",
+					borderRight: "2px solid #f59e0b",
+					fontWeight: "700",
+					color: "#92400e",
+				});
+			}
+		});
+		if (colIdx < 0) return;
+		$formGrid.find(".grid-body .grid-row, .rows .grid-row").each(function () {
+			const $col = $(this).find(".grid-static-col").eq(colIdx);
+			$col.css({
+				background: "#fef3c7",
+				borderLeft: "2px solid #f59e0b",
+				borderRight: "2px solid #f59e0b",
+			});
+			$col.find(".static-area, input").css({ fontWeight: "700", color: "#78350f" });
+		});
+	});
+}
+
 frappe.ui.form.on("Stitching Report", {
     onload(frm) {
         preload_style_contractor_meta();
@@ -88,6 +154,9 @@ frappe.ui.form.on("Stitching Report", {
         sr_save_log("onload", sr_save_snapshot(frm, "onload"));
     },
     refresh(frm) {
+        inject_new_stitching_column_highlight();
+        setTimeout(inject_new_stitching_column_highlight, 200);
+        setTimeout(inject_new_stitching_column_highlight, 800);
         preload_style_contractor_meta();
         bind_style_contractor_model_sync(frm);
         bind_sr_save_debug(frm);
@@ -160,6 +229,8 @@ frappe.ui.form.on("Stitching Report", {
     },
 
     stitching_report_ct(frm) {
+        inject_new_stitching_column_highlight();
+        setTimeout(inject_new_stitching_column_highlight, 200);
         render_stitching_article_summary(frm);
     },
 

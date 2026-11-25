@@ -12,6 +12,76 @@ init_report_style_contractors({
         "manufacturing_addon.manufacturing_addon.doctype.packing_report.packing_report.get_style_contractors_for_line",
 });
 
+function inject_new_packing_column_highlight() {
+	let style = document.getElementById("pr-new-packing-highlight");
+	if (!style) {
+		style = document.createElement("style");
+		style.id = "pr-new-packing-highlight";
+		document.head.appendChild(style);
+	}
+	style.textContent = `
+		[data-fieldname="packing_report_ct"] .grid-heading-row [data-fieldname="packaging_qty"],
+		[data-fieldname="packing_report_ct"] .grid-body [data-fieldname="packaging_qty"],
+		[data-fieldname="packing_report_ct"] .grid-row [data-fieldname="packaging_qty"],
+		[data-fieldname="packing_report_ct"] .grid-static-col[data-fieldname="packaging_qty"],
+		.form-grid [data-fieldname="packaging_qty"].grid-static-col {
+			background: #fef3c7 !important;
+			border-left: 2px solid #f59e0b !important;
+			border-right: 2px solid #f59e0b !important;
+		}
+		[data-fieldname="packing_report_ct"] .grid-heading-row [data-fieldname="packaging_qty"] .static-area,
+		[data-fieldname="packing_report_ct"] .grid-static-col[data-fieldname="packaging_qty"] .static-area {
+			color: #92400e !important;
+			font-weight: 700 !important;
+		}
+		[data-fieldname="packing_report_ct"] .grid-body [data-fieldname="packaging_qty"] .static-area,
+		[data-fieldname="packing_report_ct"] .grid-row [data-fieldname="packaging_qty"] .static-area,
+		[data-fieldname="packing_report_ct"] .grid-row [data-fieldname="packaging_qty"] input,
+		[data-fieldname="packing_report_ct"] .grid-static-col[data-fieldname="packaging_qty"] input {
+			font-weight: 700 !important;
+			color: #78350f !important;
+		}
+		[data-fieldname="packing_report_ct"] .grid-row:hover [data-fieldname="packaging_qty"],
+		[data-fieldname="packing_report_ct"] .grid-row:hover .grid-static-col[data-fieldname="packaging_qty"] {
+			background: #fde68a !important;
+		}
+	`;
+
+	const $grid = $('[data-fieldname="packing_report_ct"] .form-grid');
+	if (!$grid.length) return;
+	$grid.each(function () {
+		const $formGrid = $(this);
+		let colIdx = -1;
+		$formGrid.find(".grid-heading-row .grid-static-col").each(function (idx) {
+			const label = ($(this).text() || "").replace(/\s+/g, " ").trim().toLowerCase();
+			if (
+				label.includes("new packaging") ||
+				label.includes("new packing") ||
+				$(this).attr("data-fieldname") === "packaging_qty"
+			) {
+				colIdx = idx;
+				$(this).css({
+					background: "#fef3c7",
+					borderLeft: "2px solid #f59e0b",
+					borderRight: "2px solid #f59e0b",
+					fontWeight: "700",
+					color: "#92400e",
+				});
+			}
+		});
+		if (colIdx < 0) return;
+		$formGrid.find(".grid-body .grid-row, .rows .grid-row").each(function () {
+			const $col = $(this).find(".grid-static-col").eq(colIdx);
+			$col.css({
+				background: "#fef3c7",
+				borderLeft: "2px solid #f59e0b",
+				borderRight: "2px solid #f59e0b",
+			});
+			$col.find(".static-area, input").css({ fontWeight: "700", color: "#78350f" });
+		});
+	});
+}
+
 frappe.ui.form.on("Packing Report", {
     order_sheet(frm) {
         if (!frm.doc.order_sheet) {
@@ -95,6 +165,9 @@ frappe.ui.form.on("Packing Report", {
     refresh(frm) {
         console.log("[Packing Report JS] refresh called");
         console.log("[Packing Report JS] packing_report_ct exists:", !!frm.fields_dict.packing_report_ct);
+        inject_new_packing_column_highlight();
+        setTimeout(inject_new_packing_column_highlight, 200);
+        setTimeout(inject_new_packing_column_highlight, 800);
         render_packing_article_summary(frm);
 
         if (frm.doc.order_sheet && frm.doc.docstatus === 1) {

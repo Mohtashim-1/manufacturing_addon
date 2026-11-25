@@ -1,21 +1,25 @@
 /* Stitching / Cutting Report CT grids — many columns crush labels & misalign filters */
 
 [data-fieldname="stitching_report_ct"] .form-grid-container,
-[data-fieldname="cutting_report_ct"] .form-grid-container {
+[data-fieldname="cutting_report_ct"] .form-grid-container,
+[data-fieldname="packing_report_ct"] .form-grid-container {
 	overflow-x: auto !important;
 	width: 100%;
 }
 
 /* Prefer horizontal scroll layout even if class is late to apply */
 [data-fieldname="stitching_report_ct"] .form-grid,
-[data-fieldname="cutting_report_ct"] .form-grid {
+[data-fieldname="cutting_report_ct"] .form-grid,
+[data-fieldname="packing_report_ct"] .form-grid {
 	min-width: 1200px;
 }
 
 [data-fieldname="stitching_report_ct"] .grid-heading-row .data-row.row,
 [data-fieldname="stitching_report_ct"] .grid-body .rows .grid-row .data-row.row,
 [data-fieldname="cutting_report_ct"] .grid-heading-row .data-row.row,
-[data-fieldname="cutting_report_ct"] .grid-body .rows .grid-row .data-row.row {
+[data-fieldname="cutting_report_ct"] .grid-body .rows .grid-row .data-row.row,
+[data-fieldname="packing_report_ct"] .grid-heading-row .data-row.row,
+[data-fieldname="packing_report_ct"] .grid-body .rows .grid-row .data-row.row {
 	/* space-between stretches columns unevenly vs filter row */
 	justify-content: flex-start !important;
 	flex-wrap: nowrap !important;
@@ -63,25 +67,91 @@
 }
 
 /* Highlight "New Cutting" (cutting_qty) — primary editable qty column */
-[data-fieldname="cutting_report_ct"] .grid-heading-row .grid-static-col[data-fieldname="cutting_qty"],
-[data-fieldname="cutting_report_ct"] .grid-body .grid-static-col[data-fieldname="cutting_qty"],
-[data-fieldname="cutting_report_ct"] .grid-row .grid-static-col[data-fieldname="cutting_qty"] {
+[data-fieldname="cutting_report_ct"] .grid-heading-row [data-fieldname="cutting_qty"],
+[data-fieldname="cutting_report_ct"] .grid-body [data-fieldname="cutting_qty"],
+[data-fieldname="cutting_report_ct"] .grid-row [data-fieldname="cutting_qty"],
+[data-fieldname="cutting_report_ct"] .grid-static-col[data-fieldname="cutting_qty"],
+.form-grid [data-fieldname="cutting_qty"].grid-static-col {
 	background: #fef3c7 !important;
 	border-left: 2px solid #f59e0b !important;
 	border-right: 2px solid #f59e0b !important;
 }
 
-[data-fieldname="cutting_report_ct"] .grid-heading-row .grid-static-col[data-fieldname="cutting_qty"] .static-area {
+[data-fieldname="cutting_report_ct"] .grid-heading-row [data-fieldname="cutting_qty"] .static-area,
+[data-fieldname="cutting_report_ct"] .grid-static-col[data-fieldname="cutting_qty"] .static-area {
 	color: #92400e !important;
 	font-weight: 700 !important;
 }
 
-[data-fieldname="cutting_report_ct"] .grid-body .grid-static-col[data-fieldname="cutting_qty"] .static-area,
-[data-fieldname="cutting_report_ct"] .grid-row .grid-static-col[data-fieldname="cutting_qty"] input {
+[data-fieldname="cutting_report_ct"] .grid-body [data-fieldname="cutting_qty"] .static-area,
+[data-fieldname="cutting_report_ct"] .grid-row [data-fieldname="cutting_qty"] .static-area,
+[data-fieldname="cutting_report_ct"] .grid-row [data-fieldname="cutting_qty"] input,
+[data-fieldname="cutting_report_ct"] .grid-static-col[data-fieldname="cutting_qty"] input {
 	font-weight: 700 !important;
 	color: #78350f !important;
 }
 
+[data-fieldname="cutting_report_ct"] .grid-row:hover [data-fieldname="cutting_qty"],
 [data-fieldname="cutting_report_ct"] .grid-row:hover .grid-static-col[data-fieldname="cutting_qty"] {
+	background: #fde68a !important;
+}
+
+/* Highlight "New Stitching" (stitching_qty) */
+[data-fieldname="stitching_report_ct"] .grid-heading-row [data-fieldname="stitching_qty"],
+[data-fieldname="stitching_report_ct"] .grid-body [data-fieldname="stitching_qty"],
+[data-fieldname="stitching_report_ct"] .grid-row [data-fieldname="stitching_qty"],
+[data-fieldname="stitching_report_ct"] .grid-static-col[data-fieldname="stitching_qty"],
+.form-grid [data-fieldname="stitching_qty"].grid-static-col {
+	background: #fef3c7 !important;
+	border-left: 2px solid #f59e0b !important;
+	border-right: 2px solid #f59e0b !important;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-heading-row [data-fieldname="stitching_qty"] .static-area,
+[data-fieldname="stitching_report_ct"] .grid-static-col[data-fieldname="stitching_qty"] .static-area {
+	color: #92400e !important;
+	font-weight: 700 !important;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-body [data-fieldname="stitching_qty"] .static-area,
+[data-fieldname="stitching_report_ct"] .grid-row [data-fieldname="stitching_qty"] .static-area,
+[data-fieldname="stitching_report_ct"] .grid-row [data-fieldname="stitching_qty"] input,
+[data-fieldname="stitching_report_ct"] .grid-static-col[data-fieldname="stitching_qty"] input {
+	font-weight: 700 !important;
+	color: #78350f !important;
+}
+
+[data-fieldname="stitching_report_ct"] .grid-row:hover [data-fieldname="stitching_qty"],
+[data-fieldname="stitching_report_ct"] .grid-row:hover .grid-static-col[data-fieldname="stitching_qty"] {
+	background: #fde68a !important;
+}
+
+/* Highlight "New Packaging Entry" (packaging_qty) */
+[data-fieldname="packing_report_ct"] .grid-heading-row [data-fieldname="packaging_qty"],
+[data-fieldname="packing_report_ct"] .grid-body [data-fieldname="packaging_qty"],
+[data-fieldname="packing_report_ct"] .grid-row [data-fieldname="packaging_qty"],
+[data-fieldname="packing_report_ct"] .grid-static-col[data-fieldname="packaging_qty"],
+.form-grid [data-fieldname="packaging_qty"].grid-static-col {
+	background: #fef3c7 !important;
+	border-left: 2px solid #f59e0b !important;
+	border-right: 2px solid #f59e0b !important;
+}
+
+[data-fieldname="packing_report_ct"] .grid-heading-row [data-fieldname="packaging_qty"] .static-area,
+[data-fieldname="packing_report_ct"] .grid-static-col[data-fieldname="packaging_qty"] .static-area {
+	color: #92400e !important;
+	font-weight: 700 !important;
+}
+
+[data-fieldname="packing_report_ct"] .grid-body [data-fieldname="packaging_qty"] .static-area,
+[data-fieldname="packing_report_ct"] .grid-row [data-fieldname="packaging_qty"] .static-area,
+[data-fieldname="packing_report_ct"] .grid-row [data-fieldname="packaging_qty"] input,
+[data-fieldname="packing_report_ct"] .grid-static-col[data-fieldname="packaging_qty"] input {
+	font-weight: 700 !important;
+	color: #78350f !important;
+}
+
+[data-fieldname="packing_report_ct"] .grid-row:hover [data-fieldname="packaging_qty"],
+[data-fieldname="packing_report_ct"] .grid-row:hover .grid-static-col[data-fieldname="packaging_qty"] {
 	background: #fde68a !important;
 }

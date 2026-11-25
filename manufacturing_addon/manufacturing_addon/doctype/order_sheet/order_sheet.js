@@ -1374,30 +1374,37 @@ const orderSheetContractorDashboard = {
 			stage: $wrapper.find(".os-cp-stage").val() || "",
 			so_item: $wrapper.find(".os-cp-so-item").val() || "",
 			combo_item: $wrapper.find(".os-cp-combo").val() || "",
-			delivery_note: $wrapper.find(".os-cp-dn").val() || "",
 			search: ($wrapper.find(".os-cp-search").val() || "").trim().toLowerCase(),
 		};
 	},
 
-	_dnItemSet(state, deliveryNote) {
-		if (!deliveryNote) return null;
-		const map = state.dnItemMap || {};
-		const items = map[deliveryNote];
-		if (!items || !items.length) return new Set();
-		return new Set(items);
+	_readColumnFilters($wrapper) {
+		const filters = {};
+		$wrapper.find(".os-cp-col-search").each(function () {
+			const col = $(this).attr("data-col");
+			const val = ($(this).val() || "").trim().toLowerCase();
+			if (col && val) filters[col] = val;
+		});
+		return filters;
 	},
 
-	_filterRows(rows, f, state) {
-		const dnItems = this._dnItemSet(state || {}, f.delivery_note);
+	_filterRows(rows, f, columnFilters) {
+		const cols = columnFilters || {};
 		return (rows || []).filter((r) => {
 			if (f.contractor && r.contractor !== f.contractor && r.contractor_id !== f.contractor) return false;
 			if (f.stage && r.stage !== f.stage) return false;
 			if (f.so_item && r.so_item !== f.so_item) return false;
 			if (f.combo_item && r.combo_item !== f.combo_item) return false;
-			if (dnItems && !dnItems.has(r.so_item)) return false;
 			if (f.search) {
-				const hay = [r.contractor, r.stage, r.so_item, r.combo_item, r.article].join(" ").toLowerCase();
+				const hay = [r.contractor, r.stage, r.so_item, r.combo_item, r.article, r.qty, r.report_count]
+					.join(" ")
+					.toLowerCase();
 				if (!hay.includes(f.search)) return false;
+			}
+			// Frappe child-table style: AND filter across column search inputs
+			for (const [col, q] of Object.entries(cols)) {
+				const cell = String(r[col] == null ? "" : r[col]).toLowerCase();
+				if (!cell.includes(q)) return false;
 			}
 			return true;
 		});
@@ -1423,36 +1430,17 @@ const orderSheetContractorDashboard = {
 		URL.revokeObjectURL(url);
 	},
 
-	_dnSelectOpts(deliveryNotes, selected) {
-		const opts = [`<option value="">${__("All")}</option>`];
-		(deliveryNotes || []).forEach((dn) => {
-			const name = dn.name || dn;
-			const label = dn.label || name;
-			const sel = String(name) === String(selected || "") ? " selected" : "";
-			opts.push(
-				`<option value="${frappe.utils.escape_html(name)}"${sel}>${frappe.utils.escape_html(label)}</option>`
-			);
-		});
-		return opts.join("");
-	},
-
 	mount($wrapper, data, frm) {
 		const allRows = this._flatten(data);
-		const deliveryNotes = data.delivery_notes || [];
-		const dnItemMap = {};
-		deliveryNotes.forEach((dn) => {
-			if (dn && dn.name) dnItemMap[dn.name] = dn.item_codes || [];
-		});
 		const state = {
 			frm,
 			data,
 			allRows,
-			deliveryNotes,
-			dnItemMap,
-			salesOrder: data.sales_order || frm.doc.sales_order || "",
 			filters: {},
+			columnFilters: {},
 			sortKey: "qty",
 			sortDir: "desc",
+			tableBuilt: false,
 		};
 		this._state = state;
 
@@ -1480,12 +1468,25 @@ const orderSheetContractorDashboard = {
 					max-height:min(70vh,720px);
 				}
 				.os-cp-grid { width:100%; border-collapse:separate; border-spacing:0; font-size:12.5px; margin:0; }
-				.os-cp-grid thead th {
-					position:sticky; top:0; z-index:2; background:#eef2f6; color:#334155; font-weight:600;
+				.os-cp-grid thead th.os-cp-col-head {
+					position:sticky; top:0; z-index:3; background:#eef2f6; color:#334155; font-weight:600;
 					border-bottom:1px solid #cbd5e1; padding:9px 10px; white-space:nowrap; cursor:pointer;
 				}
-				.os-cp-grid thead th:hover { background:#e2e8f0; }
+				.os-cp-grid thead th.os-cp-col-head:hover { background:#e2e8f0; }
 				.os-cp-grid thead th .sort { color:#94a3b8; margin-left:4px; font-size:10px; }
+				.os-cp-grid thead th.os-cp-search-cell {
+					position:sticky; top:36px; z-index:2; background:#f8fafc;
+					border-bottom:1px solid #dbe3ea; padding:4px 6px; cursor:default;
+				}
+				.os-cp-grid thead th.os-cp-search-cell:hover { background:#f8fafc; }
+				.os-cp-col-search {
+					width:100%; height:28px; border:1px solid #cbd5e1; border-radius:4px;
+					padding:2px 8px; font-size:12px; background:#fff; font-weight:400;
+				}
+				.os-cp-col-search:focus {
+					outline:none; border-color:#94a3b8; box-shadow:0 0 0 2px rgba(148,163,184,.25);
+				}
+				.os-cp-col-search.num { text-align:right; }
 				.os-cp-grid tbody td {
 					padding:8px 10px; border-bottom:1px solid #eef2f7; vertical-align:top;
 					max-width:280px; word-break:break-word;
@@ -1519,12 +1520,8 @@ const orderSheetContractorDashboard = {
 						<label>${__("Combo Item")}</label>
 						<select class="os-cp-combo">${this._selectOpts(this._unique(allRows, "combo_item"), "")}</select>
 					</div>
-					<div class="f f-grow">
-						<label>${__("Delivery Note")}</label>
-						<select class="os-cp-dn">${this._dnSelectOpts(deliveryNotes, "")}</select>
-					</div>
 					<div class="f">
-						<label>${__("Search")}</label>
+						<label>${__("Search All")}</label>
 						<input type="text" class="os-cp-search" placeholder="${__("Type to filter...")}">
 					</div>
 					<div class="actions">
@@ -1535,12 +1532,6 @@ const orderSheetContractorDashboard = {
 				</div>
 				<div class="os-cp-meta">
 					${__("Order Sheet")}: <b>${frappe.utils.escape_html(frm.doc.name)}</b>
-					${
-						state.salesOrder
-							? `&nbsp;·&nbsp; ${__("Sales Order")}: <b>${frappe.utils.escape_html(state.salesOrder)}</b>`
-							: ""
-					}
-					&nbsp;·&nbsp; ${__("Delivery Notes")}: <b>${deliveryNotes.length}</b>
 					&nbsp;·&nbsp;
 					<a href="/app/contractor-performan?order_sheet=${encodeURIComponent(frm.doc.name)}" target="_blank">${__(
 						"Open full dashboard"
@@ -1553,23 +1544,30 @@ const orderSheetContractorDashboard = {
 
 		const apply = () => {
 			state.filters = this._readFilters($wrapper);
+			state.columnFilters = this._readColumnFilters($wrapper);
 			this.paintTable($wrapper, state);
 		};
 
-		$wrapper.find(".os-cp-contractor, .os-cp-stage, .os-cp-so-item, .os-cp-combo, .os-cp-dn").on("change", apply);
+		$wrapper.find(".os-cp-contractor, .os-cp-stage, .os-cp-so-item, .os-cp-combo").on("change", apply);
 		let t = null;
 		$wrapper.find(".os-cp-search").on("input", () => {
 			clearTimeout(t);
 			t = setTimeout(apply, 180);
 		});
 		$wrapper.find(".os-cp-clear").on("click", () => {
-			$wrapper.find(".os-cp-contractor, .os-cp-stage, .os-cp-so-item, .os-cp-combo, .os-cp-dn").val("");
+			$wrapper.find(".os-cp-contractor, .os-cp-stage, .os-cp-so-item, .os-cp-combo").val("");
 			$wrapper.find(".os-cp-search").val("");
+			$wrapper.find(".os-cp-col-search").val("");
+			state.columnFilters = {};
 			apply();
 		});
 		$wrapper.find(".os-cp-reload").on("click", () => this.render(frm || cur_frm));
 		$wrapper.find(".os-cp-export").on("click", () => {
-			const filtered = this._filterRows(state.allRows, this._readFilters($wrapper), state);
+			const filtered = this._filterRows(
+				state.allRows,
+				this._readFilters($wrapper),
+				this._readColumnFilters($wrapper)
+			);
 			this._exportCsv(filtered, frm.doc.name);
 			frappe.show_alert({ message: __("Exported {0} rows", [filtered.length]), indicator: "green" });
 		});
@@ -1577,8 +1575,20 @@ const orderSheetContractorDashboard = {
 		this.paintTable($wrapper, state);
 	},
 
+	_searchCell(col, placeholder, extraClass) {
+		const val = frappe.utils.escape_html((this._state?.columnFilters || {})[col] || "");
+		return `<th class="os-cp-search-cell">
+			<input type="text" class="os-cp-col-search ${extraClass || ""}" data-col="${col}"
+				placeholder="${frappe.utils.escape_html(placeholder || __("Search"))}" value="${val}">
+		</th>`;
+	},
+
 	paintTable($wrapper, state) {
-		const filtered = this._filterRows(state.allRows, state.filters || {}, state);
+		const filtered = this._filterRows(
+			state.allRows,
+			state.filters || {},
+			state.columnFilters || {}
+		);
 		const key = state.sortKey || "qty";
 		const dir = state.sortDir === "asc" ? 1 : -1;
 		filtered.sort((a, b) => {
@@ -1601,69 +1611,106 @@ const orderSheetContractorDashboard = {
 		const sortMark = (col) =>
 			state.sortKey === col ? `<span class="sort">${state.sortDir === "asc" ? "▲" : "▼"}</span>` : "";
 
-		if (!filtered.length) {
-			const dn = (state.filters || {}).delivery_note;
-			$wrapper.find(".os-cp-table-host").html(
-				`<div class="os-cp-empty">${
-					dn
-						? __("No contractor rows match Delivery Note {0}.", [dn])
-						: __("No contractor activity for this Order Sheet.")
-				}</div>`
-			);
-			return;
-		}
-
-		const body = filtered
-			.map(
-				(r) => `
+		const body =
+			filtered.length === 0
+				? `<tr><td colspan="7" class="os-cp-empty">${__(
+						"No contractor activity for this Order Sheet."
+				  )}</td></tr>`
+				: filtered
+						.map(
+							(r) => `
 			<tr>
 				<td>${frappe.utils.escape_html(r.contractor || "—")}</td>
 				<td>${frappe.utils.escape_html(r.stage || "—")}</td>
 				<td class="mono" title="${frappe.utils.escape_html(r.so_item || "")}">${frappe.utils.escape_html(
-					r.so_item || "—"
-				)}</td>
+								r.so_item || "—"
+						  )}</td>
 				<td>${frappe.utils.escape_html(r.combo_item || "—")}</td>
 				<td>${frappe.utils.escape_html(r.article || "—")}</td>
 				<td class="num"><b>${frappe.format(r.qty || 0, { fieldtype: "Float" })}</b></td>
 				<td class="num">${frappe.format(r.report_count || 0, { fieldtype: "Int" })}</td>
 			</tr>`
-			)
-			.join("");
+						)
+						.join("");
 
-		$wrapper.find(".os-cp-table-host").html(`
-			<table class="os-cp-grid">
-				<thead>
-					<tr>
-						<th data-sort="contractor">${__("Contractor")}${sortMark("contractor")}</th>
-						<th data-sort="stage">${__("Operation")}${sortMark("stage")}</th>
-						<th data-sort="so_item">${__("SO Item")}${sortMark("so_item")}</th>
-						<th data-sort="combo_item">${__("Combo")}${sortMark("combo_item")}</th>
-						<th data-sort="article">${__("Article")}${sortMark("article")}</th>
-						<th data-sort="qty" class="num">${__("Qty")}${sortMark("qty")}</th>
-						<th data-sort="report_count" class="num">${__("Reports")}${sortMark("report_count")}</th>
-					</tr>
-				</thead>
-				<tbody>${body}</tbody>
-				<tfoot>
-					<tr>
-						<td colspan="5">${__("Total")} (${filtered.length})</td>
-						<td class="num">${frappe.format(qty, { fieldtype: "Float" })}</td>
-						<td></td>
-					</tr>
-				</tfoot>
-			</table>
-		`);
+		// Keep header + column-search row stable so typing does not steal focus
+		if (!state.tableBuilt || !$wrapper.find(".os-cp-grid").length) {
+			$wrapper.find(".os-cp-table-host").html(`
+				<table class="os-cp-grid">
+					<thead>
+						<tr>
+							<th class="os-cp-col-head" data-sort="contractor">${__("Contractor")}${sortMark(
+								"contractor"
+							)}</th>
+							<th class="os-cp-col-head" data-sort="stage">${__("Operation")}${sortMark("stage")}</th>
+							<th class="os-cp-col-head" data-sort="so_item">${__("SO Item")}${sortMark("so_item")}</th>
+							<th class="os-cp-col-head" data-sort="combo_item">${__("Combo")}${sortMark(
+								"combo_item"
+							)}</th>
+							<th class="os-cp-col-head" data-sort="article">${__("Article")}${sortMark("article")}</th>
+							<th class="os-cp-col-head num" data-sort="qty">${__("Qty")}${sortMark("qty")}</th>
+							<th class="os-cp-col-head num" data-sort="report_count">${__("Reports")}${sortMark(
+								"report_count"
+							)}</th>
+						</tr>
+						<tr class="os-cp-search-row">
+							${this._searchCell("contractor", __("Search"))}
+							${this._searchCell("stage", __("Search"))}
+							${this._searchCell("so_item", __("Search"))}
+							${this._searchCell("combo_item", __("Search"))}
+							${this._searchCell("article", __("Search"))}
+							${this._searchCell("qty", __("Search"), "num")}
+							${this._searchCell("report_count", __("Search"), "num")}
+						</tr>
+					</thead>
+					<tbody class="os-cp-tbody">${body}</tbody>
+					<tfoot class="os-cp-tfoot">
+						<tr>
+							<td colspan="5">${__("Total")} (${filtered.length})</td>
+							<td class="num">${frappe.format(qty, { fieldtype: "Float" })}</td>
+							<td></td>
+						</tr>
+					</tfoot>
+				</table>
+			`);
+			state.tableBuilt = true;
 
-		$wrapper.find(".os-cp-grid thead th[data-sort]").on("click", (e) => {
-			const col = $(e.currentTarget).attr("data-sort");
-			if (state.sortKey === col) {
-				state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
-			} else {
-				state.sortKey = col;
-				state.sortDir = col === "qty" || col === "report_count" ? "desc" : "asc";
-			}
-			this.paintTable($wrapper, state);
-		});
+			let colTimer = null;
+			$wrapper.find(".os-cp-col-search").on("input", (e) => {
+				e.stopPropagation();
+				clearTimeout(colTimer);
+				colTimer = setTimeout(() => {
+					state.columnFilters = this._readColumnFilters($wrapper);
+					state.filters = this._readFilters($wrapper);
+					this.paintTable($wrapper, state);
+				}, 200);
+			});
+			// Don't sort when clicking inside search inputs
+			$wrapper.find(".os-cp-search-row").on("click", (e) => e.stopPropagation());
+
+			$wrapper.find(".os-cp-grid thead th.os-cp-col-head[data-sort]").on("click", (e) => {
+				const col = $(e.currentTarget).attr("data-sort");
+				if (state.sortKey === col) {
+					state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+				} else {
+					state.sortKey = col;
+					state.sortDir = col === "qty" || col === "report_count" ? "desc" : "asc";
+				}
+				// refresh header sort marks + body
+				state.tableBuilt = false;
+				this.paintTable($wrapper, state);
+			});
+		} else {
+			// Only refresh body/footer so column-search inputs keep focus while typing
+			$wrapper.find(".os-cp-tbody").html(body);
+			$wrapper.find(".os-cp-tfoot").html(`
+				<tr>
+					<td colspan="5">${__("Total")} (${filtered.length})</td>
+					<td class="num">${frappe.format(qty, { fieldtype: "Float" })}</td>
+					<td></td>
+				</tr>
+			`);
+		}
 	},
 };
 

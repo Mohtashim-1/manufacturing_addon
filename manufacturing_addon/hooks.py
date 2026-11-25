@@ -13,7 +13,6 @@ app_license = "mit"
 # app_include_css = "/assets/manufacturing_addon/css/manufacturing_addon.css"
 app_include_js = [
 	"/assets/manufacturing_addon/js/sales_addon_workspace_v2.js",
-	"/assets/manufacturing_addon/js/revise_subcontract_qty.js",
 	"/assets/manufacturing_addon/js/cp_page_cache_bust.js",
 	"/assets/manufacturing_addon/js/pp_page_cache_bust.js",
 	"/assets/manufacturing_addon/js/production_progress_live_v3.js",
@@ -46,10 +45,7 @@ doctype_js = {
     ],
     "BOM" : "public/js/bom.js",
     "Purchase Receipt" : "public/js/purchase_receipt.js",
-    "Purchase Order" : [
-        "public/js/revise_subcontract_qty.js",
-        "public/js/purchase_order.js",
-    ],
+    "Purchase Order" : "public/js/purchase_order.js",
     "Production Plan" : "public/js/production_plan.js",
     "Order Sheet": [
         "public/js/contractor_performance_embed.js",
@@ -70,10 +66,7 @@ doctype_js = {
     "Packing Report": [
         "public/js/report_style_contractors.js",
     ],
-    "Subcontracting Order": [
-        "public/js/revise_subcontract_qty.js",
-        "public/js/subcontracting_order.js",
-    ],
+    "Subcontracting Order": "public/js/subcontracting_order.js",
     "Subcontracting Receipt": "public/js/subcontracting_receipt.js",
     "Stock Reservation Entry": "public/js/stock_reservation_entry.js",
     }
@@ -193,9 +186,11 @@ doc_events = {
 		"on_update": "manufacturing_addon.manufacturing_addon.doctype.sales_order.sales_order.close_cost_center_when_sales_order_is_closed",
 	},
     "BOM": {
-        "validate": ["manufacturing_addon.manufacturing_addon.doctype.bom.bom.duplicate_item", 
-                    # "manufacturing_addon.manufacturing_addon.doctype.bom.bom.get_bom_items_from_bom_template"
-                    ],
+        "validate": [
+            "manufacturing_addon.manufacturing_addon.doctype.bom.bom.duplicate_item",
+            "manufacturing_addon.manufacturing_addon.doctype.bom.bom.sync_bom_carton_fields",
+            # "manufacturing_addon.manufacturing_addon.doctype.bom.bom.get_bom_items_from_bom_template"
+        ],
         "before_save": "manufacturing_addon.manufacturing_addon.doctype.bom.bom.update_bom_stock_qty",
         "on_submit": "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.sync_order_sheets_on_bom_change",
         "on_update_after_submit": "manufacturing_addon.manufacturing_addon.doctype.order_sheet.order_sheet.sync_order_sheets_on_bom_change",

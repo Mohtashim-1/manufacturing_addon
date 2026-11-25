@@ -13,6 +13,8 @@ from manufacturing_addon.manufacturing_addon.utils.report_style_contractor impor
 )
 from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
     apply_subassembly_contractor_qty,
+    get_submitted_sub_assembly_qty,
+    item_requires_sub_assembly,
 )
 from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
     apply_all_style_contractor_amounts,
@@ -993,7 +995,11 @@ class PackingReport(Document):
         return False
 
     def packing_condition(self):
-        """Total packing cannot exceed Cutting/Stitching/Checking flow qty."""
+        """Total packing cannot exceed Cutting/Stitching/Checking flow qty.
+
+        If the item has Sub Assembly (zip/button) styles, Packing also cannot
+        skip Sub Assembly Report — packing is capped by submitted SAR qty.
+        """
         if not self.packing_report_ct:
             return
 
@@ -1003,6 +1009,7 @@ class PackingReport(Document):
         self.calculate_finished_packaging_qty()
 
         purchased_ready_cache = {}
+        requires_sar_cache = {}
         for i in self.packing_report_ct:
             current_packaging_qty = flt(i.packaging_qty)
             if current_packaging_qty <= 0:
@@ -1025,6 +1032,30 @@ class PackingReport(Document):
                     positives.append(q)
             ceiling = min(positives) if positives else 0
 
+            cache_key = (i.so_item or "", i.combo_item or "", i.article or "")
+            if cache_key not in requires_sar_cache:
+                requires_sar_cache[cache_key] = item_requires_sub_assembly(
+                    i.so_item, i.combo_item, getattr(i, "article", None)
+                )
+            if requires_sar_cache[cache_key]:
+                sar_qty = get_submitted_sub_assembly_qty(
+                    self.order_sheet, i.so_item, i.combo_item
+                )
+                if sar_qty <= 0:
+                    frappe.throw(
+                        _(
+                            "Cannot pack row {0} ({1}{2}): this item needs Sub Assembly "
+                            "(zip/button). Submit a Sub Assembly Report first, then pack."
+                        ).format(
+                            i.idx,
+                            i.so_item or "N/A",
+                            f" / {i.combo_item}" if i.combo_item else "",
+                        ),
+                        title=_("Sub Assembly Required"),
+                    )
+                if ceiling <= 0 or sar_qty < ceiling:
+                    ceiling = sar_qty
+
             if ceiling <= 0:
                 frappe.throw(
                     _(
@@ -1044,8 +1075,10 @@ class PackingReport(Document):
                 frappe.throw(
                     _(
                         "Total Packing Qty ({0} = Finished Packing Qty {1} + Current Packing Qty {2}) "
-                        "cannot exceed Cutting/Stitching/Checking Qty ({3}) for row {4} "
-                        "(Item: {5}, Combo Item: {6}). Please reduce the Packing Qty."
+                        "cannot exceed available upstream Qty ({3}) for row {4} "
+                        "(Item: {5}, Combo Item: {6}). "
+                        "For Sub Assembly items this includes submitted Sub Assembly Qty. "
+                        "Please reduce the Packing Qty."
                     ).format(
                         total_packaging,
                         finished_packaging_qty,

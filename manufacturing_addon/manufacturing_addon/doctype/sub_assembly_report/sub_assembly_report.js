@@ -97,10 +97,56 @@ frappe.ui.form.on("Sub Assembly Report", {
 });
 
 frappe.ui.form.on("Sub Assembly Report CT", {
-	sub_assembly_qty(frm) {
+	sub_assembly_qty(frm, cdt, cdn) {
+		warn_if_sub_assembly_over_allowance(frm, cdt, cdn);
 		render_article_wise_summary(frm);
 	},
 });
+
+function warn_if_sub_assembly_over_allowance(frm, cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+	if (!row) return;
+
+	const pcs = flt_local(row.pcs) || 1;
+	const planned_component = flt_local(row.planned_qty);
+	if (planned_component <= 0) return;
+
+	const planned = planned_component / pcs;
+	const actual =
+		(flt_local(row.finished_sub_assembly_qty) + flt_local(row.sub_assembly_qty)) / pcs;
+	if (actual <= 0) return;
+
+	frappe
+		.call({
+			method:
+				"manufacturing_addon.manufacturing_addon.utils.cutting_plan_tolerance.get_cutting_allowance_settings",
+			freeze: false,
+		})
+		.then((r) => {
+			const conf = (r && r.message) || {};
+			if (!conf.enforce) return;
+
+			const allowance = flt_local(conf.tolerance_percent);
+			const max_allowed = planned * (1 + allowance / 100);
+			if (actual <= max_allowed + 0.0001) return;
+
+			frappe.show_alert(
+				{
+					message: __(
+						"Sub Assembly qty {0} exceeds planned {1} + {2}% allowance (max {3}). Save will be blocked.",
+						[
+							fmt_num(actual),
+							fmt_num(planned),
+							fmt_num(allowance),
+							fmt_num(max_allowed),
+						]
+					),
+					indicator: "orange",
+				},
+				8
+			);
+		});
+}
 
 function render_article_wise_summary(frm) {
 	const wrapper = frm.fields_dict.article_wise_report && frm.fields_dict.article_wise_report.$wrapper;

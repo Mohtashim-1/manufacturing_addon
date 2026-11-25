@@ -15,6 +15,9 @@ from manufacturing_addon.manufacturing_addon.utils.subassembly_bom import (
     apply_subassembly_contractor_qty,
     validate_subassembly_qty_caps,
 )
+from manufacturing_addon.manufacturing_addon.utils.cutting_plan_tolerance import (
+    validate_sub_assembly_report_tolerance,
+)
 from manufacturing_addon.manufacturing_addon.utils.style_contractor_split import (
     apply_all_style_contractor_amounts,
     apply_split_qty_defaults,
@@ -489,6 +492,7 @@ class SubAssemblyReport(Document):
             report_label="Sub Assembly Report",
         )
         self.sub_assembly_condition()
+        validate_sub_assembly_report_tolerance(self)
         # Hard block only on Submit; draft Save shows a warning so work is not lost
         if getattr(self, "_action", None) == "submit":
             validate_subassembly_qty_caps(

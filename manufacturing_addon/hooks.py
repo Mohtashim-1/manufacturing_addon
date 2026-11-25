@@ -14,6 +14,9 @@ app_license = "mit"
 app_include_js = [
 	"/assets/manufacturing_addon/js/sales_addon_workspace_v2.js",
 	"/assets/manufacturing_addon/js/revise_subcontract_qty.js",
+	"/assets/manufacturing_addon/js/cp_page_cache_bust.js",
+	"/assets/manufacturing_addon/js/pp_page_cache_bust.js",
+	"/assets/manufacturing_addon/js/production_progress_live_v3.js",
 ]
 
 # include js, css files in header of web template

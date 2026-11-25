@@ -8,46 +8,60 @@ from frappe import _
 from frappe.utils import cint, flt
 
 DEFAULT_CUTTING_QTY_TOLERANCE_PERCENT = 10
+SETTING_DOCTYPE = "Manufacturing Addon Setting"
+
+
+def _setting_value(fieldname, default=None):
+	"""Read a Manufacturing Addon Setting value; use default when never saved in Singles.
+
+	Frappe returns 0 for unset Check/Float singles, which would wrongly disable
+	enforcement / treat allowance as 0%. Prefer the field default when the row
+	is missing from tabSingles.
+	"""
+	try:
+		if not frappe.db.exists(
+			"Singles", {"doctype": SETTING_DOCTYPE, "field": fieldname}
+		):
+			return default
+		return frappe.db.get_single_value(SETTING_DOCTYPE, fieldname)
+	except Exception:
+		return default
 
 
 def get_cutting_qty_tolerance_percent():
 	"""Allowance % from Manufacturing Addon Setting (fallback 10)."""
-	try:
-		pct = frappe.db.get_single_value(
-			"Manufacturing Addon Setting", "cutting_qty_tolerance_percent"
-		)
-	except Exception:
-		pct = None
+	pct = _setting_value(
+		"cutting_qty_tolerance_percent", DEFAULT_CUTTING_QTY_TOLERANCE_PERCENT
+	)
 	if pct is None or pct == "":
 		return flt(DEFAULT_CUTTING_QTY_TOLERANCE_PERCENT)
 	return flt(pct)
 
 
 def is_cutting_plan_tolerance_enforced():
-	try:
-		val = frappe.db.get_single_value(
-			"Manufacturing Addon Setting", "enforce_cutting_plan_tolerance"
-		)
-	except Exception:
-		return True
-	# Missing field / unset → enforce (legacy behaviour)
+	"""Default ON when the setting has never been saved."""
+	val = _setting_value("enforce_cutting_plan_tolerance", 1)
 	if val is None or val == "":
 		return True
 	return bool(cint(val))
 
 
 def should_block_under_plan_cutting():
-	try:
-		val = frappe.db.get_single_value(
-			"Manufacturing Addon Setting", "block_under_plan_cutting"
-		)
-	except Exception:
-		return False
+	val = _setting_value("block_under_plan_cutting", 0)
 	return bool(cint(val or 0))
-
 
 def tolerance_ratio():
 	return get_cutting_qty_tolerance_percent() / 100
+
+
+@frappe.whitelist()
+def get_cutting_allowance_settings():
+	"""Client helper: allowance % and whether over-plan cutting is blocked."""
+	return {
+		"enforce": is_cutting_plan_tolerance_enforced(),
+		"tolerance_percent": get_cutting_qty_tolerance_percent(),
+		"block_under": should_block_under_plan_cutting(),
+	}
 
 
 def cutting_qty_limits(planned_qty):
@@ -61,9 +75,18 @@ def cutting_qty_limits(planned_qty):
 
 def finished_cutting_pieces(ct_row):
 	"""Convert cumulative cutting qty on a report line to finished pieces."""
+	return finished_report_pieces(
+		ct_row,
+		qty_field="cutting_qty",
+		finished_field="finished_cutting_qty",
+	)
+
+
+def finished_report_pieces(ct_row, qty_field, finished_field):
+	"""Convert cumulative report qty on a line to finished pieces (÷ pcs)."""
 	pcs = flt(getattr(ct_row, "pcs", None)) or 1
-	total = flt(getattr(ct_row, "finished_cutting_qty", None)) + flt(
-		getattr(ct_row, "cutting_qty", None)
+	total = flt(getattr(ct_row, finished_field, None)) + flt(
+		getattr(ct_row, qty_field, None)
 	)
 	if total <= 0:
 		total = flt(getattr(ct_row, "total_copy1", None))
@@ -113,18 +136,33 @@ def tolerance_status(planned_qty, actual_pieces):
 	}
 
 
-def _tolerance_error_message(row, actual, info):
+def _tolerance_error_message(row, actual, info, qty_label=None):
 	item_label = row.so_item or _("Item")
 	combo = (row.combo_item or "").strip()
 	if combo:
 		item_label = f"{item_label} / {combo}"
 	pct = info.get("tolerance_pct", get_cutting_qty_tolerance_percent())
+	qty_label = qty_label or _("qty")
+	if info.get("status") == "Over":
+		return _(
+			"Row {0} ({1}): {2} {3} cannot exceed planned qty + allowance "
+			"({4} + {5}% = max {6})."
+		).format(
+			row.idx,
+			item_label,
+			qty_label,
+			frappe.format_value(actual, {"fieldtype": "Float"}),
+			frappe.format_value(info["planned_qty"], {"fieldtype": "Float"}),
+			frappe.format_value(pct, {"fieldtype": "Float"}),
+			frappe.format_value(info["max_allowed"], {"fieldtype": "Float"}),
+		)
 	return _(
-		"Row {0} ({1}): total cutting qty {2} is outside the allowed range "
-		"{3} – {4} (planned {5} ± {6}%)."
+		"Row {0} ({1}): total {2} {3} is outside the allowed range "
+		"{4} – {5} (planned {6} ± {7}%)."
 	).format(
 		row.idx,
 		item_label,
+		qty_label,
 		frappe.format_value(actual, {"fieldtype": "Float"}),
 		frappe.format_value(info["min_allowed"], {"fieldtype": "Float"}),
 		frappe.format_value(info["max_allowed"], {"fieldtype": "Float"}),
@@ -133,10 +171,17 @@ def _tolerance_error_message(row, actual, info):
 	)
 
 
-def validate_cutting_report_tolerance(doc):
-	"""Block save when cutting qty is outside the configured plan band.
+def validate_report_plan_tolerance(
+	doc,
+	child_table,
+	qty_field,
+	finished_field,
+	report_label,
+	qty_label=None,
+):
+	"""Block save when report qty exceeds planned qty + allowance %.
 
-	By default only over-plan is blocked so progressive (partial) cutting works.
+	By default only over-plan is blocked so progressive (partial) entry works.
 	Under-plan blocking is optional via Manufacturing Addon Setting.
 	"""
 	if not is_cutting_plan_tolerance_enforced():
@@ -147,25 +192,51 @@ def validate_cutting_report_tolerance(doc):
 	if block_under:
 		blocked.add("Under")
 
-	for row in doc.get("cutting_report_ct") or []:
+	for row in doc.get(child_table) or []:
 		# Plan Qty on CT is component pieces (finished plan × pcs). Tolerance uses finished units.
 		pcs = flt(getattr(row, "pcs", None)) or 1
 		planned_component = flt(row.planned_qty)
 		planned = planned_component / pcs if pcs else planned_component
 		if planned <= 0:
 			continue
-		if flt(row.cutting_qty) <= 0 and flt(row.finished_cutting_qty) <= 0:
+		if flt(getattr(row, qty_field, None)) <= 0 and flt(
+			getattr(row, finished_field, None)
+		) <= 0:
 			continue
 
-		actual = finished_cutting_pieces(row)
+		actual = finished_report_pieces(row, qty_field, finished_field)
 		info = tolerance_status(planned, actual)
 		if info["status"] not in blocked:
 			continue
 
 		frappe.throw(
-			_tolerance_error_message(row, actual, info),
-			title=_("Cutting Report — Plan Tolerance"),
+			_tolerance_error_message(row, actual, info, qty_label=qty_label),
+			title=_("{0} — Plan Tolerance").format(report_label),
 		)
+
+
+def validate_cutting_report_tolerance(doc):
+	"""Block save when cutting qty is outside the configured plan band."""
+	validate_report_plan_tolerance(
+		doc,
+		child_table="cutting_report_ct",
+		qty_field="cutting_qty",
+		finished_field="finished_cutting_qty",
+		report_label=_("Cutting Report"),
+		qty_label=_("cutting qty"),
+	)
+
+
+def validate_sub_assembly_report_tolerance(doc):
+	"""Block save when sub-assembly qty exceeds planned qty + allowance %."""
+	validate_report_plan_tolerance(
+		doc,
+		child_table="sub_assembly_report_ct",
+		qty_field="sub_assembly_qty",
+		finished_field="finished_sub_assembly_qty",
+		report_label=_("Sub Assembly Report"),
+		qty_label=_("sub assembly qty"),
+	)
 
 
 def _cutting_component_pieces(order_sheet, exclude_report=None):

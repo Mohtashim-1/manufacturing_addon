@@ -485,7 +485,7 @@
    "is_virtual": 0,
    "label": "Sales Order",
    "length": 0,
-   "link_filters": "[[\"Sales Order\",\"status\",\"not in\",[\"Cancelled\",\"Closed\",null]]]",
+   "link_filters": "[[\"Sales Order\",\"docstatus\",\"=\",1],[\"Sales Order\",\"status\",\"not in\",[\"Cancelled\",\"Closed\",\"On Hold\"]]]",
    "mandatory_depends_on": null,
    "modified": "2025-09-12 17:43:26.930320",
    "modified_by": "Administrator",

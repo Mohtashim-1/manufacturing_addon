@@ -128,8 +128,8 @@ def _cutting_agg(
 		values["from_date"] = from_date
 		values["to_date"] = to_date
 	if order_sheet:
-		conditions.append("cr.order_sheet = %(order_sheet)s")
-		values["order_sheet"] = order_sheet
+		conditions.append("cr.order_sheet in %(order_sheet)s")
+		values["order_sheet"] = tuple(order_sheet)
 	if customer:
 		conditions.append("cr.customer = %(customer)s")
 		values["customer"] = customer
@@ -201,8 +201,8 @@ def _stitching_agg(
 		values["from_date"] = from_date
 		values["to_date"] = to_date
 	if order_sheet:
-		conditions.append("sr.order_sheet = %(order_sheet)s")
-		values["order_sheet"] = order_sheet
+		conditions.append("sr.order_sheet in %(order_sheet)s")
+		values["order_sheet"] = tuple(order_sheet)
 	if customer:
 		conditions.append("sr.customer = %(customer)s")
 		values["customer"] = customer
@@ -274,8 +274,8 @@ def _packing_agg(
 		values["from_date"] = from_date
 		values["to_date"] = to_date
 	if order_sheet:
-		conditions.append("pr.order_sheet = %(order_sheet)s")
-		values["order_sheet"] = order_sheet
+		conditions.append("pr.order_sheet in %(order_sheet)s")
+		values["order_sheet"] = tuple(order_sheet)
 	if customer:
 		conditions.append("pr.customer = %(customer)s")
 		values["customer"] = customer
@@ -521,6 +521,110 @@ def _strip_opt(val):
 	return s or None
 
 
+def _parse_name_list(val) -> list[str]:
+	"""Accept a single name, comma-separated string, JSON list or Python list."""
+	if isinstance(val, str) and val.strip().startswith("["):
+		val = frappe.parse_json(val)
+	if isinstance(val, (list, tuple, set)):
+		names = [cstr(v).strip() for v in val]
+	else:
+		names = cstr(val).split(",")
+	return list(dict.fromkeys(n.strip() for n in names if n and n.strip()))
+
+
+def _sales_orders_from_delivery_notes(delivery_notes: list[str]) -> list[str]:
+	if not delivery_notes:
+		return []
+	rows = frappe.db.sql(
+		"""
+		select distinct nullif(trim(dni.against_sales_order), '')
+		from `tabDelivery Note Item` dni
+		where dni.parent in %(dns)s
+			and ifnull(trim(dni.against_sales_order), '') != ''
+		""",
+		{"dns": tuple(delivery_notes)},
+		as_list=True,
+	)
+	return [r[0] for r in rows if r and r[0]]
+
+
+def _item_codes_from_delivery_notes(delivery_notes: list[str]) -> list[str]:
+	if not delivery_notes:
+		return []
+	rows = frappe.db.sql(
+		"""
+		select distinct nullif(trim(dni.item_code), '')
+		from `tabDelivery Note Item` dni
+		where dni.parent in %(dns)s
+			and ifnull(trim(dni.item_code), '') != ''
+		""",
+		{"dns": tuple(delivery_notes)},
+		as_list=True,
+	)
+	return [r[0] for r in rows if r and r[0]]
+
+
+def _order_sheets_for_sales_orders(sales_orders: list[str]) -> list[str]:
+	if not sales_orders:
+		return []
+	return frappe.get_all(
+		"Order Sheet",
+		filters={"sales_order": ["in", sales_orders], "docstatus": ["<", 2]},
+		pluck="name",
+	)
+
+
+def _resolve_scope_filters(order_sheet=None, sales_order=None, delivery_note=None):
+	"""
+	Combine Order Sheet / Sales Order / Delivery Note filters into:
+	- order_sheet list (reports filter)
+	- sales_order list (meta)
+	- dn_item_codes list (optional SO-item restriction from DN lines)
+	"""
+	selected_sheets = set(_parse_name_list(order_sheet))
+	selected_sos = set(_parse_name_list(sales_order))
+	selected_dns = _parse_name_list(delivery_note)
+	dn_item_codes: list[str] = []
+
+	if selected_dns:
+		selected_sos.update(_sales_orders_from_delivery_notes(selected_dns))
+		dn_item_codes = _item_codes_from_delivery_notes(selected_dns)
+
+	resolved_from_so = set(_order_sheets_for_sales_orders(list(selected_sos))) if selected_sos else set()
+
+	if selected_sheets and resolved_from_so:
+		sheets = selected_sheets & resolved_from_so
+	elif selected_sheets:
+		sheets = selected_sheets
+	else:
+		sheets = resolved_from_so
+
+	# If user picked SO/DN but no Order Sheets exist, keep an empty tuple marker
+	# so report queries return nothing instead of ignoring the filter.
+	forced_empty = bool(selected_sos or selected_dns) and not sheets
+
+	return {
+		"order_sheet": list(sheets),
+		"sales_order": list(selected_sos),
+		"delivery_note": selected_dns,
+		"dn_item_codes": dn_item_codes,
+		"forced_empty": forced_empty,
+	}
+
+
+def _apply_dn_item_filter(rows: list, dn_item_codes: list[str]) -> list:
+	"""When Delivery Note is selected, keep rows whose SO item appears on the DN."""
+	if not dn_item_codes:
+		return rows
+	codes = set(dn_item_codes)
+	out = []
+	for row in rows:
+		so_item = cstr(row.get("so_item") or "").strip()
+		if so_item and so_item in codes:
+			out.append(row)
+	return out
+
+
 @frappe.whitelist()
 def get_contractor_performance_data(
 	from_date=None,
@@ -530,6 +634,8 @@ def get_contractor_performance_data(
 	combo_item=None,
 	supplier=None,
 	order_sheet=None,
+	sales_order=None,
+	delivery_note=None,
 	all_dates=None,
 ):
 	"""Aggregate Cutting / Stitching / Packing reports: which contractor worked which item (qty)."""
@@ -537,12 +643,29 @@ def get_contractor_performance_data(
 	so_item = _strip_opt(so_item)
 	combo_item = _strip_opt(combo_item)
 	supplier = _strip_opt(supplier)
-	order_sheet = _strip_opt(order_sheet)
-	skip_date_filter = frappe.utils.cint(all_dates) and bool(order_sheet)
+	scope = _resolve_scope_filters(order_sheet, sales_order, delivery_note)
+	order_sheet = scope["order_sheet"]
+	skip_date_filter = frappe.utils.cint(all_dates) and bool(
+		order_sheet or scope["sales_order"] or scope["delivery_note"]
+	)
+
+	if scope["forced_empty"]:
+		return {
+			"from_date": str(from_date or nowdate()),
+			"to_date": str(to_date or nowdate()),
+			"order_sheet": None,
+			"sales_order": ", ".join(scope["sales_order"]) or None,
+			"delivery_note": ", ".join(scope["delivery_note"]) or None,
+			"cutting": [],
+			"stitching": [],
+			"packing": [],
+			"item_matrix": [],
+			"item_matrix_groups": [],
+		}
 
 	if skip_date_filter:
 		from_date = getdate("2000-01-01")
-		to_date = getdate(nowdate())	
+		to_date = getdate(nowdate())
 	else:
 		from_date, to_date = _date_range(from_date, to_date)
 
@@ -562,6 +685,12 @@ def get_contractor_performance_data(
 		)
 	)
 
+	# Delivery Note narrows to shipped SO items when DN is used as a filter
+	if scope["dn_item_codes"] and not so_item:
+		cutting_raw = _apply_dn_item_filter(cutting_raw, scope["dn_item_codes"])
+		stitching_raw = _apply_dn_item_filter(stitching_raw, scope["dn_item_codes"])
+		packing_raw = _apply_dn_item_filter(packing_raw, scope["dn_item_codes"])
+
 	item_names = _item_name_map(_collect_item_codes(cutting_raw, stitching_raw, packing_raw))
 
 	matrix_flat = _build_matrix(cutting_raw, stitching_raw, packing_raw, item_names)
@@ -569,7 +698,9 @@ def get_contractor_performance_data(
 	return {
 		"from_date": str(from_date),
 		"to_date": str(to_date),
-		"order_sheet": order_sheet,
+		"order_sheet": ", ".join(order_sheet) or None,
+		"sales_order": ", ".join(scope["sales_order"]) or None,
+		"delivery_note": ", ".join(scope["delivery_note"]) or None,
 		"cutting": _rows_for_stage(cutting_raw, "Cutting", item_names),
 		"stitching": _rows_for_stage(stitching_raw, "Stitching", item_names),
 		"packing": _rows_for_stage(packing_raw, "Packing", item_names),

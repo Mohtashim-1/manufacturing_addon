@@ -12,8 +12,37 @@ init_report_style_contractors({
         "manufacturing_addon.manufacturing_addon.doctype.cutting_report.cutting_report.get_style_contractors_for_line",
 });
 
+function inject_new_cutting_column_highlight() {
+	if (document.getElementById("cr-new-cutting-highlight")) return;
+	const style = document.createElement("style");
+	style.id = "cr-new-cutting-highlight";
+	style.textContent = `
+		[data-fieldname="cutting_report_ct"] .grid-heading-row .grid-static-col[data-fieldname="cutting_qty"],
+		[data-fieldname="cutting_report_ct"] .grid-body .grid-static-col[data-fieldname="cutting_qty"],
+		[data-fieldname="cutting_report_ct"] .grid-row .grid-static-col[data-fieldname="cutting_qty"] {
+			background: #fef3c7 !important;
+			border-left: 2px solid #f59e0b !important;
+			border-right: 2px solid #f59e0b !important;
+		}
+		[data-fieldname="cutting_report_ct"] .grid-heading-row .grid-static-col[data-fieldname="cutting_qty"] .static-area {
+			color: #92400e !important;
+			font-weight: 700 !important;
+		}
+		[data-fieldname="cutting_report_ct"] .grid-body .grid-static-col[data-fieldname="cutting_qty"] .static-area,
+		[data-fieldname="cutting_report_ct"] .grid-row .grid-static-col[data-fieldname="cutting_qty"] input {
+			font-weight: 700 !important;
+			color: #78350f !important;
+		}
+		[data-fieldname="cutting_report_ct"] .grid-row:hover .grid-static-col[data-fieldname="cutting_qty"] {
+			background: #fde68a !important;
+		}
+	`;
+	document.head.appendChild(style);
+}
+
 frappe.ui.form.on("Cutting Report", {
     refresh(frm) {
+        inject_new_cutting_column_highlight();
         render_article_wise_summary(frm);
         if (!frm.is_new() && frm.doc.order_sheet) {
             frm.add_custom_button(__("Repair Missing Rows"), () => frm.events.repair_missing_rows(frm));
@@ -21,6 +50,7 @@ frappe.ui.form.on("Cutting Report", {
     },
 
     cutting_report_ct(frm) {
+        inject_new_cutting_column_highlight();
         render_article_wise_summary(frm);
     },
 
@@ -81,10 +111,56 @@ frappe.ui.form.on("Cutting Report", {
 });
 
 frappe.ui.form.on("Cutting Report CT", {
-    cutting_qty(frm) {
+    cutting_qty(frm, cdt, cdn) {
+        warn_if_cutting_over_allowance(frm, cdt, cdn);
         render_article_wise_summary(frm);
     },
 });
+
+function warn_if_cutting_over_allowance(frm, cdt, cdn) {
+    const row = locals[cdt] && locals[cdt][cdn];
+    if (!row) return;
+
+    const pcs = flt_local(row.pcs) || 1;
+    const planned_component = flt_local(row.planned_qty);
+    if (planned_component <= 0) return;
+
+    const planned = planned_component / pcs;
+    const actual =
+        (flt_local(row.finished_cutting_qty) + flt_local(row.cutting_qty)) / pcs;
+    if (actual <= 0) return;
+
+    frappe
+        .call({
+            method:
+                "manufacturing_addon.manufacturing_addon.utils.cutting_plan_tolerance.get_cutting_allowance_settings",
+            freeze: false,
+        })
+        .then((r) => {
+            const conf = (r && r.message) || {};
+            if (!conf.enforce) return;
+
+            const allowance = flt_local(conf.tolerance_percent);
+            const max_allowed = planned * (1 + allowance / 100);
+            if (actual <= max_allowed + 0.0001) return;
+
+            frappe.show_alert(
+                {
+                    message: __(
+                        "Cutting qty {0} exceeds planned {1} + {2}% allowance (max {3}). Save will be blocked.",
+                        [
+                            fmt_num(actual),
+                            fmt_num(planned),
+                            fmt_num(allowance),
+                            fmt_num(max_allowed),
+                        ]
+                    ),
+                    indicator: "orange",
+                },
+                8
+            );
+        });
+}
 
 function render_article_wise_summary(frm) {
     const wrapper = frm.fields_dict.article_wise_report && frm.fields_dict.article_wise_report.$wrapper;

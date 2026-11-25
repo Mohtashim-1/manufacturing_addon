@@ -1,8 +1,19 @@
 // Copyright (c) 2026, Manufacturing Addon and contributors
 // Revise submitted PO + SCO qty (System Manager) — does not touch Stock Entry
 
-frappe.provide("manufacturing_addon.revise_subcontract_qty");
+// Bust stale Contractor Performance page cache (desk localStorage)
+(function () {
+	try {
+		["_page:contractor-performan", "_page:contractor-performance"].forEach((k) => {
+			if (window.localStorage && localStorage.getItem(k)) {
+				localStorage.removeItem(k);
+				console.log("[CP] cleared cached page", k);
+			}
+		});
+	} catch (e) {}
+})();
 
+frappe.provide("manufacturing_addon.revise_subcontract_qty");
 function _fmt_qty(v, digits) {
 	const n = flt(v);
 	if (typeof digits === "number") {

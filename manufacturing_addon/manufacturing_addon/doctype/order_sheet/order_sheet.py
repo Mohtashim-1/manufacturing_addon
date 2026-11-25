@@ -649,100 +649,124 @@ def find_or_create_standard_size(standard_size_str):
 	return None
 
 
+def _normalize_size_value(value):
+	"""Strip units/noise from SIZE attribute while keeping multi-group sizes intact.
+
+	Examples:
+	- '140X200/50X60+20 CM' -> '140X200/50X60+20'
+	- '(135X200/80X80)*2' -> '135X200/80X80*2'
+	- '(260/220)(180/200+35)(2X50/75+10) CM' -> '(260/220)(180/200+35)(2X50/75+10)'
+	"""
+	value = (value or "").strip()
+	value = re.sub(r"\s*CM\s*$", "", value, flags=re.IGNORECASE)
+	value = value.replace('"', "").strip()
+
+	# (SIZE)*N  -> SIZE*N
+	multiplied = re.fullmatch(r"\((.+)\)(\*\d+)", value)
+	if multiplied:
+		return f"{multiplied.group(1)}{multiplied.group(2)}".strip()
+
+	# Single wrapping pair only: (140X200) -> 140X200
+	if value.startswith("(") and value.endswith(")") and value.count("(") == 1:
+		value = value[1:-1].strip()
+
+	return value.strip()
+
+
+def _extract_lenght_width_from_size(size_str):
+	"""Pull first LxW pair from size text. Supports both X and / separators.
+
+	Examples:
+	- '140X200/50X60+20' -> (140, 200)
+	- '(260/220)(180/200+35)(2X50/75+10)' -> (260, 220)
+	- '135X200/80X80*2' -> (135, 200)
+	"""
+	if not size_str:
+		return None, None
+
+	# Prefer first parenthetical dimension group when present
+	paren = re.search(
+		r"\(\s*(\d+(?:\.\d+)?)\s*[Xx/]\s*(\d+(?:\.\d+)?)",
+		size_str,
+	)
+	if paren:
+		try:
+			return float(paren.group(1)), float(paren.group(2))
+		except (ValueError, IndexError):
+			pass
+
+	# Traditional sizes: first NxM (X/x) pair — before any slash components
+	x_match = re.search(r"(\d+(?:\.\d+)?)\s*[Xx]\s*(\d+(?:\.\d+)?)", size_str)
+	if x_match:
+		try:
+			return float(x_match.group(1)), float(x_match.group(2))
+		except (ValueError, IndexError):
+			pass
+
+	# Slash-only sizes (e.g. 260/220 without X)
+	slash_match = re.search(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", size_str)
+	if slash_match:
+		try:
+			return float(slash_match.group(1)), float(slash_match.group(2))
+		except (ValueError, IndexError):
+			pass
+
+	return None, None
+
+
 def find_or_create_size(size_value):
 	"""
-	Simple function: Check if Stitching Size exists with this size value, if not create it
+	Simple function: Check if Stitching Size exists with this size value, if not create it.
+	Supports both X-separated (140X200) and slash-separated ((260/220)...) size formats.
 	"""
 	if not size_value:
 		return None
 
-	def normalize_size_value(value):
-		value = (value or "").strip()
-		value = value.replace(" CM", "").replace('"', "").strip()
-		if value.startswith("("):
-			value = value[1:]
-		if ")*" in value:
-			value = value.replace(")*", "*")
-		if value.endswith(")"):
-			value = value[:-1]
-		return value.strip()
+	normalized_size = _normalize_size_value(size_value)
 
-	normalized_size = normalize_size_value(size_value)
-	
-	# Step 1: Check if exists by name (the name should be the full size value)
-	existing = frappe.get_all(
-		"Stitching Size",
-		filters={"name": size_value},
-		limit=1
-	)
-	
-	if existing:
-		print(f"[find_or_create_size] Found existing by name: '{existing[0].name}'")
-		return existing[0].name
-
-	if normalized_size and normalized_size != size_value:
-		existing_normalized = frappe.get_all(
+	# Step 1: Check if exists by name (raw or normalized)
+	for candidate in (size_value, normalized_size):
+		if not candidate:
+			continue
+		existing = frappe.get_all(
 			"Stitching Size",
-			filters={"name": normalized_size},
-			limit=1
+			filters={"name": candidate},
+			limit=1,
 		)
-		if existing_normalized:
-			print(f"[find_or_create_size] Found existing by normalized name: '{existing_normalized[0].name}'")
-			return existing_normalized[0].name
-	
-	# Step 2: Create new record with the full size value as name
-	# Extract lenght and width from first part for required fields
-	size_clean = normalized_size
-	first_part = size_clean
-	# Find first separator
-	for separator in [',', '+', '/']:
-		if separator in first_part:
-			first_part = first_part.split(separator)[0].strip()
-			break
-	
-	# Extract lenght and width for required fields
-	lenght = None
-	width = None
-	size_match = re.search(r'(\d+(?:\.\d+)?)\s*[Xx]\s*(\d+(?:\.\d+)?)', first_part)
-	if size_match:
-		try:
-			lenght = float(size_match.group(1))
-			width = float(size_match.group(2))
-		except (ValueError, IndexError):
-			pass
-	
-	# If we can't extract lenght/width, still try to create with just size field
-	# But Stitching Size requires lenght and width, so we need them
+		if existing:
+			print(f"[find_or_create_size] Found existing by name: '{existing[0].name}'")
+			return existing[0].name
+
+	# Step 2: Create new record — extract lenght/width for required fields
+	lenght, width = _extract_lenght_width_from_size(normalized_size or size_value)
+
 	if lenght is None or width is None:
 		print(f"[find_or_create_size] ERROR: Could not extract lenght/width from '{size_value}'")
 		return None
-	
+
+	name_value = normalized_size or size_value
 	try:
 		doc = frappe.get_doc({
 			"doctype": "Stitching Size",
 			"lenght": lenght,
 			"width": width,
-			"size": normalized_size or size_value
+			"size": name_value,
+			"custom_size": name_value,
 		})
 		doc.insert(ignore_permissions=True)
 		print(f"[find_or_create_size] Created new Stitching Size: '{doc.name}' with size='{size_value}'")
 		return doc.name
 	except frappe.exceptions.DuplicateEntryError:
-		# If duplicate name, it means a record with this name already exists
-		# Try to get it by name
-		try:
-			existing_doc = frappe.get_doc("Stitching Size", size_value)
-			print(f"[find_or_create_size] Found existing by name after duplicate error: '{existing_doc.name}'")
-			return existing_doc.name
-		except:
-			if normalized_size and normalized_size != size_value:
-				try:
-					existing_doc = frappe.get_doc("Stitching Size", normalized_size)
-					print(f"[find_or_create_size] Found existing by normalized name after duplicate error: '{existing_doc.name}'")
-					return existing_doc.name
-				except:
-					return None
-			return None
+		for candidate in (size_value, normalized_size, name_value):
+			if not candidate:
+				continue
+			try:
+				existing_doc = frappe.get_doc("Stitching Size", candidate)
+				print(f"[find_or_create_size] Found existing by name after duplicate error: '{existing_doc.name}'")
+				return existing_doc.name
+			except Exception:
+				continue
+		return None
 	except Exception as e:
 		print(f"[find_or_create_size] ERROR creating Stitching Size: {str(e)[:200]}")
 		return None

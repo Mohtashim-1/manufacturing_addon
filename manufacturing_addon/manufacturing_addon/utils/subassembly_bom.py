@@ -514,6 +514,87 @@ def get_subassembly_qty_used(
 	return total
 
 
+def item_requires_sub_assembly(so_item, combo_item=None, article=None):
+	"""True when the Item has Sub Assembly (zip/button) styles for this line."""
+	if not so_item:
+		return False
+	from manufacturing_addon.manufacturing_addon.utils.report_style_contractor import (
+		get_item_styles,
+	)
+
+	return bool(
+		get_item_styles(
+			so_item,
+			operation="Sub Assembly",
+			combo_item=combo_item,
+			article=article,
+		)
+	)
+
+
+def get_submitted_sub_assembly_qty(order_sheet, so_item, combo_item=None):
+	"""Submitted Sub Assembly Report qty for one SO item / combo (component units).
+
+	Blank combo_item on a product-combo SET returns finished-set equivalent
+	(min of component_qty / pcs) so Packing can require SAR before packing.
+	"""
+	if not order_sheet or not so_item:
+		return 0.0
+
+	combo = cstr(combo_item or "").strip()
+	if combo:
+		row = frappe.db.sql(
+			"""
+			SELECT SUM(ct.sub_assembly_qty)
+			FROM `tabSub Assembly Report CT` ct
+			INNER JOIN `tabSub Assembly Report` p ON p.name = ct.parent
+			WHERE p.order_sheet = %s AND p.docstatus = 1
+			  AND ct.so_item = %s AND ct.combo_item = %s
+			""",
+			(order_sheet, so_item, combo),
+		)
+		return flt(row[0][0] if row else 0)
+
+	bundle_rows = frappe.get_all(
+		"Product Combo Item",
+		filters={"parent": so_item},
+		fields=["item", "pcs"],
+	)
+	if not bundle_rows:
+		row = frappe.db.sql(
+			"""
+			SELECT SUM(ct.sub_assembly_qty)
+			FROM `tabSub Assembly Report CT` ct
+			INNER JOIN `tabSub Assembly Report` p ON p.name = ct.parent
+			WHERE p.order_sheet = %s AND p.docstatus = 1
+			  AND ct.so_item = %s
+			  AND (ct.combo_item IS NULL OR ct.combo_item = '')
+			""",
+			(order_sheet, so_item),
+		)
+		return flt(row[0][0] if row else 0)
+
+	rows = frappe.db.sql(
+		"""
+		SELECT ct.combo_item, SUM(ct.sub_assembly_qty) AS total_qty
+		FROM `tabSub Assembly Report CT` ct
+		INNER JOIN `tabSub Assembly Report` p ON p.name = ct.parent
+		WHERE p.order_sheet = %s AND p.docstatus = 1
+		  AND ct.so_item = %s
+		  AND IFNULL(ct.combo_item, '') != ''
+		GROUP BY ct.combo_item
+		""",
+		(order_sheet, so_item),
+		as_dict=True,
+	)
+	total_map = {cstr(r.combo_item): flt(r.total_qty) for r in rows}
+	normalized = []
+	for b in bundle_rows:
+		pcs = flt(b.pcs) or 1
+		normalized.append(flt(total_map.get(cstr(b.item), 0)) / pcs)
+	return min(normalized) if normalized else 0.0
+
+
 def get_production_flow_component_qty(order_sheet, so_item, combo_item=None):
 	"""Upstream production qty for one SO item / combo line.
 

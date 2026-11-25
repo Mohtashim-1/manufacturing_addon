@@ -1374,16 +1374,27 @@ const orderSheetContractorDashboard = {
 			stage: $wrapper.find(".os-cp-stage").val() || "",
 			so_item: $wrapper.find(".os-cp-so-item").val() || "",
 			combo_item: $wrapper.find(".os-cp-combo").val() || "",
+			delivery_note: $wrapper.find(".os-cp-dn").val() || "",
 			search: ($wrapper.find(".os-cp-search").val() || "").trim().toLowerCase(),
 		};
 	},
 
-	_filterRows(rows, f) {
+	_dnItemSet(state, deliveryNote) {
+		if (!deliveryNote) return null;
+		const map = state.dnItemMap || {};
+		const items = map[deliveryNote];
+		if (!items || !items.length) return new Set();
+		return new Set(items);
+	},
+
+	_filterRows(rows, f, state) {
+		const dnItems = this._dnItemSet(state || {}, f.delivery_note);
 		return (rows || []).filter((r) => {
 			if (f.contractor && r.contractor !== f.contractor && r.contractor_id !== f.contractor) return false;
 			if (f.stage && r.stage !== f.stage) return false;
 			if (f.so_item && r.so_item !== f.so_item) return false;
 			if (f.combo_item && r.combo_item !== f.combo_item) return false;
+			if (dnItems && !dnItems.has(r.so_item)) return false;
 			if (f.search) {
 				const hay = [r.contractor, r.stage, r.so_item, r.combo_item, r.article].join(" ").toLowerCase();
 				if (!hay.includes(f.search)) return false;
@@ -1412,9 +1423,37 @@ const orderSheetContractorDashboard = {
 		URL.revokeObjectURL(url);
 	},
 
+	_dnSelectOpts(deliveryNotes, selected) {
+		const opts = [`<option value="">${__("All")}</option>`];
+		(deliveryNotes || []).forEach((dn) => {
+			const name = dn.name || dn;
+			const label = dn.label || name;
+			const sel = String(name) === String(selected || "") ? " selected" : "";
+			opts.push(
+				`<option value="${frappe.utils.escape_html(name)}"${sel}>${frappe.utils.escape_html(label)}</option>`
+			);
+		});
+		return opts.join("");
+	},
+
 	mount($wrapper, data, frm) {
 		const allRows = this._flatten(data);
-		const state = { frm, data, allRows, filters: {}, sortKey: "qty", sortDir: "desc" };
+		const deliveryNotes = data.delivery_notes || [];
+		const dnItemMap = {};
+		deliveryNotes.forEach((dn) => {
+			if (dn && dn.name) dnItemMap[dn.name] = dn.item_codes || [];
+		});
+		const state = {
+			frm,
+			data,
+			allRows,
+			deliveryNotes,
+			dnItemMap,
+			salesOrder: data.sales_order || frm.doc.sales_order || "",
+			filters: {},
+			sortKey: "qty",
+			sortDir: "desc",
+		};
 		this._state = state;
 
 		$wrapper.html(`
@@ -1480,6 +1519,10 @@ const orderSheetContractorDashboard = {
 						<label>${__("Combo Item")}</label>
 						<select class="os-cp-combo">${this._selectOpts(this._unique(allRows, "combo_item"), "")}</select>
 					</div>
+					<div class="f f-grow">
+						<label>${__("Delivery Note")}</label>
+						<select class="os-cp-dn">${this._dnSelectOpts(deliveryNotes, "")}</select>
+					</div>
 					<div class="f">
 						<label>${__("Search")}</label>
 						<input type="text" class="os-cp-search" placeholder="${__("Type to filter...")}">
@@ -1492,6 +1535,12 @@ const orderSheetContractorDashboard = {
 				</div>
 				<div class="os-cp-meta">
 					${__("Order Sheet")}: <b>${frappe.utils.escape_html(frm.doc.name)}</b>
+					${
+						state.salesOrder
+							? `&nbsp;·&nbsp; ${__("Sales Order")}: <b>${frappe.utils.escape_html(state.salesOrder)}</b>`
+							: ""
+					}
+					&nbsp;·&nbsp; ${__("Delivery Notes")}: <b>${deliveryNotes.length}</b>
 					&nbsp;·&nbsp;
 					<a href="/app/contractor-performan?order_sheet=${encodeURIComponent(frm.doc.name)}" target="_blank">${__(
 						"Open full dashboard"
@@ -1507,20 +1556,20 @@ const orderSheetContractorDashboard = {
 			this.paintTable($wrapper, state);
 		};
 
-		$wrapper.find(".os-cp-contractor, .os-cp-stage, .os-cp-so-item, .os-cp-combo").on("change", apply);
+		$wrapper.find(".os-cp-contractor, .os-cp-stage, .os-cp-so-item, .os-cp-combo, .os-cp-dn").on("change", apply);
 		let t = null;
 		$wrapper.find(".os-cp-search").on("input", () => {
 			clearTimeout(t);
 			t = setTimeout(apply, 180);
 		});
 		$wrapper.find(".os-cp-clear").on("click", () => {
-			$wrapper.find(".os-cp-contractor, .os-cp-stage, .os-cp-so-item, .os-cp-combo").val("");
+			$wrapper.find(".os-cp-contractor, .os-cp-stage, .os-cp-so-item, .os-cp-combo, .os-cp-dn").val("");
 			$wrapper.find(".os-cp-search").val("");
 			apply();
 		});
 		$wrapper.find(".os-cp-reload").on("click", () => this.render(frm || cur_frm));
 		$wrapper.find(".os-cp-export").on("click", () => {
-			const filtered = this._filterRows(state.allRows, this._readFilters($wrapper));
+			const filtered = this._filterRows(state.allRows, this._readFilters($wrapper), state);
 			this._exportCsv(filtered, frm.doc.name);
 			frappe.show_alert({ message: __("Exported {0} rows", [filtered.length]), indicator: "green" });
 		});
@@ -1529,7 +1578,7 @@ const orderSheetContractorDashboard = {
 	},
 
 	paintTable($wrapper, state) {
-		const filtered = this._filterRows(state.allRows, state.filters || {});
+		const filtered = this._filterRows(state.allRows, state.filters || {}, state);
 		const key = state.sortKey || "qty";
 		const dir = state.sortDir === "asc" ? 1 : -1;
 		filtered.sort((a, b) => {
@@ -1553,8 +1602,13 @@ const orderSheetContractorDashboard = {
 			state.sortKey === col ? `<span class="sort">${state.sortDir === "asc" ? "▲" : "▼"}</span>` : "";
 
 		if (!filtered.length) {
+			const dn = (state.filters || {}).delivery_note;
 			$wrapper.find(".os-cp-table-host").html(
-				`<div class="os-cp-empty">${__("No contractor activity for this Order Sheet.")}</div>`
+				`<div class="os-cp-empty">${
+					dn
+						? __("No contractor rows match Delivery Note {0}.", [dn])
+						: __("No contractor activity for this Order Sheet.")
+				}</div>`
 			);
 			return;
 		}

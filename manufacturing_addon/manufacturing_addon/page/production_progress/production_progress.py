@@ -63,6 +63,7 @@ def _get_stage_rows(from_date, to_date, item=None):
 			stage_rows.colour,
 			stage_rows.size,
 			stage_rows.stage,
+			stage_rows.report_date,
 			stage_rows.qty,
 			IFNULL(osct.order_qty, 0) AS order_qty,
 			IFNULL(osct.planned_qty, 0) AS planned_qty
@@ -70,6 +71,7 @@ def _get_stage_rows(from_date, to_date, item=None):
 			SELECT
 				'cutting' AS stage,
 				cr.order_sheet,
+				cr.date AS report_date,
 				crct.so_item,
 				IFNULL(crct.combo_item, '') AS combo_item,
 				IFNULL(crct.colour, '') AS colour,
@@ -79,13 +81,14 @@ def _get_stage_rows(from_date, to_date, item=None):
 			INNER JOIN `tabCutting Report CT` crct ON crct.parent = cr.name
 			WHERE cr.docstatus = 1
 				AND cr.date BETWEEN %(from_date)s AND %(to_date)s
-			GROUP BY cr.order_sheet, crct.so_item, IFNULL(crct.combo_item, ''), IFNULL(crct.colour, ''), IFNULL(crct.finished_size, '')
+			GROUP BY cr.order_sheet, cr.date, crct.so_item, IFNULL(crct.combo_item, ''), IFNULL(crct.colour, ''), IFNULL(crct.finished_size, '')
 
 			UNION ALL
 
 			SELECT
 				'stitching' AS stage,
 				sr.order_sheet,
+				sr.date AS report_date,
 				srct.so_item,
 				IFNULL(srct.combo_item, '') AS combo_item,
 				IFNULL(srct.colour, '') AS colour,
@@ -95,13 +98,14 @@ def _get_stage_rows(from_date, to_date, item=None):
 			INNER JOIN `tabStitching Report CT` srct ON srct.parent = sr.name
 			WHERE sr.docstatus = 1
 				AND sr.date BETWEEN %(from_date)s AND %(to_date)s
-			GROUP BY sr.order_sheet, srct.so_item, IFNULL(srct.combo_item, ''), IFNULL(srct.colour, ''), IFNULL(srct.finished_size, '')
+			GROUP BY sr.order_sheet, sr.date, srct.so_item, IFNULL(srct.combo_item, ''), IFNULL(srct.colour, ''), IFNULL(srct.finished_size, '')
 
 			UNION ALL
 
 			SELECT
 				'packing' AS stage,
 				pr.order_sheet,
+				pr.date AS report_date,
 				prct.so_item,
 				'' AS combo_item,
 				IFNULL(prct.colour, '') AS colour,
@@ -111,7 +115,7 @@ def _get_stage_rows(from_date, to_date, item=None):
 			INNER JOIN `tabPacking Report CT` prct ON prct.parent = pr.name
 			WHERE pr.docstatus = 1
 				AND pr.date BETWEEN %(from_date)s AND %(to_date)s
-			GROUP BY pr.order_sheet, prct.so_item, IFNULL(prct.colour, ''), IFNULL(prct.finished_size, '')
+			GROUP BY pr.order_sheet, pr.date, prct.so_item, IFNULL(prct.colour, ''), IFNULL(prct.finished_size, '')
 		) AS stage_rows
 		INNER JOIN `tabOrder Sheet` os ON os.name = stage_rows.order_sheet
 		INNER JOIN `tabSales Order` so ON so.name = os.sales_order
@@ -122,7 +126,7 @@ def _get_stage_rows(from_date, to_date, item=None):
 			AND IFNULL(osct.size, '') = stage_rows.size
 		WHERE so.docstatus < 2
 			{item_condition}
-		ORDER BY so.name, os.name, stage_rows.so_item, stage_rows.colour, stage_rows.size, stage_rows.stage
+		ORDER BY so.name, os.name, stage_rows.so_item, stage_rows.colour, stage_rows.size, stage_rows.stage, stage_rows.report_date
 		""",
 		{"from_date": from_date, "to_date": to_date, "item": item},
 		as_dict=True,

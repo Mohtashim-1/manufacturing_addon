@@ -18,7 +18,7 @@
 			.contractor-performance-page .cp-filters .cp-filter-row {
 				display: flex;
 				flex-wrap: wrap;
-				align-items: flex-end;
+				align-items: flex-start;
 			}
 			.contractor-performance-page .cp-filters .cp-filter-row > *:not(.ml-auto) {
 				margin-right: 14px;
@@ -28,6 +28,7 @@
 				margin-left: auto;
 				margin-right: 0;
 				margin-bottom: 8px;
+				align-self: flex-end;
 			}
 			.contractor-performance-page .cp-tabs {
 				border-bottom: 1px solid #e2e8f0;
@@ -347,9 +348,6 @@
 			return v && String(v).trim() ? v : undefined;
 		}
 
-		/** Prevents customer onchange from clearing order_sheet when we sync customer from OS. */
-		let cp_filter_syncing = false;
-
 		const ctrls = {};
 		ctrls.from_date = frappe.ui.form.make_control({
 			parent: $filters,
@@ -380,73 +378,74 @@
 				fieldname: "customer",
 				label: __("Customer"),
 				options: "Customer",
-				onchange: () => {
-					if (cp_filter_syncing) {
-						console.log("[CP] customer onchange skipped (syncing from Order Sheet)");
-						return;
-					}
-					const cust = linkOrUndefined(ctrls.customer);
-					const os = linkOrUndefined(ctrls.order_sheet);
-					console.log("[CP] customer onchange", { cust, os });
-					if (!os || !ctrls.order_sheet) {
-						return;
-					}
-					frappe.db.get_value("Order Sheet", os, "customer").then((r) => {
-						const osCust = (r && r.message && r.message.customer) || (r && r.customer);
-						if (osCust && cust && osCust === cust) {
-							console.log("[CP] order_sheet kept — matches customer", os);
-							return;
-						}
-						console.log("[CP] clearing order_sheet (customer changed)", { osCust, cust });
-						ctrls.order_sheet.set_value("");
-					});
-				},
 			},
 			render_input: true,
 		});
+
+		function getSelectedOrderSheets() {
+			const v = ctrls.order_sheet ? ctrls.order_sheet.get_value() : null;
+			return (Array.isArray(v) ? v : []).map((x) => String(x || "").trim()).filter(Boolean);
+		}
+
+		function getSelectedNames(ctrl) {
+			const v = ctrl ? ctrl.get_value() : null;
+			return (Array.isArray(v) ? v : []).map((x) => String(x || "").trim()).filter(Boolean);
+		}
+
 		ctrls.order_sheet = frappe.ui.form.make_control({
 			parent: $filters,
 			df: {
-				fieldtype: "Link",
+				fieldtype: "MultiSelectPills",
 				fieldname: "order_sheet",
 				label: __("Order Sheet"),
-				options: "Order Sheet",
-				get_query: () => {
+				placeholder: __("Select one or more"),
+				get_data: (txt) => {
 					const customer = linkOrUndefined(ctrls.customer);
-					const query = customer
-						? { filters: { docstatus: ["<", 2], customer: customer } }
-						: { filters: { docstatus: ["<", 2] } };
-					console.log("[CP] order_sheet get_query", query);
-					return query;
-				},
-				onchange: () => {
-					const os = linkOrUndefined(ctrls.order_sheet);
-					console.log("[CP] order_sheet onchange", os, "syncing=", cp_filter_syncing);
-					if (!os) {
-						return;
-					}
-					frappe.db.get_value("Order Sheet", os, "customer").then((r) => {
-						const cust = (r && r.message && r.message.customer) || (r && r.customer);
-						console.log("[CP] order_sheet loaded customer", { os, cust, raw: r });
-						if (!cust || !ctrls.customer) {
-							return;
-						}
-						const currentCust = linkOrUndefined(ctrls.customer);
-						if (currentCust === cust) {
-							console.log("[CP] customer already matches, no sync");
-							return;
-						}
-						cp_filter_syncing = true;
-						ctrls.customer.set_value(cust);
-						setTimeout(() => {
-							cp_filter_syncing = false;
-							console.log("[CP] customer set from order sheet", cust);
-						}, 400);
-					});
+					const filters = { docstatus: ["<", 2] };
+					if (customer) filters.customer = customer;
+					return frappe.db.get_link_options("Order Sheet", txt || "", filters);
 				},
 			},
 			render_input: true,
 		});
+		$filters.find('[data-fieldname="order_sheet"]').css({ "min-width": "260px", flex: "1 1 260px" });
+
+		ctrls.sales_order = frappe.ui.form.make_control({
+			parent: $filters,
+			df: {
+				fieldtype: "MultiSelectPills",
+				fieldname: "sales_order",
+				label: __("Sales Order"),
+				placeholder: __("Select one or more"),
+				get_data: (txt) => {
+					const customer = linkOrUndefined(ctrls.customer);
+					const filters = { docstatus: ["<", 2] };
+					if (customer) filters.customer = customer;
+					return frappe.db.get_link_options("Sales Order", txt || "", filters);
+				},
+			},
+			render_input: true,
+		});
+		$filters.find('[data-fieldname="sales_order"]').css({ "min-width": "240px", flex: "1 1 240px" });
+
+		ctrls.delivery_note = frappe.ui.form.make_control({
+			parent: $filters,
+			df: {
+				fieldtype: "MultiSelectPills",
+				fieldname: "delivery_note",
+				label: __("Delivery Note"),
+				placeholder: __("Select one or more"),
+				get_data: (txt) => {
+					const customer = linkOrUndefined(ctrls.customer);
+					const filters = { docstatus: ["<", 2] };
+					if (customer) filters.customer = customer;
+					return frappe.db.get_link_options("Delivery Note", txt || "", filters);
+				},
+			},
+			render_input: true,
+		});
+		$filters.find('[data-fieldname="delivery_note"]').css({ "min-width": "240px", flex: "1 1 240px" });
+
 		ctrls.cp_so_item = frappe.ui.form.make_control({
 			parent: $filters,
 			df: {
@@ -499,6 +498,13 @@
 		const queryParams = frappe.utils.get_query_params() || {};
 		ctrls.from_date.set_value(queryParams.from_date || frappe.datetime.month_start());
 		ctrls.to_date.set_value(queryParams.to_date || frappe.datetime.month_end());
+		if (queryParams.order_sheet) {
+			const sheets = String(queryParams.order_sheet)
+				.split(",")
+				.map((x) => x.trim())
+				.filter(Boolean);
+			if (sheets.length) ctrls.order_sheet.set_value(sheets);
+		}
 
 		$main.find(".cp-tabs .cp-tab-btn").on("click", function (e) {
 			e.preventDefault();
@@ -950,14 +956,23 @@
 		}
 
 		function load() {
+			const orderSheets = getSelectedOrderSheets();
+			const salesOrders = getSelectedNames(ctrls.sales_order);
+			const deliveryNotes = getSelectedNames(ctrls.delivery_note);
+			const scoped =
+				orderSheets.length || salesOrders.length || deliveryNotes.length ? 1 : undefined;
 			const args = {
 				from_date: ctrls.from_date.get_value() || frappe.datetime.month_start(),
 				to_date: ctrls.to_date.get_value() || frappe.datetime.month_end(),
 				customer: linkOrUndefined(ctrls.customer),
-				order_sheet: linkOrUndefined(ctrls.order_sheet),
+				order_sheet: orderSheets.length ? JSON.stringify(orderSheets) : undefined,
+				sales_order: salesOrders.length ? JSON.stringify(salesOrders) : undefined,
+				delivery_note: deliveryNotes.length ? JSON.stringify(deliveryNotes) : undefined,
 				so_item: linkOrUndefined(ctrls.cp_so_item),
 				combo_item: linkOrUndefined(ctrls.cp_combo_item),
 				supplier: linkOrUndefined(ctrls.cp_supplier),
+				// Scoped docs can span months — include all their reports
+				all_dates: scoped,
 			};
 			console.log("[CP] load()", args);
 			$meta.text(__("Loading…"));
@@ -971,9 +986,12 @@
 						frappe.datetime.str_to_user(args.from_date),
 						frappe.datetime.str_to_user(args.to_date),
 					];
-					if (args.order_sheet) {
-						parts.unshift(args.order_sheet);
-						$meta.text(__("Order Sheet {0} · {1} to {2}", parts));
+					if (data.order_sheet || data.sales_order || data.delivery_note) {
+						const scopeBits = [];
+						if (data.order_sheet) scopeBits.push(__("Order Sheet {0}", [data.order_sheet]));
+						if (data.sales_order) scopeBits.push(__("Sales Order {0}", [data.sales_order]));
+						if (data.delivery_note) scopeBits.push(__("Delivery Note {0}", [data.delivery_note]));
+						$meta.text(scopeBits.join(" · ") + " · " + __("all dates"));
 					} else {
 						$meta.text(__("{0} to {1}", parts));
 					}
